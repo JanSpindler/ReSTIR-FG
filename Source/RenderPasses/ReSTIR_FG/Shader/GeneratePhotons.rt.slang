@@ -15,6 +15,7 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import FinalGatherData;
 import Hash;
+import GaussianPhotonGuiding;
 
 cbuffer PerFrame
 {

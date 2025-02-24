@@ -16,7 +16,8 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/ResamplingPass.cs.slang
 	Shader/Reservoir.slang
 	Shader/SurfaceDataFG.slang
-	Shader/TraceTransmissionDelta.rt.slang	
+	Shader/TraceTransmissionDelta.rt.slang
+    Shader/GaussianPhotonGuiding.slang
 )
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)
