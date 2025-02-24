@@ -47,7 +47,7 @@ namespace
     const uint kMaxPayloadBytesGenerateFGSamples = 20u;
     const uint kMaxPayloadBytesGI = 32u;
 
-    //Render Pass inputs and outputs
+    // Render Pass inputs and outputs
     const std::string kInputVBuffer = "vbuffer";
     const std::string kInputMotionVectors = "mvec";
 
@@ -74,7 +74,7 @@ namespace
         {kOutputResidualRadiance,       "gOutResidualRadiance",     "Output residual color (transmission/delta)", true /*optional*/, ResourceFormat::RGBA32Float},
     };
 
-    //Properties for Render Graph
+    // Properties for Render Graph
     const std::string kPropsPhotonBufferSizeG = "PhotonBufferSizeGlobal";
     const std::string kPropsPhotonBufferSizeC = "PhotonBufferSizeCaustic";
     const std::string kPropsAnalyticEmissiveRatio = "AnalyticEmissiveRatio";
@@ -93,7 +93,7 @@ namespace
     const std::string kPropsEnableDynamicDispatch = "EnableDynamicDispatch";
     const std::string kPropsNumDispatchedPhotons = "NumDispatchedPhotons";
 
-    //UI Dropdowns
+    // UI Dropdowns
     const Gui::DropdownList kResamplingModeList{
         {(uint)ReSTIR_FG::ResamplingMode::Temporal, "Temporal"},
         {(uint)ReSTIR_FG::ResamplingMode::Spatial, "Spatial"},
@@ -206,6 +206,7 @@ void ReSTIR_FG::parseProperties(const Properties& props)
         mNumMaxPhotons = mNumMaxPhotonsUI; //copy UI value
     }
 }
+
 Properties ReSTIR_FG::getProperties() const
 {
     Properties props = Properties();
@@ -242,17 +243,21 @@ RenderPassReflection ReSTIR_FG::reflect(const CompileData& compileData)
 
 void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if(!mpScene)    //Return on empty scene
+    // Return on empty scene
+    if (!mpScene)
+    {
         return;
+    }
 
     auto& dict = renderData.getDictionary();
     auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
     if (flags != RenderPassRefreshFlags::None)
+    {
         mSPPMFramesCameraStill = 0;
+    }
 
     if (mOptionsChanged)
     {
-       
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mSPPMFramesCameraStill = 0;
         mOptionsChanged = false;
@@ -260,49 +265,61 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
 
     const auto& pMotionVectors = renderData[kInputMotionVectors]->asTexture();
 
-    //Init RTXDI if it is enabled
+    // Init RTXDI if it is enabled
     if (mDirectLightMode == DirectLightingMode::RTXDI && !mpRTXDI)
     {
         mpRTXDI = std::make_unique<RTXDI>(mpScene, mRTXDIOptions);
     }
-    //Delete RTXDI if it is set and the mode changed
+    // Delete RTXDI if it is set and the mode changed
     if (mDirectLightMode != DirectLightingMode::RTXDI && mpRTXDI)
+    {
         mpRTXDI = nullptr;
+    }
 
-    //Prepare used Datas and Buffers
+    // Prepare used Datas and Buffers
     prepareLighting(pRenderContext);
 
     prepareBuffers(pRenderContext, renderData);
 
     prepareAccelerationStructure();
 
-    //Clear the reservoir
+    // Clear the reservoir
     if (mClearReservoir)
     {
         for (uint i = 0; i < 2; i++)
         {
             if (mpReservoirBuffer[i])
+            {
                 pRenderContext->clearUAV(mpReservoirBuffer[i]->getUAV().get(), uint4(0));
+            }
             if (mpCausticReservoir[i])
+            {
                 pRenderContext->clearUAV(mpCausticReservoir[i]->getUAV().get(), uint4(0));
+            }
             if (mpDirectFGReservoir[i])
+            {
                 pRenderContext->clearUAV(mpDirectFGReservoir[i]->getUAV().get(), uint4(0));
+            }
         }
             
         mClearReservoir = false;
     }
 
     if (mpRTXDI)
+    {
         mpRTXDI->beginFrame(pRenderContext, mScreenRes);
+    }
 
-    //RenderPasses
+    // RenderPasses
     traceTransmissiveDelta(pRenderContext, renderData);
 
     // Output the debug mask directly after the specular trace pass
     if (mDebugSpecularTraceMask) 
     {
         if (mpRTXDI)
+        {
             mpRTXDI->endFrame(pRenderContext);
+        }
         mFrameCount++;
         return;
     } 
@@ -318,35 +335,49 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
 
         generatePhotonsPass(pRenderContext, renderData);
         if (mMixedLights)
-            generatePhotonsPass(pRenderContext, renderData, true); // Secound pass. Always Analytic
+        {
+            // Secound pass. Always Analytic
+            generatePhotonsPass(pRenderContext, renderData, true);
+        }
     }
     
-    //Direct light resampling
-    if (mpRTXDI) mpRTXDI->update(pRenderContext, pMotionVectors, mpViewDirRayDistDI, mpViewDirDIPrev);
+    // Direct light resampling
+    if (mpRTXDI)
+    {
+        mpRTXDI->update(pRenderContext, pMotionVectors, mpViewDirRayDistDI, mpViewDirDIPrev);
+    }
 
     if (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::FinalGather)
     {
         collectPhotons(pRenderContext, renderData);
     }
-    
 
-    //Do resampling
+    // Do resampling
     if ((mRenderMode == RenderMode::ReSTIRFG) || (mRenderMode == RenderMode::ReSTIRGI))
+    {
         resamplingPass(pRenderContext, renderData);
+    }
 
     if (mReservoirValid && mCausticCollectMode == CausticCollectionMode::Reservoir &&
         (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::FinalGather))
+    {
         causticResamplingPass(pRenderContext, renderData);
+    }
 
     finalShadingPass(pRenderContext, renderData);
 
-    if (mpRTXDI) mpRTXDI->endFrame(pRenderContext);
+    if (mpRTXDI)
+    {
+        mpRTXDI->endFrame(pRenderContext);
+    }
 
-    //Add Direct Light at the end if this mode is enabled
+    // Add Direct Light at the end if this mode is enabled
     if (mDirectLightMode == DirectLightingMode::AnalyticDirect)
+    {
         directAnalytic(pRenderContext, renderData);
+    }
 
-    //SPPM
+    // SPPM
     if (mUseSPPM)
     {
         if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::CameraMoved) || mSPPMFramesCameraStill == 0)
@@ -753,8 +784,6 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     }
 }
 
-
-
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
 {
     bool lightingChanged = false;
@@ -766,7 +795,7 @@ bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
 
     mMixedLights = emissiveUsed && analyticUsed;
 
-    //Photon Emissive Light sampler
+    // Photon Emissive Light sampler
     if (mpScene->useEmissiveLights() && mRenderMode != RenderMode::ReSTIRGI)
     {
         // Init light sampler if not set
@@ -794,7 +823,7 @@ bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
         lightingChanged |= mpEmissiveLightSampler->update(pRenderContext);
     }
 
-    //ReSTIR GI Emissive light sampler
+    // ReSTIR GI Emissive light sampler
     if (mpScene->useEmissiveLights() && mRenderMode == RenderMode::ReSTIRGI)
     {
         // Init light sampler if not set
@@ -832,11 +861,11 @@ bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
         lightingChanged |= mpGIEmissiveLightSampler->update(pRenderContext);
     }
     
-
     return lightingChanged;
 }
 
-void ReSTIR_FG::resetLightSamplerGI() {
+void ReSTIR_FG::resetLightSamplerGI()
+{
     if (mpGIEmissiveLightSampler)
     {
         // Retain the options for the emissive sampler.
@@ -850,9 +879,9 @@ void ReSTIR_FG::resetLightSamplerGI() {
     }
 }
 
-void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& renderData) {
-
-    //Reset screen space depentend buffers if the resolution has changed
+void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    // Reset screen space depentend buffers if the resolution has changed
     if ((mScreenRes.x != renderData.getDefaultTextureDims().x) || (mScreenRes.y != renderData.getDefaultTextureDims().y) || mResetTex)
     {
         mScreenRes = renderData.getDefaultTextureDims();
@@ -892,8 +921,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mpSampleGenState.reset();
     }
 
-    //If reservoir format changed reset buffer
-    if (mRebuildReservoirBuffer){
+    // If reservoir format changed reset buffer
+    if (mRebuildReservoirBuffer)
+    {
         mpReservoirBuffer[0].reset();
         mpReservoirBuffer[1].reset();
         mRebuildReservoirBuffer = false;
@@ -909,12 +939,14 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         }
     }
 
-
-    //Per pixel Buffers/Textures
-    for (uint i = 0; i < 2; i++){
-        if (!mpReservoirBuffer[i]){
-            mpReservoirBuffer[i] = Texture::create2D(mpDevice, mScreenRes.x, mScreenRes.y, mUseReducedReservoirFormat ? ResourceFormat::RG32Uint : ResourceFormat::RGBA32Uint, 
-                                                     1u, 1u, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    // Per pixel Buffers/Textures
+    for (uint i = 0; i < 2; i++)
+    {
+        if (!mpReservoirBuffer[i])
+        {
+            mpReservoirBuffer[i] = Texture::create2D(
+                mpDevice, mScreenRes.x, mScreenRes.y, mUseReducedReservoirFormat ? ResourceFormat::RG32Uint : ResourceFormat::RGBA32Uint, 
+                1u, 1u, nullptr, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
             mpReservoirBuffer[i]->setName("ReSTIR_FG::Reservoir" + std::to_string(i));
         }
 
@@ -947,7 +979,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             }
         }
 
-         if (!mpDirectFGReservoir[i] && mCausticCollectMode == CausticCollectionMode::Reservoir && mCausticResamplingForFGDirect)
+        if (!mpDirectFGReservoir[i] && mCausticCollectMode == CausticCollectionMode::Reservoir && mCausticResamplingForFGDirect)
         {
             mpDirectFGReservoir[i] = Texture::create2D(
                 mpDevice, mScreenRes.x, mScreenRes.y, mUseReducedReservoirFormat ? ResourceFormat::RG32Uint : ResourceFormat::RGBA32Uint,
@@ -1023,7 +1055,6 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             );
             mpTemporalCausticSurface[j]->setName("ReSTIR_FG::CausticSurfaceTemporal " + std::to_string(j));
         }
-        
     }
 
     if (mpCausticRadiance[1] && (mCausticCollectMode != CausticCollectionMode::Temporal))
@@ -1095,7 +1126,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mpThpDI->setName("ReSTIR_FG::ThroughputDI");
     }
 
-    //Photon
+    // Photon
     if (!mpPhotonCounter[0])
     {
         for (uint i = 0; i < kPhotonCounterCount; i++)
@@ -1115,36 +1146,40 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     }
     for (uint i = 0; i < 2; i++)
     {
-        if (!mpPhotonAABB[i]) {
+        if (!mpPhotonAABB[i])
+        {
             mpPhotonAABB[i] = Buffer::createStructured(mpDevice, sizeof(AABB), mNumMaxPhotons[i]);
             mpPhotonAABB[i]->setName("ReSTIR_FG::PhotonAABB" + (i + 1));
         }
-        if (!mpPhotonData[i]) {
+        if (!mpPhotonData[i])
+        {
             uint pdSize = mUseReducePhotonData ? sizeof(uint) * 4 : sizeof(uint) * 8;
             mpPhotonData[i] = Buffer::createStructured(mpDevice, pdSize, mNumMaxPhotons[i]);
             mpPhotonData[i]->setName("ReSTIR_FG::PhotonData" + (i + 1));
         }
     }
 
-    if (!mpPhotonCullingMask){
+    if (!mpPhotonCullingMask)
+    {
         uint bufferSize = 1 << mCullingHashBufferSizeBits;
         uint width, height;
         computeQuadTexSize(bufferSize, width, height);
-        mpPhotonCullingMask = Texture::create2D(mpDevice, width, height, ResourceFormat::R8Uint, 1, 1, nullptr,ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+        mpPhotonCullingMask = Texture::create2D(
+            mpDevice, width, height, ResourceFormat::R8Uint, 1, 1, nullptr,ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         mpPhotonCullingMask->setName("ReSTIR_FG::PhotonCullingMask");
     }
-
 }
 
-void ReSTIR_FG::prepareAccelerationStructure() {
-    //Delete the Photon AS if max Buffer size changes
+void ReSTIR_FG::prepareAccelerationStructure()
+{
+    // Delete the Photon AS if max Buffer size changes
     if (mChangePhotonLightBufferSize)
     {
         mpPhotonAS.reset();
         mChangePhotonLightBufferSize = false;
     }
        
-    //Create the Photon AS
+    // Create the Photon AS
     if (!mpPhotonAS)
     {
         std::vector<uint64_t> aabbCount = {mNumMaxPhotons[0], mNumMaxPhotons[1]};
@@ -1153,7 +1188,8 @@ void ReSTIR_FG::prepareAccelerationStructure() {
     }
 }
 
-DefineList ReSTIR_FG::getMaterialDefines() {
+DefineList ReSTIR_FG::getMaterialDefines()
+{
     DefineList defines;
     defines.add("DiffuseBrdf", mUseLambertianDiffuse ? "DiffuseBrdfLambert" : "DiffuseBrdfFrostbite");
     defines.add("enableDiffuse", mDisableDiffuse ? "0" : "1");
@@ -1163,7 +1199,8 @@ DefineList ReSTIR_FG::getMaterialDefines() {
     return defines;
 }
 
-void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext) {
+void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
+{
     auto globalTypeConformances = mpScene->getMaterialSystem().getTypeConformances();
 
     mFinalGatherSamplePass.initRTProgram(mpDevice, mpScene, kFinalGatherSamplesShader, kMaxPayloadBytesGenerateFGSamples, globalTypeConformances);
@@ -1201,7 +1238,8 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext) {
     }
 }
 
-void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData) {
+void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData)
+{
     FALCOR_PROFILE(pRenderContext, "TraceDeltaTransmissive");
 
     mTraceTransmissionDelta.pProgram->addDefine("USE_ALPHA_TEST", mPhotonUseAlphaTest ? "1" : "0");
@@ -1257,7 +1295,8 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     mpScene->raytrace(pRenderContext, mTraceTransmissionDelta.pProgram.get(), mTraceTransmissionDelta.pVars, uint3(mScreenRes, 1));
 }
 
-void ReSTIR_FG::generateReSTIRGISamples(RenderContext* pRenderContext, const RenderData& renderData) {
+void ReSTIR_FG::generateReSTIRGISamples(RenderContext* pRenderContext, const RenderData& renderData)
+{
     FALCOR_PROFILE(pRenderContext, "TracePathGI");
 
     mReSTIRGISamplePass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");

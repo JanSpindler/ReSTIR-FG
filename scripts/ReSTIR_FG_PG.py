@@ -12,13 +12,11 @@ def render_graph_ReSTIR_FG():
         'AccumulatePass', 
         {
             'enabled': False, 
-            'outputSize': 
-            'Default', 
+            'outputSize': 'Default', 
             'autoReset': True, 
             'precisionMode': 'Single', 
             'maxFrameCount': 0, 
-            'overflowMode': 
-            'Stop'
+            'overflowMode': 'Stop'
         })
     g.create_pass(
         'ToneMapper', 

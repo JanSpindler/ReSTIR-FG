@@ -3,10 +3,10 @@
 
 BEGIN_NAMESPACE_FALCOR
 
-//Hash by thomas wang 
+// Hash by thomas wang 
 uint hash(int3 cell)
 {
-    //convert to uint64
+    // Convert to uint64
     uint64_t key = 0;
     uint64_t cells = cell.x;
     cells &= 0x1FFFFF;
