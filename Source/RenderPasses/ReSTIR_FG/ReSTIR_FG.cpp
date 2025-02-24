@@ -121,7 +121,6 @@ namespace
         {(uint)ReSTIR_FG::DirectLightingMode::None, "None"},
         {(uint)ReSTIR_FG::DirectLightingMode::RTXDI, "RTXDI"},
         {(uint)ReSTIR_FG::DirectLightingMode::AnalyticDirect, "AnalyticDirect"}
-
     };
 
     const Gui::DropdownList kCausticCollectionModeList{
@@ -734,8 +733,9 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     mOptionsChanged |= changed;
 }
 
-void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) {
-    //Reset Scene
+void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+{
+    // Reset Scene
     mpScene = pScene;
 
     mFinalGatherSamplePass = RayTraceProgramHelper::create();
@@ -751,37 +751,47 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     mClearReservoir = true;
     mResetTex = true;
 
-    if (mpScene)
+    if (!mpScene)
     {
-        const auto& bounds= mpScene->getSceneBounds();
-        const float sceneExtend = math::length(bounds.extent());
-        mPhotonFirstHitGuard = sceneExtend * 0.01f;   //Init to 1% of scene size
+        return;
+    }
 
-        if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
+    const auto& bounds= mpScene->getSceneBounds();
+    const float sceneExtend = math::length(bounds.extent());
+    mPhotonFirstHitGuard = sceneExtend * 0.01f; // Init to 1% of scene size
+
+    if (mpScene->hasGeometryType(Scene::GeometryType::Custom))
+    {
+        logWarning("This render pass only supports triangles. Other types of geometry will be ignored.");
+    }
+
+    prepareRayTracingShaders(pRenderContext);
+
+    // Experimental approximate Radius
+    if (mRadiusSetOverProperties)
+    {
+        mPhotonCollectRadius = mPhotonCollectionRadiusStart;
+        mRadiusSetOverProperties = false;
+    }
+    else
+    {
+        float startRadius = sceneExtend;
+        if (sceneExtend < 50.f)
         {
-            logWarning("This render pass only supports triangles. Other types of geometry will be ignored.");
-        }
-
-        prepareRayTracingShaders(pRenderContext);
-
-        //Experimental approximate Radius
-        if (mRadiusSetOverProperties)
-        {
-            mPhotonCollectRadius = mPhotonCollectionRadiusStart;
-            mRadiusSetOverProperties = false;
+            startRadius *= 0.0015f;
         }
         else
         {
-            float startRadius = sceneExtend;
-            if (sceneExtend < 50.f)
-                startRadius *= 0.0015f;
-            else
-                startRadius *= 0.00075f;
-
-            mPhotonCollectionRadiusStart = float2(startRadius, startRadius / 4.0f);
-            mPhotonCollectRadius = mPhotonCollectionRadiusStart;
+            startRadius *= 0.00075f;
         }
+
+        mPhotonCollectionRadiusStart = float2(startRadius, startRadius / 4.0f);
+        mPhotonCollectRadius = mPhotonCollectionRadiusStart;
     }
+
+    // 3D gaussian photon guiding
+    m3dgB = k3dgCb / sceneExtend;
+    m3dgSigma = k3dgCs / (1.0f + math::exp(-m3dgPSigma));
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -881,7 +891,7 @@ void ReSTIR_FG::resetLightSamplerGI()
 
 void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    // Reset screen space depentend buffers if the resolution has changed
+    // Reset screen space dependent buffers if the resolution has changed
     if ((mScreenRes.x != renderData.getDefaultTextureDims().x) || (mScreenRes.y != renderData.getDefaultTextureDims().y) || mResetTex)
     {
         mScreenRes = renderData.getDefaultTextureDims();
@@ -1063,7 +1073,6 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         for (uint j = 0; j < 2; j++)
             mpTemporalCausticSurface[j].reset();
     }
-        
 
     if (!mpVBuffer)
     {
@@ -1477,38 +1486,42 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuard"] =  mPhotonFirstHitGuard;
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
-     if (mpEmissiveLightSampler)
+    if (mpEmissiveLightSampler)
+    {
         mpEmissiveLightSampler->setShaderData(var["Light"]["gEmissiveSampler"]);
+    }
 
-     // Set the photon buffers
-     for (uint32_t i = 0; i < 2; i++){
+    // Set the photon buffers
+    for (uint32_t i = 0; i < 2; i++)
+    {
         var["gPhotonAABB"][i] = mpPhotonAABB[i];
         var["gPackedPhotonData"][i] = mpPhotonData[i];
-     }
-     var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
-     var["gPhotonCullingMask"] = mpPhotonCullingMask;
+    }
+    var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
+    var["gPhotonCullingMask"] = mpPhotonCullingMask;
 
      // Trace the photons
-     if (traceScene)
+    if (traceScene)
+    {
         mpScene->raytrace(pRenderContext, mGeneratePhotonPass.pProgram.get(), mGeneratePhotonPass.pVars, uint3(targetDim, 1));
+    }
 
-     pRenderContext->uavBarrier(mpPhotonCounter[mFrameCount % kPhotonCounterCount].get());
-     pRenderContext->uavBarrier(mpPhotonAABB[0].get());
-     pRenderContext->uavBarrier(mpPhotonData[0].get());
-     pRenderContext->uavBarrier(mpPhotonAABB[1].get());
-     pRenderContext->uavBarrier(mpPhotonData[1].get());
+    pRenderContext->uavBarrier(mpPhotonCounter[mFrameCount % kPhotonCounterCount].get());
+    pRenderContext->uavBarrier(mpPhotonAABB[0].get());
+    pRenderContext->uavBarrier(mpPhotonData[0].get());
+    pRenderContext->uavBarrier(mpPhotonAABB[1].get());
+    pRenderContext->uavBarrier(mpPhotonData[1].get());
 
-     if (!mMixedLights || mMixedLights && secondPass)
-     {
+    if (!mMixedLights || mMixedLights && secondPass)
+    {
         handlePhotonCounter(pRenderContext);
 
         // Build/Update Acceleration Structure
-        uint2 currentPhotons = mFrameCount > 0 ? uint2(float2(mCurrentPhotonCount) * mASBuildBufferPhotonOverestimate) : mNumMaxPhotons;
+        const uint2 currentPhotons = mFrameCount > 0 ? uint2(float2(mCurrentPhotonCount) * mASBuildBufferPhotonOverestimate) : mNumMaxPhotons;
         std::vector<uint64_t> photonBuildSize = {
             std::min(mNumMaxPhotons[0], currentPhotons[0]), std::min(mNumMaxPhotons[1], currentPhotons[1])};
         mpPhotonAS->update(pRenderContext, photonBuildSize);
-     }
-    
+    }
 }
 
 void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)

@@ -175,13 +175,13 @@ private:
     void computeQuadTexSize(uint maxItems, uint& outWidth, uint& outHeight);
 
     //
-    //Constants
+    // Constants
     //
     const ResourceFormat kViewDirFormat = ResourceFormat::RGBA32Float;  //View Dir format
     static const uint kPhotonCounterCount = 3;
 
     //
-    //Pointers
+    // Pointers
     //
     ref<Scene> mpScene;                                                 //Scene Pointer
     ref<SampleGenerator> mpSampleGenerator;                             //GPU Sample Gen
@@ -192,7 +192,7 @@ private:
     std::unique_ptr<CustomAccelerationStructure> mpPhotonAS;            //Accel Pointer
 
     //
-    //Parameters
+    // Parameters
     //
     uint mFrameCount = 0;
     bool mReservoirValid = false;
@@ -205,25 +205,25 @@ private:
     bool mResetTex = false;
     bool mOptionsChanged = false;
 
-    //Material Settings
+    // Material Settings
     bool mUseLambertianDiffuse = true;  //Diffuse BRDF used by ReSTIR PT and SuffixReSTIR
     bool mDisableDiffuse = false;
     bool mDisableSpecular = false;
     bool mDisableTranslucency = false;
     bool mStoreSampleGenState = false;   //Stores samples GenStates
 
-    //Specular Trace Options
+    // Specular Trace Options
     uint mTraceMaxBounces = 10;                                    //Number of Specular/Transmissive bounces allowed
     bool mTraceRequireDiffuseMat = true;                           //Requires a diffuse part in addition to delta lobes
     float2 mTraceRoughnessCutoff = float2(0.25f, 0.7f);            // Min/Max Roughness cutoff. If below min material is considered specular, if above max it is considered diffuse
     float mTraceDiffuseCutoff = 0.3f;                              //If diffuse part is requred, it only counts as diffuse if any channel is over this value
     bool mDebugSpecularTraceMask = false;                          //Mask used in paper
 
-    //Light
+    // Light
     bool mMixedLights = false;                                      //True if analytic and emissive lights are in the scene
     float mPhotonAnalyticRatio = 0.5f;                              //Analytic photon distribution ratio in a mixed light case. E.g. 0.3 -> 30% analytic, 70% emissive
 
-    //Reservoir
+    // Reservoir
     bool mUseReducedReservoirFormat = false;                        //Use a reduced reservoir format
     bool mRebuildReservoirBuffer = false;                           //Rebuild the reservoir buffer
     bool mClearReservoir = true;                                    //Clears both reservoirs
@@ -238,8 +238,7 @@ private:
     BiasCorrectionMode mBiasCorrectionMode = BiasCorrectionMode::RayTraced; // Bias Correction Mode
     bool mUseCausticsForIndirectLight = true;                  // Use Caustic photons as indirect light samples
 
-
-    //Photon
+    // Photon
     uint mPhotonMaxBounces = 10;                                    //Number of Photon bounces
     uint mMaxCausticBounces = 10;                                   //Number of diffuse bounces for a caustic
     float mPhotonRejection = 0.3f;                                  //Probability a global photon is stored
@@ -289,23 +288,29 @@ private:
     float2 mSPPMAlpha = float2(2.f / 3.f);
     uint mSPPMFramesCameraStill = 0;
 
-    //ReSTIR GI
+    // 3D gaussian photon guiding
+    static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
+    static constexpr float k3dgCs = 0.65f;
+    float m3dgPSigma = 1.0f; // Learned parameter for 3D gaussians
+    float m3dgB = 1.0f; // Scaling factor applied to scene positions
+    float m3dgSigma = 1.0f; // Standard deviation of 3D gaussians
+
+    // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
     bool mGIAlphaTest = true;               // Alpha Test
     bool mGINEE = true;                   // Next event estimation in GI
     bool mGIRussianRoulette = true;       // Use Russian Roulette in GI
     bool mGIUseImportanceSampling = true; // Enables Important Sampling
-    //Light Sampler GI
+    // Light Sampler GI
     bool mGIRebuildLightSampler = false;
     EmissiveLightSamplerType mGIEmissiveType = EmissiveLightSamplerType::LightBVH;
     std::unique_ptr<EmissiveLightSampler> mpGIEmissiveLightSampler; // Light Sampler
     LightBVHSampler::Options mGILightBVHOptions;
-   
 
     //
     // Buffer and Textures
     //
-    ref<Texture> mpFinalGatherSampleHitData;    //V-Buffer of the Final Gather sample hits
+    ref<Texture> mpFinalGatherSampleHitData;    // V-Buffer of the Final Gather sample hits
     ref<Buffer> mpFGSampelDataBuffer[2]; // Per pixel final gather sample information
     ref<Texture> mpReservoirBuffer[2];  // Buffers for the reservoir
     ref<Buffer> mpSurfaceBuffer[2];     // Buffer for surface data
@@ -315,17 +320,17 @@ private:
     ref<Buffer> mpPhotonCounterCPU[kPhotonCounterCount]; // For showing the current number of photons in the UI
     ref<Texture> mpPhotonCullingMask; // Mask for photon culling
     ref<Texture> mpCausticRadiance[2];     // Caustic Radiance from the Collection pass
-    ref<Texture> mpVBuffer;             //Work copy for VBuffer
-    ref<Texture> mpViewDir;             //View dir tex (needed for highly specular and transparent materials)
-    ref<Texture> mpViewDirPrev;         //Previous View dir
-    ref<Texture> mpRayDist;             //Ray distance (needed for highly specular and transparent materials)
-    ref<Texture> mpThp;                 //Throughput
-    ref<Texture> mpTemporalCausticSurface[2];   //Small buffer for surface rejection of temporal samples
+    ref<Texture> mpVBuffer;             // Work copy for VBuffer
+    ref<Texture> mpViewDir;             // View dir tex (needed for highly specular and transparent materials)
+    ref<Texture> mpViewDirPrev;         // Previous View dir
+    ref<Texture> mpRayDist;             // Ray distance (needed for highly specular and transparent materials)
+    ref<Texture> mpThp;                 // Throughput
+    ref<Texture> mpTemporalCausticSurface[2];   // Small buffer for surface rejection of temporal samples
     ref<Texture> mpCausticReservoir[2];
     ref<Buffer> mpCausticSample[2];
     ref<Texture> mpDirectFGReservoir[2];
     ref<Buffer> mpDirectFGSample[2];
-    ref<Buffer> mpSampleGenState;       //SampleGeneratorState
+    ref<Buffer> mpSampleGenState;       // SampleGeneratorState
 
     ref<Texture> mpVBufferDI;          // Work copy for VBuffer (RTXDI or DirectAnalytical)
     ref<Texture> mpViewDirRayDistDI;   // View dir tex (RTXDI or DirectAnalytical)
@@ -333,9 +338,8 @@ private:
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
 
     //
-    //Render Passes/Programms
+    // Render Passes/Programms
     //
-
     struct RayTraceProgramHelper
     {
         ref<RtProgram> pProgram;
