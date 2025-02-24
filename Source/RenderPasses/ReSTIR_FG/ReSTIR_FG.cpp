@@ -29,6 +29,13 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
+struct Gaussian3D
+{
+    float3 mean;
+    float sigma;
+    float weight;
+};
+
 namespace
 {
     const std::string kTraceTransmissionDeltaShader = "RenderPasses/ReSTIR_FG/Shader/TraceTransmissionDelta.rt.slang";
@@ -148,7 +155,7 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
         throw RuntimeError("ReSTIR_FG: Raytracing Tier 1.1 is not supported by the current device");
     }
 
-    //Handle Properties
+    // Handle Properties
     parseProperties(props);
 
     // Create sample generator.
@@ -791,7 +798,7 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
 
     // 3D gaussian photon guiding
     m3dgB = k3dgCb / sceneExtend;
-    m3dgSigma = k3dgCs / (1.0f + math::exp(-m3dgPSigma));
+    m3dgLightCount = math::max<uint>(1, mpScene->getLightCollection(pRenderContext)->getTotalLightCount());
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1177,6 +1184,15 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             mpDevice, width, height, ResourceFormat::R8Uint, 1, 1, nullptr,ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         mpPhotonCullingMask->setName("ReSTIR_FG::PhotonCullingMask");
     }
+
+    // 3D gaussian photon guiding
+    if (!mp3dgGaussianBuffer)
+    {
+        mp3dgGaussianBuffer = Buffer::createStructured(
+            mpDevice, sizeof(Gaussian3D), m3dgLightCount * m3dgGaussianCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+        );
+        mp3dgGaussianBuffer->setName("ReSTIR_FG::3DGaussianBuffer");
+    }
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1425,14 +1441,15 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         dispatchedF *= secondPass ? mPhotonAnalyticRatio : 1.f - mPhotonAnalyticRatio;
         dispatchedPhotons = uint(dispatchedF);
         if (dispatchedPhotons == 0)
+        {
             traceScene = false;
+        }
     }
 
     uint photonXExtent = std::max(1u, dispatchedPhotons / mPhotonYExtent);  //Divide total count by Y Extent
     photonXExtent += 32u - (photonXExtent % 32);                            //Round up to a multiple of 32
     const uint2 targetDim = uint2(photonXExtent, mPhotonYExtent);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-
 
     // Defines
     mGeneratePhotonPass.pProgram->addDefine("USE_EMISSIVE_LIGHT", mpScene->useEmissiveLights() ? "1" : "0");
@@ -1477,6 +1494,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     if (mCausticCollectMode != CausticCollectionMode::None) flags |= 0x04;
     if (!mpScene->useEmissiveLights() || secondPass) flags |= 0x20; // Analytic lights collect flag
 
+    // Constant Buffer
     nameBuf = "CB";
     var[nameBuf]["gMaxRecursion"] = mPhotonMaxBounces;
     var[nameBuf]["gRejection"] = mPhotonRejection;
@@ -1485,6 +1503,13 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gCausticsBounces"] = mMaxCausticBounces;
     var[nameBuf]["gGenerationLampIntersectGuard"] =  mPhotonFirstHitGuard;
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
+
+    // 3D gaussian photon guiding
+    nameBuf = "GaussianPhotonGuiding";
+    var[nameBuf]["gaussianCount"] = m3dgGaussianCount;
+    var[nameBuf]["lightCount"] = m3dgLightCount;
+    var[nameBuf]["cs"] = k3dgCs;
+    var[nameBuf]["B"] = m3dgB;
 
     if (mpEmissiveLightSampler)
     {
@@ -1500,7 +1525,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
 
-     // Trace the photons
+    // Trace the photons
     if (traceScene)
     {
         mpScene->raytrace(pRenderContext, mGeneratePhotonPass.pProgram.get(), mGeneratePhotonPass.pVars, uint3(targetDim, 1));

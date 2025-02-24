@@ -26,6 +26,7 @@ cbuffer PerFrame
 
 cbuffer CB
 {
+    //
     uint gMaxRecursion; //Max photon recursion depths
     float gRejection; //Probability that a photon is stored as a light
     uint gFlags;       //Flags for the pass. See GenerationFlags enum
@@ -35,16 +36,35 @@ cbuffer CB
     float gGenerationLampIntersectGuardStoreProbability; //Percentage a photon is stored
 };
 
+cbuffer GaussianPhotonGuiding
+{
+    uint gaussianCount;
+    uint lightCount;
+    float cs;
+    float B;
+};
+
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
 cbuffer Light{
     EmissiveLightSampler gEmissiveSampler;
 }
 #endif
 
+struct Gaussian3D
+{
+    float3 mean; // Mean
+    float sigma; // Standard deviation
+    float weight; // Unnormalized weight used in GMM
+};
+
+//
 RWStructuredBuffer<AABB> gPhotonAABB[2];
 RWStructuredBuffer<PhotonDataPacked> gPackedPhotonData[2];
 RWBuffer<uint> gPhotonCounter;
-Texture2D<uint>gPhotonCullingMask;
+Texture2D<uint> gPhotonCullingMask;
+
+// 3D gaussian photon guiding
+RWStructuredBuffer<Gaussian3D> gGaussians;
 
 enum class GenerationFlags // : uint32_t
 {

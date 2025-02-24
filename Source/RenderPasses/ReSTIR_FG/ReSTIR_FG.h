@@ -291,9 +291,9 @@ private:
     // 3D gaussian photon guiding
     static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
     static constexpr float k3dgCs = 0.65f;
-    float m3dgPSigma = 1.0f; // Learned parameter for 3D gaussians
     float m3dgB = 1.0f; // Scaling factor applied to scene positions
-    float m3dgSigma = 1.0f; // Standard deviation of 3D gaussians
+    uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
+    uint m3dgLightCount = 0; // Number of lights in the scene
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
@@ -336,6 +336,8 @@ private:
     ref<Texture> mpViewDirRayDistDI;   // View dir tex (RTXDI or DirectAnalytical)
     ref<Texture> mpViewDirDIPrev;      // Previous View dir for direct surfaces
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
+
+    ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
 
     //
     // Render Passes/Programms
