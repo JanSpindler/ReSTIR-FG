@@ -1504,7 +1504,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuard"] =  mPhotonFirstHitGuard;
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
-    // 3D gaussian photon guiding
+    // 3D gaussian photon guiding constants
     nameBuf = "GaussianPhotonGuiding";
     var[nameBuf]["gaussianCount"] = m3dgGaussianCount;
     var[nameBuf]["lightCount"] = m3dgLightCount;
@@ -1524,6 +1524,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     }
     var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
+
+    // 3D gaussian photon guiding buffers
+    var["gGaussians"] = mp3dgGaussianBuffer;
 
     // Trace the photons
     if (traceScene)
