@@ -226,7 +226,7 @@ float3 SampleGaussian(Gaussian3D gaussian, inout SampleGenerator sg)
     return x + mu;
 }
 
-float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg)
+float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg, out Gaussian3D outGaussian)
 {
     // Get index of first gaussian belonging to this light
     const uint startGaussIdx = lightIdx * gGaussianCount;
@@ -248,12 +248,14 @@ float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg)
         sum += exp(gaussian.weight);
         if (r <= sum)
         {
+            outGaussian = gaussian;
             return SampleGaussian(gaussian, sg);
         }
     }
 
     // Should not be the case
-    return SampleGaussian(gGaussians[startGaussIdx + gGaussianCount], sg);
+    outGaussian = gGaussians[startGaussIdx + gGaussianCount - 1];
+    return SampleGaussian(outGaussian, sg);
 }
 
 // -----------------------------------------------------------------------
@@ -486,14 +488,16 @@ void rayGen()
         }
 
         // Sample direction
-#if 1
+#if 0
         float lightDirPDF = 1.f;
         const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(lightSg), lightDirPDF);
         if (lightDirPDF <= 0.f) { return; }
         ray.Direction = fromLocalToWorld(pls.normal, woLocal);
 #else
-        const float3 gmmPos = SampleGMM(lightIdx, lightSg);
+        Gaussian3D gaussian;
+        const float3 gmmPos = SampleGMM(lightIdx, lightSg, gaussian);
         ray.Direction = normalize(gmmPos - pls.posW);
+        pls.flux /= F0(gmmPos, pls.posW, gaussian.mean, gaussian.sigma);
 #endif
 
         // Lambert Emitter
