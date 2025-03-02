@@ -34,6 +34,8 @@ struct Gaussian3D
     float3 mean;
     float sigma;
     float weight;
+
+    constexpr struct Gaussian3D() : mean(0.f), sigma(1.f), weight(0.f) {}
 };
 
 namespace
@@ -1188,9 +1190,15 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     // 3D gaussian photon guiding
     if (!mp3dgGaussianBuffer)
     {
+        const size_t gaussianCount = m3dgLightCount * m3dgGaussianCount;
+        std::vector<Gaussian3D> gaussians(gaussianCount, Gaussian3D());
         mp3dgGaussianBuffer = Buffer::createStructured(
-            mpDevice, sizeof(Gaussian3D), m3dgLightCount * m3dgGaussianCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
-        );
+            mpDevice,
+            sizeof(Gaussian3D),
+            gaussianCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None,
+            gaussians.data());
         mp3dgGaussianBuffer->setName("ReSTIR_FG::3DGaussianBuffer");
     }
 }
