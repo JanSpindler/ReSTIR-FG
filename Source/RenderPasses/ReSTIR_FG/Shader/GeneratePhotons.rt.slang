@@ -37,10 +37,10 @@ cbuffer CB
 
 cbuffer GaussianPhotonGuiding
 {
-    uint gaussianCount;
-    uint lightCount;
-    float cs;
-    float B;
+    uint gGaussianCount;
+    uint gLightCount;
+    float gCs;
+    float gB;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
@@ -224,6 +224,36 @@ float3 SampleGaussian(Gaussian3D gaussian, inout SampleGenerator sg)
 
     const float3 x = radius * float3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
     return x + mu;
+}
+
+float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg)
+{
+    // Get index of first gaussian belonging to this light
+    const uint startGaussIdx = lightIdx * gGaussianCount;
+
+    // Calculate softmax denominator
+    float softmaxSum = 0.0f;
+    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
+    {
+        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
+        softmaxSum += exp(gaussian.weight);
+    }
+
+    // Sample gaussian from mixture model
+    const float r = sampleNext1D(sg) * softmaxSum;
+    float sum = 0.0f;
+    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
+    {
+        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
+        sum += exp(gaussian.weight);
+        if (r <= sum)
+        {
+            return SampleGaussian(gaussian, sg);
+        }
+    }
+
+    // Should not be the case
+    return SampleGaussian(gGaussians[startGaussIdx + gGaussianCount], sg);
 }
 
 // -----------------------------------------------------------------------

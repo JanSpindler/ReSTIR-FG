@@ -1506,11 +1506,12 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
     // 3D gaussian photon guiding constants
     nameBuf = "GaussianPhotonGuiding";
-    var[nameBuf]["gaussianCount"] = m3dgGaussianCount;
-    var[nameBuf]["lightCount"] = m3dgLightCount;
-    var[nameBuf]["cs"] = k3dgCs;
-    var[nameBuf]["B"] = m3dgB;
+    var[nameBuf]["gGaussianCount"] = m3dgGaussianCount;
+    var[nameBuf]["gLightCount"] = m3dgLightCount;
+    var[nameBuf]["gCs"] = k3dgCs;
+    var[nameBuf]["gB"] = m3dgB;
 
+    // Light samples constants
     if (mpEmissiveLightSampler)
     {
         mpEmissiveLightSampler->setShaderData(var["Light"]["gEmissiveSampler"]);
