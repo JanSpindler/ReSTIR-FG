@@ -259,7 +259,7 @@ float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg)
 // -----------------------------------------------------------------------
 
 #if USE_EMISSIVE_LIGHT  // Function is only valid if the emissive sampler is set
-bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls)
+bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls, out uint lightIdx)
 {
     // Init
     pls = {};
@@ -275,6 +275,9 @@ bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls)
 
     // Safety precaution as the result of the multiplication may be rounded to triangleCount even if uLight < 1.0 when triangleCount is large.
     uint triangleIndex = min((uint)(sampleNext1D(sg) * triangleCount), triangleCount - 1);
+
+    // Get light index from triangle index
+    lightIdx = gScene.lightCollection.getLightIdx(triangleIndex);
 
     // Get the triangle index from the alias table
     const uint2 packed = gEmissiveSampler._emissivePower.triangleAliasTable[triangleIndex];
@@ -476,16 +479,22 @@ void rayGen()
     else
     {
         // Sample emissive light
-        if (!createLightSample(lightSg, pls))
+        uint lightIdx = 0;
+        if (!createLightSample(lightSg, pls, lightIdx))
         {
             return;
         }
 
         // Sample direction
+#if 1
         float lightDirPDF = 1.f;
         const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(lightSg), lightDirPDF);
         if (lightDirPDF <= 0.f) { return; }
         ray.Direction = fromLocalToWorld(pls.normal, woLocal);
+#else
+        const float3 gmmPos = SampleGMM(lightIdx, lightSg);
+        ray.Direction = normalize(gmmPos - pls.posW);
+#endif
 
         // Lambert Emitter
         pls.flux *= M_PI;
