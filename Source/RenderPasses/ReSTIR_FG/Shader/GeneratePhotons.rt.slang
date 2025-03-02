@@ -197,17 +197,33 @@ float f0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 
     const float term1 = sigma2 * exp(-0.5f * d2 / sigma2) * d * cosTheta;
     const float term2 = sqrt(PI * 0.5f) * sigma * exp(-0.5f * d2 * sinTheta2 / sigma2) * (sigma2 + (d2 * cosTheta2));
-    // const float term3 = 1.0f * erf((d * cosTheta) / (SQRT_2 * sigma));
     const float term3 = 1.0f * erf((d * cosTheta) / (SQRT_2 * sigma));
 
     return term1 + (term2 * term3);
 }
 
-const float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
+float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 {
     const float denom = 2.0f * PI * sigma * sigma;
     const float denom3 = denom * denom * denom;
     return f0(x, x0, mu, sigma) / sqrt(denom3);
+}
+
+float3 SampleGaussian(Gaussian3D gaussian, inout SampleGenerator sg)
+{
+    const float3 mu = gaussian.mean;
+    const float sigma = gaussian.sigma;
+
+    const float r1 = sampleNext1D(sg);
+    const float r2 = sampleNext1D(sg);
+    const float r3 = sampleNext1D(sg);
+
+    const float theta = 2.0f * PI * r1;
+    const float phi = acos(2.0f * r2 - 1.0f);
+    const float radius = sigma * pow(-2.0f * log(r3), 0.5f);
+
+    const float3 x = radius * float3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
+    return x + mu;
 }
 
 // -----------------------------------------------------------------------
