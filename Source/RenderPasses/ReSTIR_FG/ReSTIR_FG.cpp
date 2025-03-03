@@ -410,8 +410,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
 
     widget.dropdown("Direct Light Mode", kDirectLightRenderModeList, (uint&)mDirectLightMode);
     widget.tooltip(
-        "None: Direct Light is not calculated \n RTXDI: Optimized ReSTIR is used for direct light \n AnalyticDirect: All analytic lights "
-        "are directly evaluated (Emissive light is ignored)"
+        "None: Direct Light is not calculated \n RTXDI: Optimized ReSTIR is used for direct light \n"
+        "AnalyticDirect : All analytic lights are directly evaluated (Emissive light is ignored)"
     );
 
     bool renderModeChanged = widget.dropdown("(Indirect) Render Mode", kRenderModeList, (uint&)mRenderMode);
@@ -421,9 +421,13 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         changed = true;
         //Switch Caustic Collection mode to fit the algorithm
         if (mRenderMode == RenderMode::FinalGather)
+        {
             mCausticCollectMode = CausticCollectionMode::All;
+        }
         if (mRenderMode == RenderMode::ReSTIRFG)
+        {
             mCausticCollectMode = CausticCollectionMode::Reservoir;        
+        }
     }
 
     if (auto group = widget.group("Specular Trace Options"))
@@ -435,14 +439,17 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         if (mTraceRequireDiffuseMat)
         {
             group.var("Diffuse Cutoff", mTraceDiffuseCutoff, 0.f, 1.f,0.00f);
-            group.tooltip("Material only counts as diffuse if the mean diffuse part is over this value. \n Is applied after the roughness cutoff"
-                "(only for values between).\n Useful for rough metals");
+            group.tooltip(
+                "Material only counts as diffuse if the mean diffuse part is over this value. \n"
+                "Is applied after the roughness cutoff (only for values between).\n Useful for rough metals");
         }
         group.checkbox("Show Debug Path Mask", mDebugSpecularTraceMask);
-        group.tooltip("Shows a mask which path is used for which pixel. \n Blue: First hit is diffuse \n Red: DI and FG evaluated on the same surface \n Green: DI and FG evaluated on different surfaces.");
+        group.tooltip(
+            "Shows a mask which path is used for which pixel. \n Blue: First hit is diffuse \n"
+            "Red: DI and FG evaluated on the same surface \n Green: DI and FG evaluated on different surfaces.");
     }
 
-    //Photon Mapping Options
+    // Photon Mapping Options
     if (mRenderMode != RenderMode::ReSTIRGI)
     {
         if (auto group = widget.group("PhotonMapper"))
@@ -454,13 +461,26 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
             else
             {
                 uint dispatchedPhotons = mNumDispatchedPhotons;
-                bool disPhotonChanged = group.var("Dispatched Photons", dispatchedPhotons, mPhotonYExtent, 9984000u, (float)mPhotonYExtent);
+                bool disPhotonChanged = group.var(
+                    "Dispatched Photons",
+                    dispatchedPhotons,
+                    mPhotonYExtent,
+                    9984000u,
+                    (float)mPhotonYExtent);
                 if (disPhotonChanged)
+                {
                     mNumDispatchedPhotons = (uint)(dispatchedPhotons / mPhotonYExtent) * mPhotonYExtent;
+                }
             }
             
-            group.text("Photons: " + std::to_string(mCurrentPhotonCount[0]) + " / " + std::to_string(mNumMaxPhotons[0]));
-            group.text("Caustic photons: " + std::to_string(mCurrentPhotonCount[1]) + " / " + std::to_string(mNumMaxPhotons[1]));
+            group.text(
+                "Photons: " +
+                std::to_string(mCurrentPhotonCount[0]) + " / " +
+                std::to_string(mNumMaxPhotons[0]));
+            group.text(
+                "Caustic photons: " +
+                std::to_string(mCurrentPhotonCount[1]) + " / " +
+                std::to_string(mNumMaxPhotons[1]));
             group.var("Photon Buffer Size", mNumMaxPhotonsUI, 100u, 100000000u, 100);
             group.tooltip("First -> Global, Second -> Caustic");
             mChangePhotonLightBufferSize = group.button("Apply", true);
@@ -470,25 +490,32 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 if (mMixedLights)
                 {
                     changed |= groupGen.var("Mixed Analytic Ratio", mPhotonAnalyticRatio, 0.f, 1.f, 0.01f);
-                    groupGen.tooltip("Analytic photon distribution ratio in a mixed light case. E.g. 0.3 -> 30% analytic, 70% emissive");
+                    groupGen.tooltip(
+                        "Analytic photon distribution ratio in a mixed light case."
+                        "E.g. 0.3 -> 30% analytic, 70% emissive");
                 }
 
                 changed |= groupGen.checkbox("Enable dynamic photon dispatch", mUseDynamicPhotonDispatchCount);
-                groupGen.tooltip("Changed the number of dispatched photons dynamically. Tries to fill the photon buffer");
+                groupGen.tooltip(
+                    "Changed the number of dispatched photons dynamically. Tries to fill the photon buffer");
                 if (mUseDynamicPhotonDispatchCount)
                 {
                     if (auto groupDynChange = groupGen.group("DynamicDispatchOptions"))
                     {
-                        changed |= groupDynChange.var("Max dispatched", mPhotonDynamicDispatchMax, mPhotonYExtent, 4000000u);
+                        changed |= groupDynChange.var(
+                            "Max dispatched", mPhotonDynamicDispatchMax, mPhotonYExtent, 4000000u);
                         groupDynChange.tooltip("Maximum number the dispatch can be increased to");
-                        changed |= groupDynChange.var("Guard Percentage", mPhotonDynamicGuardPercentage, 0.0f, 1.f, 0.001f);
+                        changed |= groupDynChange.var(
+                            "Guard Percentage", mPhotonDynamicGuardPercentage, 0.0f, 1.f, 0.001f);
                         groupDynChange.tooltip(
-                            "If current fill rate is under PhotonBufferSize * (1-pGuard), the values are accepted. Reduces the changes "
-                            "every frame"
+                            "If current fill rate is under PhotonBufferSize * (1-pGuard), the values are accepted. "
+                            "Reduces the changes every frame"
                         );
-                        changed |= groupDynChange.var("Percentage Change", mPhotonDynamicChangePercentage, 0.01f, 10.f, 0.01f);
+                        changed |= groupDynChange.var(
+                            "Percentage Change", mPhotonDynamicChangePercentage, 0.01f, 10.f, 0.01f);
                         groupDynChange.tooltip(
-                            "Increase/Decrease percentage from the Buffer Size. With current value a increase/decrease of :" +
+                            "Increase/Decrease percentage from the Buffer Size. With current value a "
+                            "increase/decrease of : " +
                             std::to_string(mPhotonDynamicChangePercentage * mNumMaxPhotons[0]) + "is expected"
                         );
                     }
@@ -620,7 +647,15 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         }
     }
 
-    //ReSTIR GI
+    // Photon Guiding
+    if (mRenderMode != RenderMode::ReSTIRGI)
+    {
+        if (auto group = widget.group("PhotonGuiding"))
+        {
+        }
+    }
+
+    // ReSTIR GI
     if (mRenderMode == RenderMode::ReSTIRGI)
     {
         if (auto group = widget.group("ReSTIR GI Initial Sample"))
@@ -652,7 +687,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         }
     }
 
-    //Resampling
+    // Resampling
     if (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::ReSTIRGI)
     {
         if (auto group = widget.group("Resampling"))
@@ -702,17 +737,21 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         }
     }
 
+    // RTXDI
     if (mpRTXDI)
     {
         if (auto group = widget.group("RTXDI (ReSTIR DI)"))
         {
             bool rtxdiChanged = mpRTXDI->renderUI(group);
             if (rtxdiChanged)
+            {
                 mRTXDIOptions = mpRTXDI->getOptions();
+            }
             changed |= rtxdiChanged;
         }
     }
 
+    // Material Options
     if (auto group = widget.group("Material Options"))
     {
         changed |= group.checkbox("Use Lambertian Diffuse BRDF", mUseLambertianDiffuse);
@@ -722,6 +761,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         changed |= group.checkbox("Disable Translucency", mDisableTranslucency);
        
     }
+
+    // Misc
     if (auto group = widget.group("Misc"))
     {
         changed |= group.var("Sample Attenuation Radius", mSampleRadiusAttenuation, 0.0f, 500.f, 0.001f);
