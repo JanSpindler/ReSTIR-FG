@@ -1271,7 +1271,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         // Init N random gaussians in the scene
         // TODO: Robust initialization from paper
         const float3 sceneExtent = mpScene->getSceneBounds().extent();
-        const float sigma = math::length(sceneExtent) / 10.0f;
+        const float sigma = math::length(sceneExtent) / 16.0f;
         for (size_t gaussIdx = 0; gaussIdx < gaussianCount; ++gaussIdx)
         {
             const float3 mean = mpScene->getSceneBounds().minPoint + GenRandomFloat3() * sceneExtent;

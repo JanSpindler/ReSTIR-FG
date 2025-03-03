@@ -210,7 +210,7 @@ float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
     return f0(x, x0, mu, sigma) / sqrt(denom3);
 }
 
-float3 SampleGaussian(Gaussian3D gaussian, inout SampleGenerator sg)
+float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
 {
     const float3 mu = gaussian.mean;
     const float sigma = gaussian.sigma;
@@ -227,7 +227,7 @@ float3 SampleGaussian(Gaussian3D gaussian, inout SampleGenerator sg)
     return x + mu;
 }
 
-float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg, out Gaussian3D outGaussian)
+float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator sg, out float gmmPdf)
 {
     // Get index of first gaussian belonging to this light
     const uint startGaussIdx = lightIdx * gGaussianCount;
@@ -240,23 +240,33 @@ float3 SampleGMM(const uint lightIdx, inout SampleGenerator sg, out Gaussian3D o
         softmaxSum += exp(gaussian.weight);
     }
 
-    // Sample gaussian from mixture model
-    const float r = sampleNext1D(sg) * softmaxSum;
+    // Select a gaussian and sample position
+    const float r = sampleNext1D(sg);
     float sum = 0.0f;
+    float3 gmmPos;
     for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
     {
         const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
-        sum += exp(gaussian.weight);
+        const float gaussWeight = exp(gaussian.weight) / softmaxSum;
+        sum += gaussWeight;
         if (r <= sum)
         {
-            outGaussian = gaussian;
-            return SampleGaussian(gaussian, sg);
+            gmmPos = SampleGaussian(gaussian, sg);
+            break;
         }
     }
 
-    // Should not be the case
-    outGaussian = gGaussians[startGaussIdx + gGaussianCount - 1];
-    return SampleGaussian(outGaussian, sg);
+    // Calculate pdf by marginalizing over all gaussians
+    gmmPdf = 0.0f;
+    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
+    {
+        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
+        const float gaussWeight = exp(gaussian.weight) / softmaxSum;
+        gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.sigma) * gaussWeight;
+    }
+
+    // Return
+    return gmmPos;
 }
 
 // -----------------------------------------------------------------------
@@ -368,10 +378,10 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
     // Sample direction with photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
     // Sample dir from GMM
-    Gaussian3D gaussian;
-    const float3 gmmPos = SampleGMM(lightIdx, sg, gaussian);
+    float gmmPdf = 1.0f;
+    const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, gmmPdf);
     sampledDir = normalize(gmmPos - lightData.posW);
-    invLightPdf = 1.0f / F0(gmmPos, lightData.posW, gaussian.mean, gaussian.sigma);
+    invLightPdf = 1.0f / gmmPdf;
 
     // Set the flux to 0 if the light is a spotlight and the dir is outside the cone
     if (dot(sampledDir, lightData.dirW) < lightData.cosOpeningAngle)
@@ -517,22 +527,21 @@ void rayGen()
         // Geometric lights come after analytic lights in gaussian buffer
         lightIdx += gAnalyticLightCount;
 
-        // Sample direction
+        // Sample direction without photon guiding
 #if !USE_3D_GAUSSIAN_PHOTON_GUIDING
         float lightDirPDF = 1.f;
         const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(lightSg), lightDirPDF);
         if (lightDirPDF <= 0.f) { return; }
         ray.Direction = fromLocalToWorld(pls.normal, woLocal);
+        pls.flux *= M_PI; // Lambert Emitter
 #endif
+        // Sample direction with photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        Gaussian3D gaussian;
-        const float3 gmmPos = SampleGMM(lightIdx, lightSg, gaussian);
+        float gmmPdf = 1.0f;
+        const float3 gmmPos = SampleGMM(pls.posW, lightIdx, lightSg, gmmPdf);
         ray.Direction = normalize(gmmPos - pls.posW);
-        pls.flux /= F0(gmmPos, pls.posW, gaussian.mean, gaussian.sigma);
+        pls.flux /= gmmPdf;
 #endif
-
-        // Lambert Emitter
-        pls.flux *= M_PI;
     }
 #endif    
     
