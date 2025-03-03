@@ -652,6 +652,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("PhotonGuiding"))
         {
+            changed |= group.checkbox("Use 3D Gaussian Photon Guiding", mUse3DGaussianPhotonGuiding);
+            group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
         }
     }
 
@@ -1516,7 +1518,8 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
 
     // Gaussian photon guiding defines
-    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", "0");
+    mGeneratePhotonPass.pProgram->addDefine(
+        "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
 
     if (!mGeneratePhotonPass.pVars)
     {

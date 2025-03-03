@@ -289,6 +289,7 @@ private:
     uint mSPPMFramesCameraStill = 0;
 
     // 3D gaussian photon guiding
+    bool mUse3DGaussianPhotonGuiding = false;
     static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
     static constexpr float k3dgCs = 0.65f;
     float m3dgB = 1.0f; // Scaling factor applied to scene positions
