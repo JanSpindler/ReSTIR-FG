@@ -28,6 +28,16 @@
 #include "ReSTIR_FG.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
+#include <random>
+
+static std::random_device rd;
+static std::mt19937 gen(rd());
+
+static float3 GenRandomFloat3()
+{
+    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
+    return float3(dis(gen), dis(gen), dis(gen));
+}
 
 struct Gaussian3D
 {
@@ -35,7 +45,16 @@ struct Gaussian3D
     float sigma;
     float weight;
 
-    constexpr struct Gaussian3D() : mean(0.f), sigma(1.f), weight(0.f) {}
+    constexpr struct Gaussian3D() : mean(0.f), sigma(1.f), weight(0.f)
+    {
+    }
+
+    constexpr struct Gaussian3D(const float3& mean, const float sigma, const float weight) :
+        mean(mean),
+        sigma(sigma),
+        weight(weight)
+    {
+    }
 };
 
 namespace
@@ -640,7 +659,9 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     groupCulling.tooltip("Size of the culling buffer (2^x) and effective hash bytes used");
 
                     if (rebuildBuffer)
+                    {
                         mpPhotonCullingMask.reset();
+                    }
                     changed |= rebuildBuffer;
                 }
             }
@@ -654,6 +675,14 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         {
             changed |= group.checkbox("Use 3D Gaussian Photon Guiding", mUse3DGaussianPhotonGuiding);
             group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
+
+            const bool rebuildGaussianBuffer = group.var("Gaussians per Light", m3dgGaussianCount);
+            m3dgGaussianCount = math::max<uint>(m3dgGaussianCount, 1);
+            changed |= rebuildGaussianBuffer;
+            if (rebuildGaussianBuffer)
+            {
+                mp3dgGaussianBuffer.reset();
+            }
         }
     }
 
@@ -1234,9 +1263,22 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     // 3D gaussian photon guiding
     if (!mp3dgGaussianBuffer)
     {
+        // Init gaussians
         const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
         const size_t gaussianCount = lightCount * m3dgGaussianCount;
-        std::vector<Gaussian3D> gaussians(gaussianCount, Gaussian3D());
+        std::vector<Gaussian3D> gaussians(gaussianCount);
+
+        // Init N random gaussians in the scene
+        // TODO: Robust initialization from paper
+        const float3 sceneExtent = mpScene->getSceneBounds().extent();
+        const float sigma = math::length(sceneExtent) / 10.0f;
+        for (size_t gaussIdx = 0; gaussIdx < gaussianCount; ++gaussIdx)
+        {
+            const float3 mean = mpScene->getSceneBounds().minPoint + GenRandomFloat3() * sceneExtent;
+            gaussians[gaussIdx] = Gaussian3D(mean, sigma, 0.0f);
+        }
+
+        // Create buffer
         mp3dgGaussianBuffer = Buffer::createStructured(
             mpDevice,
             sizeof(Gaussian3D),
