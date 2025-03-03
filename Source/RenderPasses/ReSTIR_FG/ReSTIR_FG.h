@@ -293,7 +293,8 @@ private:
     static constexpr float k3dgCs = 0.65f;
     float m3dgB = 1.0f; // Scaling factor applied to scene positions
     uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
-    uint m3dgLightCount = 0; // Number of lights in the scene
+    uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
+    uint m3dgGeometricLightCount = 0;         // Number of geometric lights in the scene
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI

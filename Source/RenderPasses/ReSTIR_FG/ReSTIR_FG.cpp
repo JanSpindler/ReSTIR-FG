@@ -800,7 +800,8 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
 
     // 3D gaussian photon guiding
     m3dgB = k3dgCb / sceneExtend;
-    m3dgLightCount = math::max<uint>(1, mpScene->getLightCollection(pRenderContext)->getTotalLightCount());
+    m3dgAnalyticLightCount = mpScene->getLightCount();
+    m3dgGeometricLightCount = mpScene->getLightCollection(pRenderContext)->getTotalLightCount();
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1190,7 +1191,8 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     // 3D gaussian photon guiding
     if (!mp3dgGaussianBuffer)
     {
-        const size_t gaussianCount = m3dgLightCount * m3dgGaussianCount;
+        const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
+        const size_t gaussianCount = lightCount * m3dgGaussianCount;
         std::vector<Gaussian3D> gaussians(gaussianCount, Gaussian3D());
         mp3dgGaussianBuffer = Buffer::createStructured(
             mpDevice,
@@ -1459,7 +1461,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     const uint2 targetDim = uint2(photonXExtent, mPhotonYExtent);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
-    // Defines
+    // ReSTIR FG defines
     mGeneratePhotonPass.pProgram->addDefine("USE_EMISSIVE_LIGHT", mpScene->useEmissiveLights() ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefine("PHOTON_BUFFER_SIZE_GLOBAL", std::to_string(mNumMaxPhotons[0]));
     mGeneratePhotonPass.pProgram->addDefine("PHOTON_BUFFER_SIZE_CAUSTIC", std::to_string(mNumMaxPhotons[1]));
@@ -1471,12 +1473,17 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefine("MAT_DIFFUSEPART_CUTOFF", std::to_string(mTraceDiffuseCutoff));
     mGeneratePhotonPass.pProgram->addDefine("USE_REDUCED_PD_FORMAT", mUseReducePhotonData ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
-    
+
+    // Gaussian photon guiding defines
+    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", "0");
+
     if (!mGeneratePhotonPass.pVars)
     {
         FALCOR_ASSERT(mGeneratePhotonPass.pProgram);
         if (mpEmissiveLightSampler)
+        {
             mGeneratePhotonPass.pProgram->addDefines(mpEmissiveLightSampler->getDefines());
+        }
 
         mGeneratePhotonPass.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
     };
@@ -1515,7 +1522,8 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     // 3D gaussian photon guiding constants
     nameBuf = "GaussianPhotonGuiding";
     var[nameBuf]["gGaussianCount"] = m3dgGaussianCount;
-    var[nameBuf]["gLightCount"] = m3dgLightCount;
+    var[nameBuf]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
+    var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
     var[nameBuf]["gCs"] = k3dgCs;
     var[nameBuf]["gB"] = m3dgB;
 

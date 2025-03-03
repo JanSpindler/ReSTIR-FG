@@ -38,7 +38,8 @@ cbuffer CB
 cbuffer GaussianPhotonGuiding
 {
     uint gGaussianCount;
-    uint gLightCount;
+    uint gAnalyticLightCount;
+    uint gGeometricLightCount;
     float gCs;
     float gB;
 };
@@ -269,6 +270,7 @@ bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls, out 
     // Return if not emissive light is present
     if (gScene.lightCollection.isEmpty())
     {
+        lightIdx = 0;
         return false;
     }
 
@@ -321,6 +323,7 @@ bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls, out 
 
 bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample pls, out float3 sampledDir)
 {
+    // Init
     pls = {};
     sampledDir = float3(0);
     const uint lightCount = gScene.getLightCount();
@@ -328,6 +331,7 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
     {
         return false;
     }
+
     // Uniformly sample one of the analytic lights
     float rndLightIdx = float(lightCount) * sampleNext1D(sg);
     uint lightIdx = min(uint(floor(rndLightIdx)), lightCount-1);
@@ -338,10 +342,15 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
     {
         return false;
     }
+
+    // Sample direction
     float invLightPdf;
+
+    // Sample direction without photon guiding
+#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
     float3 woLocal;
     float3 rnd = sampleNext3D(sg);
-    rnd.z = 0;
+    rnd.z = 0; // No smooth fade at edge of spotlight
     float spotAngle = lightData.cosOpeningAngle;
     if (lightData.openingAngle < M_2PI) // If the opening angle is smaller than 2PI it is a spotlight
     {
@@ -353,9 +362,28 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
         woLocal = sample_sphere(rnd.xy);
     }
     invLightPdf = M_2PI * (1.f - spotAngle);
-    
+    sampledDir = fromLocalToWorld(lightData.dirW, woLocal); // Used pls.normal before but seemed wrong
+#endif
+
+    // Sample direction with photon guiding
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+    // Sample dir from GMM
+    Gaussian3D gaussian;
+    const float3 gmmPos = SampleGMM(lightIdx, sg, gaussian);
+    sampledDir = normalize(gmmPos - lightData.posW);
+    invLightPdf = 1.0f / F0(gmmPos, lightData.posW, gaussian.mean, gaussian.sigma);
+
+    // Set the flux to 0 if the light is a spotlight and the dir is outside the cone
+    if (dot(sampledDir, lightData.dirW) < lightData.cosOpeningAngle)
+    {
+        pls.flux = float3(0.0f);
+    }
+#endif
+
     if (invLightPdf <= 0.f)
+    {
         return false;
+    }
 
     invLightPdf *= lightCount; // Take the select pdf into account
     
@@ -364,7 +392,6 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
     pls.normal = lightData.dirW;
     pls.flux = lightData.intensity * invLightPdf;
     
-    sampledDir = fromLocalToWorld(pls.normal, woLocal);
     return true;
 }
 
@@ -487,13 +514,17 @@ void rayGen()
             return;
         }
 
+        // Geometric lights come after analytic lights in gaussian buffer
+        lightIdx += gAnalyticLightCount;
+
         // Sample direction
-#if 0
+#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
         float lightDirPDF = 1.f;
         const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(lightSg), lightDirPDF);
         if (lightDirPDF <= 0.f) { return; }
         ray.Direction = fromLocalToWorld(pls.normal, woLocal);
-#else
+#endif
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
         Gaussian3D gaussian;
         const float3 gmmPos = SampleGMM(lightIdx, lightSg, gaussian);
         ray.Direction = normalize(gmmPos - pls.posW);
