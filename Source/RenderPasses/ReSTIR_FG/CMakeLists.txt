@@ -17,6 +17,7 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/Reservoir.slang
 	Shader/SurfaceDataFG.slang
 	Shader/TraceTransmissionDelta.rt.slang
+    Shader/GaussianHelper.slangh
 )
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)
