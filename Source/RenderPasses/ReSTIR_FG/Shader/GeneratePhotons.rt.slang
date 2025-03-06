@@ -160,21 +160,21 @@ static const float SQRT_2 = 1.41421356237f;
 
 // Approximation of the error function
 // Abramowitz and Stegun 7.1.26
-//float erf(const float x)
-//{
-//    static const float a1 = 0.254829592f;
-//    static const float a2 = -0.284496736f;
-//    static const float a3 = 1.421413741f;
-//    static const float a4 = -1.453152027f;
-//    static const float a5 = 1.061405429f;
-//    static const float p = 0.3275911f;
-//    const float t = 1.0f / (1.0f + p * x);
-//    const float t2 = t * t;
-//    const float t3 = t2 * t;
-//    const float t4 = t3 * t;
-//    const float t5 = t4 * t;
-//    return 1.0f - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * exp(-x * x);
-//}
+float ErfPaper(const float x)
+{
+    static const float a1 = 0.254829592f;
+    static const float a2 = -0.284496736f;
+    static const float a3 = 1.421413741f;
+    static const float a4 = -1.453152027f;
+    static const float a5 = 1.061405429f;
+    static const float p = 0.3275911f;
+    const float t = 1.0f / (1.0f + p * x);
+    const float t2 = t * t;
+    const float t3 = t2 * t;
+    const float t4 = t3 * t;
+    const float t5 = t4 * t;
+    return 1.0f - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * exp(-x * x);
+}
 
 float f0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 {
@@ -198,7 +198,8 @@ float f0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 
     const float term1 = sigma2 * exp(-0.5f * d2 / sigma2) * d * cosTheta;
     const float term2 = sqrt(PI * 0.5f) * sigma * exp(-0.5f * d2 * sinTheta2 / sigma2) * (sigma2 + (d2 * cosTheta2));
-    const float term3 = 1.0f * erf((d * cosTheta) / (SQRT_2 * sigma));
+    //const float term3 = 1.0f * erf((d * cosTheta) / (SQRT_2 * sigma));
+    const float term3 = 1.0f * ErfPaper((d * cosTheta) / (SQRT_2 * sigma));
 
     return term1 + (term2 * term3);
 }
@@ -540,7 +541,8 @@ void rayGen()
         float gmmPdf = 1.0f;
         const float3 gmmPos = SampleGMM(pls.posW, lightIdx, lightSg, gmmPdf);
         ray.Direction = normalize(gmmPos - pls.posW);
-        pls.flux /= gmmPdf;
+        const float cosTheta = dot(ray.Direction, pls.normal);
+        pls.flux *= cosTheta / gmmPdf;
 #endif
     }
 #endif    
