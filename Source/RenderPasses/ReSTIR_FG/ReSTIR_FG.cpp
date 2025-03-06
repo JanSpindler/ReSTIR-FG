@@ -91,15 +91,65 @@ namespace
     const std::string kOutputDiffuseReflectance = "diffuseReflectance";
     const std::string kOutputSpecularReflectance = "specularReflectance";
     const std::string kOutputResidualRadiance = "residualRadiance";     //The rest (transmission, delta)
+    const std::string kOutputGaussianDirectionPdf = "gaussianDirectionPdf";
 
     const Falcor::ChannelList kOutputChannels{
-        {kOutputColor,                  "gOutColor",                "Output Color (linear)", true /*optional*/, ResourceFormat::RGBA32Float},
-        {kOutputEmission,               "gOutEmission",             "Output Emission", true /*optional*/, ResourceFormat::RGBA32Float},
-        {kOutputDiffuseRadiance,        "gOutDiffuseRadiance",      "Output demodulated diffuse color (linear)", true /*optional*/, ResourceFormat::RGBA32Float},
-        {kOutputSpecularRadiance,       "gOutSpecularRadiance",     "Output demodulated specular color (linear)", true /*optional*/, ResourceFormat::RGBA32Float},
-        {kOutputDiffuseReflectance,     "gOutDiffuseReflectance",   "Output primary surface diffuse reflectance", true /*optional*/, ResourceFormat::RGBA16Float},
-        {kOutputSpecularReflectance,    "gOutSpecularReflectance",  "Output primary surface specular reflectance", true /*optional*/, ResourceFormat::RGBA16Float},
-        {kOutputResidualRadiance,       "gOutResidualRadiance",     "Output residual color (transmission/delta)", true /*optional*/, ResourceFormat::RGBA32Float},
+        {
+            kOutputColor,
+            "gOutColor",
+            "Output Color (linear)",
+            true /*optional*/,
+            ResourceFormat::RGBA32Float
+        },
+        {
+            kOutputEmission,
+            "gOutEmission",
+            "Output Emission",
+            true /*optional*/,
+            ResourceFormat::RGBA32Float
+        },
+        {
+            kOutputDiffuseRadiance,
+            "gOutDiffuseRadiance",
+            "Output demodulated diffuse color (linear)",
+            true /*optional*/,
+            ResourceFormat::RGBA32Float
+        },
+        {
+            kOutputSpecularRadiance,
+            "gOutSpecularRadiance",
+            "Output demodulated specular color (linear)",
+            true /*optional*/,
+            ResourceFormat::RGBA32Float
+        },
+        {
+            kOutputDiffuseReflectance,
+            "gOutDiffuseReflectance",
+            "Output primary surface diffuse reflectance",
+            true /*optional*/,
+            ResourceFormat::RGBA16Float
+        },
+        {
+            kOutputSpecularReflectance,
+            "gOutSpecularReflectance",
+            "Output primary surface specular reflectance",
+            true /*optional*/,
+            ResourceFormat::RGBA16Float
+        },
+        {
+            kOutputResidualRadiance,
+            "gOutResidualRadiance",
+            "Output residual color (transmission/delta)",
+            true /*optional*/,
+            ResourceFormat::RGBA32Float
+        },
+        {
+            kOutputGaussianDirectionPdf,
+            "gOutGaussianDirectionPdf",
+            "Output pdf for the gaussian direction",
+            true /*optional*/,
+            ResourceFormat::R32Float
+        },
     };
 
     // Properties for Render Graph
@@ -1001,6 +1051,8 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mpThpDI.reset();
         mpSampleGenState.reset();
         mResetTex = false;
+
+        mp3dgGaussianTexture.reset();
     }
 
     if (!mpSampleGenState && mStoreSampleGenState)
@@ -1287,6 +1339,21 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             Buffer::CpuAccess::None,
             gaussians.data());
         mp3dgGaussianBuffer->setName("ReSTIR_FG::3DGaussianBuffer");
+    }
+
+    if (!mp3dgGaussianTexture)
+    {
+        mp3dgGaussianTexture = Texture::create2D(
+            mpDevice,
+            mScreenRes.x,
+            mScreenRes.y,
+            ResourceFormat::R32Float,
+            1,
+            1,
+            nullptr,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        mp3dgGaussianTexture->setName("ReSTIR_FG::3DGaussianTexture");
+        pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
     }
 }
 
@@ -2101,12 +2168,14 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
         }
      }
 
-     //Bind all Output Channels
-     for (uint i = 0; i < kOutputChannels.size(); i++)
-     {
+    // Bind all Output Channels
+    for (uint i = 0; i < kOutputChannels.size(); i++)
+    {
         if (renderData[kOutputChannels[i].name])
+        {
             var[kOutputChannels[i].texname] = renderData[kOutputChannels[i].name]->asTexture();
-     }
+        }
+    }
 
 
      // Uniform

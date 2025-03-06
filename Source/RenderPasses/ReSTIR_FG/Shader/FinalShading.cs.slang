@@ -52,6 +52,7 @@ RWTexture2D<float4> gOutSpecularRadiance;
 Texture2D<float4> gOutDiffuseReflectance;
 Texture2D<float4> gOutSpecularReflectance;
 RWTexture2D<float4> gOutResidualRadiance;
+Texture2D<float> gOutGaussianDirectionPdf;
 
 //For view copy
 RWTexture2D<float4> gViewDIPrev;

@@ -340,6 +340,7 @@ private:
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
 
     ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
+    ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
 
     //
     // Render Passes/Programms
