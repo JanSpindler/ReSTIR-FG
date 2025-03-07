@@ -645,41 +645,47 @@ void rayGen()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
-            
-    //Prepare payload
+
+    // Prepare payload
     RayData rayData = RayData();
-    #if STORE_SAMPLE_GEN_STATE
-        rayData.sg = gSampleGenState[index2Dto1D(launchIndex, launchDim.x)];
-    #else
-        rayData.sg = SampleGenerator(launchIndex, gFrameCount + 15 * 32);
-    #endif
+#if STORE_SAMPLE_GEN_STATE
+    rayData.sg = gSampleGenState[index2Dto1D(launchIndex, launchDim.x)];
+#else
+    rayData.sg = SampleGenerator(launchIndex, gFrameCount + 15 * 32);
+#endif
 
     PackedHitInfo packedHit = gVBuffer[launchIndex];
-    #if !USE_STOCHASTIC_COLLECT
+#if !USE_STOCHASTIC_COLLECT
     rayData.packedHitInfo = packedHit;
-    #endif //!USE_STOCHASTIC_COLLECT
+#endif // !USE_STOCHASTIC_COLLECT
     HitInfo hit = HitInfo(packedHit);
-    bool valid = hit.isValid(); //Check if the ray is valid
+    bool valid = hit.isValid(); // Check if the ray is valid
 
-    //Get vertex data for the world position
+    // Get vertex data for the world position
     TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
-    if(gCollectCaustic){
+    if (gCollectCaustic)
+    {
         float4 viewTmp =gView[launchIndex];
         float3 view = -viewTmp.xyz;
         bool collectDirect = viewTmp.w > 0.1;
 
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData fgSD = {};
-        if(valid)
-            fgSD = loadShadingData(hit, view, lod); //Shading Data for direct hit
+        if (valid)
+        {
+            fgSD = loadShadingData(hit, view, lod); // Shading Data for direct hit
+        }
 
         causticPhotonCollection(fgSD, rayData, collectDirect, valid);
     }
-    if(gCollectFG)
-        fgSampleCollection(v.posW, rayData, valid);
 
-    #if STORE_SAMPLE_GEN_STATE
-        gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = rayData.sg;
-    #endif //STORE_SAMPLE_GEN_STATE
+    if (gCollectFG)
+    {
+        fgSampleCollection(v.posW, rayData, valid);
+    }
+
+#if STORE_SAMPLE_GEN_STATE
+    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = rayData.sg;
+#endif // STORE_SAMPLE_GEN_STATE
 }

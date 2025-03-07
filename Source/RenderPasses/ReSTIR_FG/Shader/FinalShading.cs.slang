@@ -80,6 +80,16 @@ cbuffer PerFrame
     uint2 gFrameDim;                    // Frame Dimensions for camera dir
 }
 
+cbuffer GaussianPhotonGuiding
+{
+    uint gGaussianCount;
+    uint gAnalyticLightCount;
+    uint gGeometricLightCount;
+    float gCs;
+    float gB;
+};
+RWStructuredBuffer<Gaussian3D> gGaussians;
+
 static const float kRayEpsilon = 0.98f;
 static const bool kUseEnvBackground = USE_ENV_BACKROUND;
 static const bool kEmissionToCausticFilter = EMISSION_TO_CAUSTIC_FILTER;
@@ -413,6 +423,30 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
     if (is_valid(gOutGaussianDirectionPdf))
     {
-        gOutGaussianDirectionPdf[pixel] = float4(0.25f); // TODO
+        if (hitInfo.isValid())
+        {
+            float minDist = 1000000.0f;
+            const uint totalLightCount = gAnalyticLightCount + gGeometricLightCount;
+            for (uint lightIdx = 0; lightIdx < totalLightCount; ++lightIdx)
+            {
+                for (uint gaussianIdx = 0; gaussianIdx < gGaussianCount; ++gaussianIdx)
+                {
+                    const uint globalGaussianIdx = lightIdx * gGaussianCount + gaussianIdx;
+                    const Gaussian3D gaussian = gGaussians[globalGaussianIdx];
+                    
+                    const TriangleHit triangleHit = hitInfo.getTriangleHit();
+                    const VertexData vertexData = gScene.getVertexData(triangleHit);
+                    const float3 firstHitPos = vertexData.posW;
+
+                    const float result = length(firstHitPos - gaussian.mean) / gaussian.sigma;
+                    minDist = min(minDist, result);
+                }
+            }
+            gOutGaussianDirectionPdf[pixel] = float4(minDist); // TODO
+        }
+        else
+        {
+            gOutGaussianDirectionPdf[pixel] = float4(0.0f);
+        }
     }
 }

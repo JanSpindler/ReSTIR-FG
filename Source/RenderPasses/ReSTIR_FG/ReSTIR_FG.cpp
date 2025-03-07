@@ -2080,12 +2080,13 @@ void ReSTIR_FG::causticResamplingPass(RenderContext* pRenderContext, const Rende
      pRenderContext->uavBarrier(mpFGSampelDataBuffer[idxCurr].get());
 }
 
-void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData& renderData) {
-     FALCOR_PROFILE(pRenderContext,"FinalShading");
+void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext,"FinalShading");
 
-     // Create pass
-     if (!mpFinalShadingPass)
-     {
+    // Create pass
+    if (!mpFinalShadingPass)
+    {
         Program::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kFinalShadingPassShader).csEntry("main").setShaderModel(kShaderModel);
@@ -2101,7 +2102,10 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
         defines.add(
             "EMISSION_TO_CAUSTIC_FILTER", (mCausticCollectMode == CausticCollectionMode::Temporal && mEmissionToCausticFilter) ? "1" : "0"
         );
-        if (mpRTXDI) defines.add(mpRTXDI->getDefines());
+        if (mpRTXDI)
+        {
+            defines.add(mpRTXDI->getDefines());
+        }
         defines.add("USE_RTXDI", mpRTXDI ? "1" : "0");
         defines.add("USE_RESTIR_GI", mRenderMode == RenderMode::ReSTIRGI ? "1" : "0");
         defines.add("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
@@ -2109,55 +2113,60 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
         defines.add(getMaterialDefines());
 
         mpFinalShadingPass = ComputePass::create(mpDevice, desc, defines, true);
-     }
-     FALCOR_ASSERT(mpFinalShadingPass);
+    }
+    FALCOR_ASSERT(mpFinalShadingPass);
 
-     if (mpRTXDI) mpFinalShadingPass->getProgram()->addDefines(mpRTXDI->getDefines()); 
-     mpFinalShadingPass->getProgram()->addDefine("USE_RTXDI", mpRTXDI ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("USE_RESTIR_GI", mRenderMode == RenderMode::ReSTIRGI ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("USE_ENV_BACKROUND", mpScene->useEnvBackground() ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("EMISSION_TO_CAUSTIC_FILTER", (mCausticCollectMode == CausticCollectionMode::Temporal && mEmissionToCausticFilter) ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("USE_CAUSTIC_FILTER_RESERVOIR", mCausticCollectMode == CausticCollectionMode::Reservoir ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefine("USE_FINAL_GATHER", mRenderMode == RenderMode::FinalGather ? "1" : "0");
-     mpFinalShadingPass->getProgram()->addDefines(getMaterialDefines());
-     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-     mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
-     
+    if (mpRTXDI)
+    {
+        mpFinalShadingPass->getProgram()->addDefines(mpRTXDI->getDefines());
+    }
+    mpFinalShadingPass->getProgram()->addDefine("USE_RTXDI", mpRTXDI ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("USE_RESTIR_GI", mRenderMode == RenderMode::ReSTIRGI ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("USE_ENV_BACKROUND", mpScene->useEnvBackground() ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("EMISSION_TO_CAUSTIC_FILTER", (mCausticCollectMode == CausticCollectionMode::Temporal && mEmissionToCausticFilter) ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("USE_CAUSTIC_FILTER_RESERVOIR", mCausticCollectMode == CausticCollectionMode::Reservoir ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefine("USE_FINAL_GATHER", mRenderMode == RenderMode::FinalGather ? "1" : "0");
+    mpFinalShadingPass->getProgram()->addDefines(getMaterialDefines());
+    // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
+    mpFinalShadingPass->getProgram()->addDefines(getValidResourceDefines(kOutputChannels, renderData));
 
-     // Set variables
-     auto var = mpFinalShadingPass->getRootVar();
+    // Set variables
+    auto var = mpFinalShadingPass->getRootVar();
 
-     mpScene->setRaytracingShaderData(pRenderContext, var, 1); // Set scene data
-     mpSampleGenerator->setShaderData(var);                    // Sample generator
+    mpScene->setRaytracingShaderData(pRenderContext, var, 1); // Set scene data
+    mpSampleGenerator->setShaderData(var);                    // Sample generator
 
-     if (mpRTXDI) mpRTXDI->setShaderData(var);
+    if (mpRTXDI)
+    {
+        mpRTXDI->setShaderData(var);
+    }
 
-     uint reservoirIndex = mResamplingMode == ResamplingMode::Spatial ? (mFrameCount + 1) % 2 : mFrameCount % 2;
+    uint reservoirIndex = mResamplingMode == ResamplingMode::Spatial ? (mFrameCount + 1) % 2 : mFrameCount % 2;
 
-     var["gReservoir"] = mpReservoirBuffer[reservoirIndex];
-     var["gFGSampleData"] = mpFGSampelDataBuffer[reservoirIndex];
+    var["gReservoir"] = mpReservoirBuffer[reservoirIndex];
+    var["gFGSampleData"] = mpFGSampelDataBuffer[reservoirIndex];
 
-     var["gThp"] = mpThp;
-     var["gView"] = mpViewDir;
-     var["gVBuffer"] = mpVBuffer;
+    var["gThp"] = mpThp;
+    var["gView"] = mpViewDir;
+    var["gVBuffer"] = mpVBuffer;
 
-     var["gThpDI"] = mpThpDI;
-     var["gViewDI"] = mpViewDirRayDistDI;
-     var["gVBufferDI"] = mpVBufferDI;
+    var["gThpDI"] = mpThpDI;
+    var["gViewDI"] = mpViewDirRayDistDI;
+    var["gVBufferDI"] = mpVBufferDI;
 
-     var["gViewDIPrev"] = mpViewDirDIPrev;
-     var["gViewPrev"] = mpViewDirPrev;
+    var["gViewDIPrev"] = mpViewDirDIPrev;
+    var["gViewPrev"] = mpViewDirPrev;
 
-     var["gSampleGenState"] = mpSampleGenState;
+    var["gSampleGenState"] = mpSampleGenState;
 
-     uint causticRadianceIdx = mCausticCollectMode == CausticCollectionMode::Temporal ? mFrameCount % 2 : 0;
+    uint causticRadianceIdx = mCausticCollectMode == CausticCollectionMode::Temporal ? mFrameCount % 2 : 0;
 
-     var["gCausticRadiance"] = mpCausticRadiance[causticRadianceIdx];
+    var["gCausticRadiance"] = mpCausticRadiance[causticRadianceIdx];
 
-     if (mCausticCollectMode == CausticCollectionMode::Reservoir)
-     {
+    if (mCausticCollectMode == CausticCollectionMode::Reservoir)
+    {
         uint currentIndex = mFrameCount % 2;
         var["gCausticReservoir"] = mpCausticReservoir[currentIndex];
         var["gCausticSample"] = mpCausticSample[currentIndex];
@@ -2166,7 +2175,16 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
             var["gDirectFGReservoir"] = mpDirectFGReservoir[currentIndex];
             var["gDirectFGSample"] = mpDirectFGSample[currentIndex];
         }
-     }
+    }
+
+    // 3D gaussian photon guiding constants
+    const std::string nameBuf = "GaussianPhotonGuiding";
+    var[nameBuf]["gGaussianCount"] = m3dgGaussianCount;
+    var[nameBuf]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
+    var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
+    var[nameBuf]["gCs"] = k3dgCs;
+    var[nameBuf]["gB"] = m3dgB;
+    var["gGaussians"] = mp3dgGaussianBuffer;
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)
@@ -2177,26 +2195,26 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
         }
     }
 
+    // Uniform
+    std::string uniformName = "PerFrame";
+    var[uniformName]["gFrameCount"] = mFrameCount;
+    var[uniformName]["gAttenuationRadius"] = mSampleRadiusAttenuation; // Attenuation radius
+    var[uniformName]["gFrameDim"] = renderData.getDefaultTextureDims();
+    //var[uniformName]["gEnableCaustics"] = mEnableCausticPhotonCollection;
 
-     // Uniform
-     std::string uniformName = "PerFrame";
-     var[uniformName]["gFrameCount"] = mFrameCount;
-     var[uniformName]["gAttenuationRadius"] = mSampleRadiusAttenuation; // Attenuation radius
-     var[uniformName]["gFrameDim"] = renderData.getDefaultTextureDims();
-     //var[uniformName]["gEnableCaustics"] = mEnableCausticPhotonCollection;
-
-     // Execute
-     const uint2 targetDim = renderData.getDefaultTextureDims();
-     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-     mpFinalShadingPass->execute(pRenderContext, uint3(targetDim, 1));
+    // Execute
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    mpFinalShadingPass->execute(pRenderContext, uint3(targetDim, 1));
 }
 
-void ReSTIR_FG::directAnalytic(RenderContext* pRenderContext, const RenderData& renderData) {
-     FALCOR_PROFILE(pRenderContext, "DirectLight(Analytic)");
+void ReSTIR_FG::directAnalytic(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "DirectLight(Analytic)");
 
-     // Create pass
-     if (!mpDirectAnalyticPass)
-     {
+    // Create pass
+    if (!mpDirectAnalyticPass)
+    {
         Program::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kDirectAnalyticPassShader).csEntry("main").setShaderModel(kShaderModel);
@@ -2210,8 +2228,8 @@ void ReSTIR_FG::directAnalytic(RenderContext* pRenderContext, const RenderData& 
         defines.add(getValidResourceDefines(kInputChannels, renderData));
        
         mpDirectAnalyticPass = ComputePass::create(mpDevice, desc, defines, true);
-     }
-     FALCOR_ASSERT(mpDirectAnalyticPass);
+    }
+    FALCOR_ASSERT(mpDirectAnalyticPass);
 
      mpDirectAnalyticPass->getProgram()->addDefines(getMaterialDefines());
      // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
