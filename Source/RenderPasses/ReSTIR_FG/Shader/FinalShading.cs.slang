@@ -1,6 +1,6 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-#include "GaussianHelper.slangh"
+#include "GaussianHelper.slang"
 
 import Utils.Math.PackedFormats;
 import Utils.Math.FormatConversion;
