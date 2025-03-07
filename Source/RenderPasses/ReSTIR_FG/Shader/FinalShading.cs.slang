@@ -54,7 +54,7 @@ RWTexture2D<float4> gOutSpecularRadiance;
 Texture2D<float4> gOutDiffuseReflectance;
 Texture2D<float4> gOutSpecularReflectance;
 RWTexture2D<float4> gOutResidualRadiance;
-Texture2D<float> gOutGaussianDirectionPdf;
+RWTexture2D<float4> gOutGaussianDirectionPdf;
 
 // For view copy
 RWTexture2D<float4> gViewDIPrev;
@@ -409,5 +409,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
     if (is_valid(gOutResidualRadiance))
     {
         gOutResidualRadiance[pixel] = float4(0.f); //TODO
+    }
+
+    if (is_valid(gOutGaussianDirectionPdf))
+    {
+        gOutGaussianDirectionPdf[pixel] = float4(0.25f); // TODO
     }
 }

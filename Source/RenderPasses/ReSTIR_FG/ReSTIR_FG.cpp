@@ -148,7 +148,7 @@ namespace
             "gOutGaussianDirectionPdf",
             "Output pdf for the gaussian direction",
             true /*optional*/,
-            ResourceFormat::R32Float
+            ResourceFormat::RGBA32Float
         },
     };
 
@@ -1347,7 +1347,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             mpDevice,
             mScreenRes.x,
             mScreenRes.y,
-            ResourceFormat::R32Float,
+            ResourceFormat::RGBA32Float,
             1,
             1,
             nullptr,
