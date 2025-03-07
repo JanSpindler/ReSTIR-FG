@@ -43,6 +43,7 @@ cbuffer GaussianPhotonGuiding
     uint gGeometricLightCount;
     float gCs;
     float gB;
+    float gGmmMinPdf;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
@@ -320,6 +321,10 @@ bool createLightSampleAnalytic(inout SampleGenerator sg, out PhotonLightSample p
     float gmmPdf = 1.0f;
     const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, gmmPdf);
     sampledDir = normalize(gmmPos - lightData.posW);
+    if (gmmPdf <= gGmmMinPdf)
+    {
+        return false;
+    }
     invLightPdf = 1.0f / gmmPdf;
 
     // Set the flux to 0 if the light is a spotlight and the dir is outside the cone
@@ -480,7 +485,14 @@ void rayGen()
         const float3 gmmPos = SampleGMM(pls.posW, lightIdx, lightSg, gmmPdf);
         ray.Direction = normalize(gmmPos - pls.posW);
         const float cosTheta = dot(ray.Direction, pls.normal);
-        pls.flux *= cosTheta / gmmPdf;
+        if (gmmPdf > gGmmMinPdf)
+        {
+            pls.flux *= cosTheta / gmmPdf;
+        }
+        else
+        {
+            pls.flux = 0.0f;
+        }
 #endif
     }
 #endif    

@@ -726,12 +726,17 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
             changed |= group.checkbox("Use 3D Gaussian Photon Guiding", mUse3DGaussianPhotonGuiding);
             group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
 
-            const bool rebuildGaussianBuffer = group.var("Gaussians per Light", m3dgGaussianCount);
-            m3dgGaussianCount = math::max<uint>(m3dgGaussianCount, 1);
-            changed |= rebuildGaussianBuffer;
-            if (rebuildGaussianBuffer)
+            if (mUse3DGaussianPhotonGuiding)
             {
-                mp3dgGaussianBuffer.reset();
+                const bool rebuildGaussianBuffer = group.var("Gaussians per Light", m3dgGaussianCount);
+                m3dgGaussianCount = math::max<uint>(m3dgGaussianCount, 1);
+                changed |= rebuildGaussianBuffer;
+                if (rebuildGaussianBuffer)
+                {
+                    mp3dgGaussianBuffer.reset();
+                }
+
+                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
             }
         }
     }
@@ -1679,6 +1684,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
     var[nameBuf]["gCs"] = k3dgCs;
     var[nameBuf]["gB"] = m3dgB;
+    var[nameBuf]["gGmmMinPdf"] = m3dgMinPdf;
 
     // Light samples constants
     if (mpEmissiveLightSampler)
