@@ -502,32 +502,37 @@ void rayGen()
         lightIdx += gAnalyticLightCount;
 
         // Sample direction without photon guiding
-        //if (sampleNext1D(lightSd) > gBeta)
-        //{
-        //    // Sample uniform
-        //}
-        //else
-        //{
-        //    // Sample gmm
-        //}
-#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
-        float photonDirPdf = 1.0f;
-        if (!SamplePhotonDirCosineWeighted(ray.Direction, photonDirPdf, lightSg, pls.normal))
-        {
-            return;
-        }
-        pls.flux /= photonDirPdf;
-#endif
-        // Sample direction with photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        float photonDirPdf = 1.0f;
-        if (!SamplePhotonDirGmm(ray.Direction, photonDirPdf, lightSg, lightIdx, pls.posW))
-        {
-            return;
-        }
-        pls.flux /= photonDirPdf;
-        pls.flux *= dot(pls.normal, ray.Direction);
+        if (sampleNext1D(lightSg) > gBeta)
 #endif
+#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
+        if (true)
+#endif
+        {
+            // Sample uniform
+            float photonDirPdf = 1.0f;
+            if (!SamplePhotonDirCosineWeighted(ray.Direction, photonDirPdf, lightSg, pls.normal))
+            {
+                return;
+            }
+            pls.flux /= photonDirPdf;
+        }
+        else
+        {
+            // Sample gmm
+            float photonDirPdf = 1.0f;
+            if (!SamplePhotonDirGmm(ray.Direction, photonDirPdf, lightSg, lightIdx, pls.posW))
+            {
+                return;
+            }
+            pls.flux /= photonDirPdf;
+            pls.flux *= dot(pls.normal, ray.Direction);
+        }
+//#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
+//#endif
+//        // Sample direction with photon guiding
+//#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+//#endif
     }
 #endif    
     
