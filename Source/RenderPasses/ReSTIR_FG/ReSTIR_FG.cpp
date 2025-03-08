@@ -736,7 +736,9 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     mp3dgGaussianBuffer.reset();
                 }
 
-                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
+                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f, 1e-6f);
+
+                changed |= group.var("Beta (MIS)", m3dgBeta, 0.0f, 1.0f);
             }
         }
     }
@@ -1685,6 +1687,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gCs"] = k3dgCs;
     var[nameBuf]["gB"] = m3dgB;
     var[nameBuf]["gGmmMinPdf"] = m3dgMinPdf;
+    var[nameBuf]["gBeta"] = m3dgBeta;
 
     // Light samples constants
     if (mpEmissiveLightSampler)

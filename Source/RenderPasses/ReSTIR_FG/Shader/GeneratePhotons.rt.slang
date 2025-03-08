@@ -44,6 +44,7 @@ cbuffer GaussianPhotonGuiding
     float gCs;
     float gB;
     float gGmmMinPdf;
+    float gBeta;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
@@ -433,6 +434,35 @@ void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAt
     }
 }
 
+bool SamplePhotonDirCosineWeighted(out float3 dir, out float pdf, inout SampleGenerator sg, const float3 normal)
+{
+    const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(sg), pdf);
+    if (pdf <= 0.f)
+    {
+        dir = float3(0.0f);
+        return false;
+    }
+    dir = fromLocalToWorld(normal, woLocal);
+    pdf = 1.0f / M_PI; // Lambert Emitter
+    return true;
+}
+
+bool SamplePhotonDirGmm(
+    out float3 dir,
+    out float pdf,
+    inout SampleGenerator sg,
+    const uint lightIdx,
+    const float3 pos)
+{
+    const float3 gmmPos = SampleGMM(pos, lightIdx, sg, pdf);
+    dir = normalize(gmmPos - pos);
+    if (pdf <= gGmmMinPdf)
+    {
+        return false;
+    }
+    return true;
+}
+
 [shader("raygeneration")]
 void rayGen()
 {
@@ -472,27 +502,31 @@ void rayGen()
         lightIdx += gAnalyticLightCount;
 
         // Sample direction without photon guiding
+        //if (sampleNext1D(lightSd) > gBeta)
+        //{
+        //    // Sample uniform
+        //}
+        //else
+        //{
+        //    // Sample gmm
+        //}
 #if !USE_3D_GAUSSIAN_PHOTON_GUIDING
-        float lightDirPDF = 1.f;
-        const float3 woLocal = sample_cosine_hemisphere_concentric(sampleNext2D(lightSg), lightDirPDF);
-        if (lightDirPDF <= 0.f) { return; }
-        ray.Direction = fromLocalToWorld(pls.normal, woLocal);
-        pls.flux *= M_PI; // Lambert Emitter
+        float photonDirPdf = 1.0f;
+        if (!SamplePhotonDirCosineWeighted(ray.Direction, photonDirPdf, lightSg, pls.normal))
+        {
+            return;
+        }
+        pls.flux /= photonDirPdf;
 #endif
         // Sample direction with photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        float gmmPdf = 1.0f;
-        const float3 gmmPos = SampleGMM(pls.posW, lightIdx, lightSg, gmmPdf);
-        ray.Direction = normalize(gmmPos - pls.posW);
-        const float cosTheta = dot(ray.Direction, pls.normal);
-        if (gmmPdf > gGmmMinPdf)
+        float photonDirPdf = 1.0f;
+        if (!SamplePhotonDirGmm(ray.Direction, photonDirPdf, lightSg, lightIdx, pls.posW))
         {
-            pls.flux *= cosTheta / gmmPdf;
+            return;
         }
-        else
-        {
-            pls.flux = 0.0f;
-        }
+        pls.flux /= photonDirPdf;
+        pls.flux *= dot(pls.normal, ray.Direction);
 #endif
     }
 #endif    

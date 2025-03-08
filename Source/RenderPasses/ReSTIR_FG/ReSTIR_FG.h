@@ -296,7 +296,8 @@ private:
     uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
     uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
-    float m3dgMinPdf = 1e-3f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
+    float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
+    float m3dgBeta = 0.8f; // MIS weight for 3D gaussian sampling and uniform sampling
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
