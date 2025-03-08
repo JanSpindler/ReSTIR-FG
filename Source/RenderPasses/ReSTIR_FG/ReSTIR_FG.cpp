@@ -736,7 +736,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     mp3dgGaussianBuffer.reset();
                 }
 
-                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f, 1e-6f, false);
+                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
 
                 changed |= group.var("Beta (MIS)", m3dgBeta, 0.0f, 1.0f);
             }
