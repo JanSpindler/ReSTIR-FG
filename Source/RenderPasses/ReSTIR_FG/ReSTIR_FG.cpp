@@ -347,6 +347,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         mpRTXDI = std::make_unique<RTXDI>(mpScene, mRTXDIOptions);
     }
+
     // Delete RTXDI if it is set and the mode changed
     if (mDirectLightMode != DirectLightingMode::RTXDI && mpRTXDI)
     {
@@ -355,9 +356,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
 
     // Prepare used Datas and Buffers
     prepareLighting(pRenderContext);
-
     prepareBuffers(pRenderContext, renderData);
-
     prepareAccelerationStructure();
 
     // Clear the reservoir
@@ -382,6 +381,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         mClearReservoir = false;
     }
 
+    // Restir DI
     if (mpRTXDI)
     {
         mpRTXDI->beginFrame(pRenderContext, mScreenRes);
@@ -401,11 +401,13 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         return;
     } 
 
+    // Restir GI
     if (mRenderMode == RenderMode::ReSTIRGI)
     {
         generateReSTIRGISamples(pRenderContext, renderData);
     }
 
+    // Photon mapping
     if (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::FinalGather)
     {
         getFinalGatherHitPass(pRenderContext, renderData);

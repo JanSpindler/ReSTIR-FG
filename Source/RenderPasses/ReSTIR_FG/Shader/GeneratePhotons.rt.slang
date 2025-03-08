@@ -504,8 +504,7 @@ void rayGen()
         // Sample direction without photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
         if (sampleNext1D(lightSg) > gBeta)
-#endif
-#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
+#else
         if (true)
 #endif
         {

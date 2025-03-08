@@ -27,7 +27,8 @@ cbuffer PerFrame
     uint3 _pad;
 }
 
-cbuffer Constant{
+cbuffer Constant
+{
     uint gHashSize;     //Size is always 2^x
     bool gUseAlphaTest; //Alpha test
     bool gDeltaRejection;   //Accept every non delta surface as diffuse
@@ -39,17 +40,17 @@ Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gView;
 Texture2D <float>gLinZ;
 
-//Outputs
+// Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
 RWStructuredBuffer<PackedSurfaceDataFG> gSurfaceData;
 RWTexture2D<PackedHitInfo> gFinalGatherHit;
 RWTexture2D<uint> gPhotonCullingMask;
 
-//Outputs
+// Outputs
 #if USE_REDUCED_RESERVOIR_FORMAT
-    RWTexture2D<uint2> gReservoir;
+RWTexture2D<uint2> gReservoir;
 #else
-    RWTexture2D<uint4> gReservoir;
+RWTexture2D<uint4> gReservoir;
 #endif
 
 static const bool kUsePhotonCulling = USE_PHOTON_CULLING;
@@ -71,7 +72,7 @@ struct TraceData
     }
 };
 
-//Load in shading data from hit and direction
+// Load in shading data from hit and direction
 ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextureSampler lod)
 {
     const TriangleHit triangleHit = hit.getTriangleHit();
@@ -82,18 +83,20 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
     return sd;
 }
 
-void cullingGetArrayOfCells(float3 position, float radius, out int3 outCells[8]){
+void cullingGetArrayOfCells(float3 position, float radius, out int3 outCells[8])
+{
     float3 cell = (position.xyz * gHashScaleFactor);
     float radInScale = radius * gHashScaleFactor;
     float3 cellFloor = floor(cell);
     float3 relCellPos = abs(cell - cellFloor);
-    //Get offset direction
+
+    // Get offset direction
     int3 offsetCell;
     offsetCell.x = relCellPos.x < 0.5 ? -1 : 1;
     offsetCell.y = relCellPos.y < 0.5 ? -1 : 1;
     offsetCell.z = relCellPos.z < 0.5 ? -1 : 1;
 
-    //Fill the cell array
+    // Fill the cell array
     outCells[0] = int3(cellFloor);
     outCells[1] = int3(floor(cell + radInScale * float3(offsetCell.x, 0, 0)));
     outCells[2] = int3(floor(cell + radInScale * float3(offsetCell.x, offsetCell.y, 0)));
@@ -104,14 +107,16 @@ void cullingGetArrayOfCells(float3 position, float radius, out int3 outCells[8])
     outCells[7] = int3(floor(cell + radInScale * float3(0, 0, offsetCell.z)));
 }
 
-void photonCulling(float3 hitPos, float radius){
-    //Get the 7 nearest neighbors (photon can still be in it)
+void photonCulling(float3 hitPos, float radius)
+{
+    // Get the 7 nearest neighbors (photon can still be in it)
     int3 cells[8];
     cullingGetArrayOfCells(hitPos, radius, cells);
 
-    //Insert them into the hash buffer
+    // Insert them into the hash buffer
     [unroll]
-    for(uint i=0; i<8; i++){
+    for(uint i = 0; i < 8; ++i)
+    {
         uint h = hash(cells[i]) & (gHashSize - 1);    //calculateHash
         gPhotonCullingMask[ReSTIR_LinearIndexToZCurve(h)] = 1;
     }
@@ -125,7 +130,9 @@ void miss(inout TraceData rayData : SV_RayPayload)
 
 //Use anyhit for alpha test if activated
 [shader("anyhit")]
-void anyHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(
+    inout TraceData rayData : SV_RayPayload,
+    BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     if (gUseAlphaTest)
     {
@@ -134,13 +141,19 @@ void anyHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersection
         VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
         uint materialID = gScene.getMaterialID(instanceID);
         if (gScene.materials.alphaTest(v, materialID, 0.f))
+        {
             IgnoreHit();
+        }
     }
 }
 
 [shader("closesthit")]
-void closestHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes){
+void closestHit(
+    inout TraceData rayData : SV_RayPayload,
+    BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+{
     const float3 incomingRayDir = -WorldRayDirection();
+
     // Evaluate Falcor's material parameters at the hit point.
     TriangleHit triangleHit;
     triangleHit.instanceID = getGeometryInstanceID();
@@ -161,13 +174,13 @@ void rayGen()
     SurfaceFG surface = SurfaceFG();
     Reservoir reservoir = Reservoir();
     TraceData traceData = TraceData::create();
-    #if STORE_SAMPLE_GEN_STATE
-        SampleGenerator sg = gSampleGenState[index2Dto1D(launchIndex,launchDim.x)];
-    #else
-        SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 3 * 32);
-    #endif
-    
 
+#if STORE_SAMPLE_GEN_STATE
+    SampleGenerator sg = gSampleGenState[index2Dto1D(launchIndex,launchDim.x)];
+#else
+    SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 3 * 32);
+#endif
+    
     if (hitInfo.isValid())
     {
         float4 viewTmp = gView[launchIndex];
@@ -177,7 +190,7 @@ void rayGen()
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData sd = loadShadingData(hitInfo, view, lod);
         
-        //Use only BRDF
+        // Use only BRDF
         sd.mtl.setActiveLobes((uint) LobeType::Reflection);
 
         uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
@@ -187,12 +200,17 @@ void rayGen()
         BSDFSample bsdfSample;
         bool validSample = bsdf.sample(sd, sg, bsdfSample);
                 
-        //Fill Surface Buffer used for calculating the target PDF
-        surface = SurfaceFG::create(sd.computeNewRayOrigin(), bsdfProperties.guideNormal, sd.V, viewDepth, bsdfProperties.roughness,
-                                      luminance(bsdfProperties.diffuseReflectionAlbedo), luminance(bsdfProperties.specularReflectance));
+        // Fill Surface Buffer used for calculating the target PDF
+        surface = SurfaceFG::create(
+            sd.computeNewRayOrigin(),
+            bsdfProperties.guideNormal,
+            sd.V,
+            viewDepth,
+            bsdfProperties.roughness,
+            luminance(bsdfProperties.diffuseReflectionAlbedo),
+            luminance(bsdfProperties.specularReflectance));
         
         reservoir.targetFunc = surface.getPdf(bsdfSample.wo);
-    
         reservoir.weightSum = 1.f / bsdfSample.pdf; // 1/selectPDF
 
         RayDesc tRay;
@@ -203,7 +221,15 @@ void rayGen()
     
         if (validSample)
         {
-            TraceRay(gScene.rtAccel, 0, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, tRay, traceData);
+            TraceRay(
+                gScene.rtAccel,
+                0,
+                0xff /* instanceInclusionMask */,
+                0 /* hitIdx */,
+                rayTypeCount,
+                0 /* missIdx */,
+                tRay,
+                traceData);
             validSample = traceData.distance > 0;
         }
     
@@ -215,34 +241,32 @@ void rayGen()
             if (kUsePhotonCulling)
             {
                 photonCulling(hitPos,gCollectionRadius.x);
-                if(kUseCausticPhotons || collectDirect)
+                if (kUseCausticPhotons || collectDirect)
                 {
                     float radius = collectDirect ? gCollectionRadius.x : gCollectionRadius.y;
                     photonCulling(sd.posW, radius);
                 }
-                    
             }
         }
 
-    
         if (!validSample)
         {
             traceData.packedHitInfo = { };
-            reservoir.weightSum = 0.f; //invalidate reseroir
+            reservoir.weightSum = 0.f; // invalidate reseroir
         }
     }
     
-    //Store data in buffers
+    // Store data in buffers
     gFinalGatherHit[launchIndex] = traceData.packedHitInfo;
     gSurfaceData[index2Dto1D(launchIndex, launchDim.x)] = surface.pack(); 
-    #if STORE_SAMPLE_GEN_STATE
-        gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
-    #endif //STORE_SAMPLE_GEN_STATE
 
+#if STORE_SAMPLE_GEN_STATE
+    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
+#endif // STORE_SAMPLE_GEN_STATE
 
-    #if USE_REDUCED_RESERVOIR_FORMAT
-        gReservoir[launchIndex] = reservoir.packReduced();
-    #else
-        gReservoir[launchIndex] = reservoir.pack();
-    #endif
+#if USE_REDUCED_RESERVOIR_FORMAT
+    gReservoir[launchIndex] = reservoir.packReduced();
+#else
+    gReservoir[launchIndex] = reservoir.pack();
+#endif
 }
