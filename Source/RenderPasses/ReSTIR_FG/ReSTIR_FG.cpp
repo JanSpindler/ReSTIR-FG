@@ -432,20 +432,23 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         collectPhotons(pRenderContext, renderData);
     }
 
-    // Do resampling
+    // Final gather resampling
     if ((mRenderMode == RenderMode::ReSTIRFG) || (mRenderMode == RenderMode::ReSTIRGI))
     {
         resamplingPass(pRenderContext, renderData);
     }
 
+    // Caustic resampling
     if (mReservoirValid && mCausticCollectMode == CausticCollectionMode::Reservoir &&
         (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::FinalGather))
     {
         causticResamplingPass(pRenderContext, renderData);
     }
 
+    // Final shading
     finalShadingPass(pRenderContext, renderData);
 
+    // Restir Di
     if (mpRTXDI)
     {
         mpRTXDI->endFrame(pRenderContext);
@@ -472,6 +475,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         mSPPMFramesCameraStill++;
     }
 
+    //
     mReservoirValid = true;
     mFrameCount++;
 }
@@ -1775,62 +1779,68 @@ void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
      }
 }
 
-void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData) {
-     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
+void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
-     //Defines
-     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
-     mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_MODE", std::to_string((uint)mCausticCollectMode));
-     mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_INDIRECT", mUseCausticsForIndirectLight ? "1" : "0");
-     mCollectPhotonPass.pProgram->addDefine("REJECT_FGSAMPLE_DIFFUSE_SURFACE", (mGenerationDeltaRejectionRequireDiffPart && mTraceRequireDiffuseMat) ? "1" : "0");
-     mCollectPhotonPass.pProgram->addDefine(
-         "EMISSION_TO_CAUSTIC_FILTER", (mCausticCollectMode == CausticCollectionMode::Temporal && mEmissionToCausticFilter) ? "1" : "0"
-     );
-     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_PD_FORMAT", mUseReducePhotonData ? "1" : "0");
+    // Defines
+    mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_MODE", std::to_string((uint)mCausticCollectMode));
+    mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_INDIRECT", mUseCausticsForIndirectLight ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefine(
+        "REJECT_FGSAMPLE_DIFFUSE_SURFACE",
+        (mGenerationDeltaRejectionRequireDiffPart && mTraceRequireDiffuseMat) ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefine(
+        "EMISSION_TO_CAUSTIC_FILTER",
+        (mCausticCollectMode == CausticCollectionMode::Temporal && mEmissionToCausticFilter) ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_PD_FORMAT", mUseReducePhotonData ? "1" : "0");
 
+    mCollectPhotonPass.pProgram->addDefine("USE_STOCHASTIC_COLLECT", mUseStochasticCollect ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefine("STOCH_NUM_PHOTONS", std::to_string(mStochasticCollectNumPhotons));
+    mCollectPhotonPass.pProgram->addDefine("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
+    mCollectPhotonPass.pProgram->addDefines(getMaterialDefines());
 
-     mCollectPhotonPass.pProgram->addDefine("USE_STOCHASTIC_COLLECT", mUseStochasticCollect ? "1" : "0");
-     mCollectPhotonPass.pProgram->addDefine("STOCH_NUM_PHOTONS", std::to_string(mStochasticCollectNumPhotons));
-     mCollectPhotonPass.pProgram->addDefine("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
-     mCollectPhotonPass.pProgram->addDefines(getMaterialDefines());
-
-     if (!mCollectPhotonPass.pVars)
+    // Program vars
+    if (!mCollectPhotonPass.pVars)
+    {
         mCollectPhotonPass.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
-     FALCOR_ASSERT(mCollectPhotonPass.pVars);
+    }
+    FALCOR_ASSERT(mCollectPhotonPass.pVars);
 
-     auto var = mCollectPhotonPass.pVars->getRootVar();
+    auto var = mCollectPhotonPass.pVars->getRootVar();
 
-     // Set Constant Buffers
-     std::string nameBuf = "PerFrame";
-     var[nameBuf]["gFrameCount"] = mFrameCount;
-     var[nameBuf]["gPhotonRadius"] = mPhotonCollectRadius;
-     var[nameBuf]["gAttenuationRadius"] = mSampleRadiusAttenuation;
-     var[nameBuf]["gCollectCaustic"] = true;
-     var[nameBuf]["gCollectFG"] = true;
-     //Set Temporal Constant Buffer if necessary
-     if (mCausticCollectMode == CausticCollectionMode::Temporal)
-     {
+    // Set Constant Buffers
+    std::string nameBuf = "PerFrame";
+    var[nameBuf]["gFrameCount"] = mFrameCount;
+    var[nameBuf]["gPhotonRadius"] = mPhotonCollectRadius;
+    var[nameBuf]["gAttenuationRadius"] = mSampleRadiusAttenuation;
+    var[nameBuf]["gCollectCaustic"] = true;
+    var[nameBuf]["gCollectFG"] = true;
+
+    // Set Temporal Constant Buffer if necessary
+    if (mCausticCollectMode == CausticCollectionMode::Temporal)
+    {
         nameBuf = "TemporalFilter";
         var[nameBuf]["gTemporalFilterHistoryLimit"] = mCausticTemporalFilterHistoryLimit;
         var[nameBuf]["gDepthThreshold"] = mRelativeDepthThreshold;
         var[nameBuf]["gNormalThreshold"] = mNormalThreshold;
 
         var["gMVec"] = renderData[kInputMotionVectors]->asTexture();
-        //Bind necessary buffer and textures
-        //Temporal Indices
+        // Bind necessary buffer and textures
+        // Temporal Indices
         uint idxCurr = mFrameCount % 2;
         uint idxPrev = (mFrameCount + 1) % 2;
-                
+               
         var["gCausticSurface"] = mpTemporalCausticSurface[idxCurr];
         var["gCausticSurfacePrev"] = mpTemporalCausticSurface[idxPrev];
 
         var["gCausticPrev"] = mpCausticRadiance[idxPrev];
         var["gCausticOut"] = mpCausticRadiance[idxCurr];
-     }
+    }
 
-     //Resampling Photon Collection Mode
-     if (mCausticCollectMode == CausticCollectionMode::Reservoir)
-     {
+    // Resampling Photon Collection Mode
+    if (mCausticCollectMode == CausticCollectionMode::Reservoir)
+    {
         uint idxCurr = mFrameCount % 2;
         var["gSurface"] = mpSurfaceBuffer[idxCurr];
         var["gCausticReservoir"] = mpCausticReservoir[idxCurr];
@@ -1840,45 +1850,50 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
             var["gDirectFGReservoir"] = mpDirectFGReservoir[idxCurr];
             var["gDirectFGSample"] = mpDirectFGSample[idxCurr];
         }
-     }
-     
-
-     // Bind reservoir and light buffer depending on the boost buffer
-     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
-     var["gFGSampleData"] = mpFGSampelDataBuffer[mFrameCount % 2];
-
-     for (uint32_t i = 0; i < 2; i++)
-     {
+    }
+    
+    // Bind reservoir and light buffer depending on the boost buffer
+    var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
+    var["gFGSampleData"] = mpFGSampelDataBuffer[mFrameCount % 2];
+    for (uint32_t i = 0; i < 2; i++)
+    {
         var["gPhotonAABB"][i] = mpPhotonAABB[i];
         var["gPackedPhotonData"][i] = mpPhotonData[i];
-     }
-     var["gFinalGatherHit"] = mpFinalGatherSampleHitData;
+    }
+    var["gFinalGatherHit"] = mpFinalGatherSampleHitData;
 
-     var["gVBuffer"] = mpVBuffer;
-     var["gView"] = mpViewDir;
-     var["gThp"] = mpThp;
-     var["gSampleGenState"] = mpSampleGenState;
+    var["gVBuffer"] = mpVBuffer;
+    var["gView"] = mpViewDir;
+    var["gThp"] = mpThp;
+    var["gSampleGenState"] = mpSampleGenState;
 
-     if (mCausticCollectMode != CausticCollectionMode::Temporal)
+    if (mCausticCollectMode != CausticCollectionMode::Temporal)
+    {
         var["gCausticOut"] = mpCausticRadiance[0];
+    }
 
+    // Bind the photon acceleration structure
+    mpPhotonAS->bindTlas(var, "gPhotonAS");
 
-     mpPhotonAS->bindTlas(var, "gPhotonAS");
-
-     if (mPhotonSplitCollection)
-     {
+    // Collect caustic and fg photons seperately
+    if (mPhotonSplitCollection)
+    {
         collectPhotonsSplit(pRenderContext, renderData, var, "Caustic", false);
         collectPhotonsSplit(pRenderContext, renderData, var, "FGSample", true);
-     }
-     else
-     {
+    }
+    // Collect caustic and fg photons together
+    else
+    {
         uint2 targetDim = renderData.getDefaultTextureDims();
         FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
         // Trace the photons
-        mpScene->raytrace(pRenderContext, mCollectPhotonPass.pProgram.get(), mCollectPhotonPass.pVars, uint3(targetDim, 1));
-     }
-        
+        mpScene->raytrace(
+            pRenderContext,
+            mCollectPhotonPass.pProgram.get(),
+            mCollectPhotonPass.pVars,
+            uint3(targetDim, 1));
+    }
 }
 
 void ReSTIR_FG::collectPhotonsSplit(RenderContext* pRenderContext, const RenderData& renderData, ShaderVar& var, std::string profileName, bool fg) {
