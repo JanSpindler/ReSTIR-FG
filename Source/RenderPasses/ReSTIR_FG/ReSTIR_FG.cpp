@@ -1596,9 +1596,12 @@ void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const Rende
         pRenderContext->uavBarrier(mpPhotonCullingMask.get());
 }
 
-void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderData& renderData, bool secondPass) {
-
-    std::string passName = mMixedLights ? (secondPass ? "PhotonGenAnalytic" : "PhotonGenEmissive") : "PhotonGeneration";
+void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderData& renderData, bool secondPass)
+{
+    std::string passName =
+        mMixedLights ?
+        (secondPass ? "PhotonGenAnalytic" : "PhotonGenEmissive") :
+        "PhotonGeneration";
     FALCOR_PROFILE(pRenderContext, passName);
 
     if (!secondPass)
@@ -1622,8 +1625,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         }
     }
 
-    uint photonXExtent = std::max(1u, dispatchedPhotons / mPhotonYExtent);  //Divide total count by Y Extent
-    photonXExtent += 32u - (photonXExtent % 32);                            //Round up to a multiple of 32
+    // Calculate photon x extent
+    uint photonXExtent = std::max(1u, dispatchedPhotons / mPhotonYExtent);  // Divide total count by Y Extent
+    photonXExtent += 32u - (photonXExtent % 32);                            // Round up to a multiple of 32
     const uint2 targetDim = uint2(photonXExtent, mPhotonYExtent);
     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
 
@@ -1644,6 +1648,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefine(
         "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
 
+    // Program vars
     if (!mGeneratePhotonPass.pVars)
     {
         FALCOR_ASSERT(mGeneratePhotonPass.pProgram);
@@ -1651,7 +1656,6 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         {
             mGeneratePhotonPass.pProgram->addDefines(mpEmissiveLightSampler->getDefines());
         }
-
         mGeneratePhotonPass.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
     };
 
@@ -1661,7 +1665,6 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mpScene->setRaytracingShaderData(pRenderContext, var);
 
     // Set constants (uniforms).
-    //
     // PerFrame Constant Buffer
     float hashRad = mCullingUseFixedRadius ? std::max(mPhotonCollectRadius.x, mCullingCellRadius) : mPhotonCollectRadius.x;
     std::string nameBuf = "PerFrame";
@@ -1717,9 +1720,14 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     // Trace the photons
     if (traceScene)
     {
-        mpScene->raytrace(pRenderContext, mGeneratePhotonPass.pProgram.get(), mGeneratePhotonPass.pVars, uint3(targetDim, 1));
+        mpScene->raytrace(
+            pRenderContext,
+            mGeneratePhotonPass.pProgram.get(),
+            mGeneratePhotonPass.pVars,
+            uint3(targetDim, 1));
     }
 
+    // Barrier
     pRenderContext->uavBarrier(mpPhotonCounter[mFrameCount % kPhotonCounterCount].get());
     pRenderContext->uavBarrier(mpPhotonAABB[0].get());
     pRenderContext->uavBarrier(mpPhotonData[0].get());
@@ -1730,10 +1738,16 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     {
         handlePhotonCounter(pRenderContext);
 
-        // Build/Update Acceleration Structure
-        const uint2 currentPhotons = mFrameCount > 0 ? uint2(float2(mCurrentPhotonCount) * mASBuildBufferPhotonOverestimate) : mNumMaxPhotons;
+        // Build / Update Acceleration Structure
+        const uint2 currentPhotons =
+            mFrameCount > 0 ?
+            uint2(float2(mCurrentPhotonCount) * mASBuildBufferPhotonOverestimate) :
+            mNumMaxPhotons;
+
         std::vector<uint64_t> photonBuildSize = {
-            std::min(mNumMaxPhotons[0], currentPhotons[0]), std::min(mNumMaxPhotons[1], currentPhotons[1])};
+            std::min(mNumMaxPhotons[0], currentPhotons[0]),
+            std::min(mNumMaxPhotons[1], currentPhotons[1]) };
+
         mpPhotonAS->update(pRenderContext, photonBuildSize);
     }
 }
