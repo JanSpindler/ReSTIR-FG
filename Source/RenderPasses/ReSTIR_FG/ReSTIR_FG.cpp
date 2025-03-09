@@ -426,6 +426,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         mpRTXDI->update(pRenderContext, pMotionVectors, mpViewDirRayDistDI, mpViewDirDIPrev);
     }
 
+    // Collect photons
     if (mRenderMode == RenderMode::ReSTIRFG || mRenderMode == RenderMode::FinalGather)
     {
         collectPhotons(pRenderContext, renderData);
