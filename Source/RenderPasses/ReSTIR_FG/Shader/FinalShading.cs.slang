@@ -1,6 +1,5 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-#include "GaussianHelper.slang"
 
 import Utils.Math.PackedFormats;
 import Utils.Math.FormatConversion;
@@ -14,6 +13,7 @@ import Rendering.RTXDI.RTXDI;
 
 import Reservoir;
 import FinalGatherData;
+import GaussianHelper;
 
 // For Syntax highlighting
 #ifndef USE_RTXDI

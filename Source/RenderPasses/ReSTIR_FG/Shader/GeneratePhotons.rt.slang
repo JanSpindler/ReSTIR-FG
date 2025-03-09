@@ -1,6 +1,5 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-#include "GaussianHelper.slang"
 
 import Scene.Raytracing;
 import Utils.Math.PackedFormats;
@@ -16,6 +15,7 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import FinalGatherData;
 import Hash;
+import GaussianHelper;
 
 cbuffer PerFrame
 {
