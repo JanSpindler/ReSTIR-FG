@@ -235,10 +235,9 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     primIndex = (primIndex & 0x7FFFFFFF) | (instanceIndex << 31);
 
     // Check if first hit check is required
-    if((rayData.counter >> 24 & 1) != 0)
+    if ((rayData.counter >> 24 & 1) != 0 && !pd.isFirstHit)
     {
-        if (!pd.isFirstHit)
-            IgnoreHit();
+        IgnoreHit();
     }
 
     // Check for different surfaces
@@ -291,7 +290,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
 
     // Check if first hit check is required
-    if((rayData.countPhotons >> 24 & 1) != 0 && !pd.isFirstHit)
+    if ((rayData.countPhotons >> 24 & 1) != 0 && !pd.isFirstHit)
     {
         IgnoreHit();
     }
@@ -349,6 +348,7 @@ void intersection()
     // Report the hit if the point is in the sphere
     if (tHit)
     {
+        // TODO: Mark as collected for photon guiding
         ReportHit(RayTCurrent(), 0, attribs);
     }
 }
