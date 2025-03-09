@@ -206,11 +206,11 @@ private:
     bool mOptionsChanged = false;
 
     // Material Settings
-    bool mUseLambertianDiffuse = true;  //Diffuse BRDF used by ReSTIR PT and SuffixReSTIR
+    bool mUseLambertianDiffuse = false;  // Diffuse BRDF used by ReSTIR PT and SuffixReSTIR
     bool mDisableDiffuse = false;
     bool mDisableSpecular = false;
     bool mDisableTranslucency = false;
-    bool mStoreSampleGenState = false;   //Stores samples GenStates
+    bool mStoreSampleGenState = false;   // Stores samples GenStates
 
     // Specular Trace Options
     uint mTraceMaxBounces = 10;                                    //Number of Specular/Transmissive bounces allowed
@@ -296,7 +296,7 @@ private:
     uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
     uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
-    float m3dgMinPdf = 0.001f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
+    float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
     float m3dgBeta = 0.8f; // MIS weight for 3D gaussian sampling and uniform sampling
 
     // ReSTIR GI
