@@ -1896,26 +1896,37 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 }
 
-void ReSTIR_FG::collectPhotonsSplit(RenderContext* pRenderContext, const RenderData& renderData, ShaderVar& var, std::string profileName, bool fg) {
-     FALCOR_PROFILE(pRenderContext, profileName);
+void ReSTIR_FG::collectPhotonsSplit(
+    RenderContext* pRenderContext,
+    const RenderData& renderData,
+    ShaderVar& var,
+    std::string profileName,
+    bool fg)
+{
+    FALCOR_PROFILE(pRenderContext, profileName);
 
-     std::string nameBuf = "PerFrame";
-     //Set constant buffer vars
-     if (fg)
-     {
+    // Set constant buffer vars
+    std::string nameBuf = "PerFrame";
+    if (fg)
+    {
         var[nameBuf]["gCollectCaustic"] = false;
         var[nameBuf]["gCollectFG"] = true;
-     }
-     else
-     {
+    }
+    else
+    {
         var[nameBuf]["gCollectCaustic"] = true;
         var[nameBuf]["gCollectFG"] = false;
-     }
+    }
 
-     uint2 targetDim = renderData.getDefaultTextureDims();
-     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-     // Trace the photons
-     mpScene->raytrace(pRenderContext, mCollectPhotonPass.pProgram.get(), mCollectPhotonPass.pVars, uint3(targetDim, 1));
+    uint2 targetDim = renderData.getDefaultTextureDims();
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+
+    // Trace the photons
+    mpScene->raytrace(
+        pRenderContext,
+        mCollectPhotonPass.pProgram.get(),
+        mCollectPhotonPass.pVars,
+        uint3(targetDim, 1));
 }
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData) {
