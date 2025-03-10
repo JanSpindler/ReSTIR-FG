@@ -73,6 +73,9 @@ Texture2D<uint2> gCausticSurface;
 Texture2D<uint2> gCausticSurfacePrev;
 Texture2D<float4> gCausticPrev;
 
+// 3D gaussian photon guiding
+RWBuffer<uint> gFirstHitCollectionCounts;
+
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
 RWTexture2D<float4> gColor;

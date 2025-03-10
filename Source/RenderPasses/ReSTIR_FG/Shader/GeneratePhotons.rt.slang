@@ -61,6 +61,9 @@ Texture2D<uint> gPhotonCullingMask;
 
 // 3D gaussian photon guiding
 RWStructuredBuffer<Gaussian3D> gGaussians;
+RWBuffer<uint> gFirstHitPhotonCounter;
+RWStructuredBuffer<float3> gFirstHitPhotonPos;
+RWBuffer<uint> gPhotonFirstHitMap;
 
 enum class GenerationFlags // : uint32_t
 {

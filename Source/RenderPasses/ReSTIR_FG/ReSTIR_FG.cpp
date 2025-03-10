@@ -1370,7 +1370,41 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
     }
 
+    if (!mp3dgFirstHitPhotonCount)
+    {
+        const uint zero = 0;
+        mp3dgFirstHitPhotonCount = Buffer::create(
+            mpDevice,
+            sizeof(uint),
+            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource,
+            Buffer::CpuAccess::None,
+            &zero);
+    }
 
+    if (!mp3dgFirstHitPhotonPosBuffer)
+    {
+        mp3dgFirstHitPhotonPosBuffer = Buffer::createStructured(
+            mpDevice,
+            sizeof(float3),
+            mNumMaxPhotons[0],
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    }
+
+    if (!mp3dgFirstHitCollectionCountsBuffer)
+    {
+        mp3dgFirstHitCollectionCountsBuffer = Buffer::create(
+            mpDevice,
+            sizeof(uint) * mNumMaxPhotons[0],
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    }
+
+    if (!mp3dgPhotonFirstHitMapBuffer)
+    {
+        mp3dgPhotonFirstHitMapBuffer = Buffer::create(
+            mpDevice,
+            sizeof(uint) * mNumMaxPhotons[0],
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    }
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1606,11 +1640,18 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         "PhotonGeneration";
     FALCOR_PROFILE(pRenderContext, passName);
 
+    // Clear buffers on first generate photons pass
     if (!secondPass)
     {
+        // Clear photon counter
         pRenderContext->clearUAV(mpPhotonCounter[mFrameCount % kPhotonCounterCount]->getUAV().get(), uint4(0));
+
+        // Clear AABBs
         pRenderContext->clearUAV(mpPhotonAABB[0]->getUAV().get(), uint4(0));
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
+
+        // Clear first hit photon counter
+        pRenderContext->clearUAV(mp3dgFirstHitPhotonCount->getUAV().get(), uint4(0));
     }
 
     // Get dimensions of ray dispatch.
@@ -1718,6 +1759,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
     // 3D gaussian photon guiding buffers
     var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount;
+    var["gFirstHitPhotonPos"] = mp3dgFirstHitPhotonPosBuffer;
+    var["gPhotonFirstHitMap"] = mp3dgPhotonFirstHitMapBuffer;
 
     // Trace the photons
     if (traceScene)
@@ -1804,6 +1848,9 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 {
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
+    // Clear first hit collection counts
+    pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer->getUAV().get(), uint4(0));
+
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
     mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_MODE", std::to_string((uint)mCausticCollectMode));
@@ -1872,7 +1919,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
             var["gDirectFGSample"] = mpDirectFGSample[idxCurr];
         }
     }
-    
+
+    // Bind first hit collection counts buffer
+    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
+
     // Bind reservoir and light buffer depending on the boost buffer
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
     var["gFGSampleData"] = mpFGSampelDataBuffer[mFrameCount % 2];
