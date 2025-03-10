@@ -74,6 +74,7 @@ Texture2D<uint2> gCausticSurfacePrev;
 Texture2D<float4> gCausticPrev;
 
 // 3D gaussian photon guiding
+Buffer<uint> gPhotonFirstHitMap;
 RWBuffer<uint> gFirstHitCollectionCounts;
 
 // Outputs
@@ -255,6 +256,17 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         IgnoreHit();
     }
 
+    // Add to first hit photon collection count
+    // TODO: Also handle caustic photons
+#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+    if (InstanceIndex() == 0)
+    {
+        const uint firstHitIdx = gPhotonFirstHitMap[primIndex];
+        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    }
+#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+
+    //
     uint counter = rayData.counter & 0xFFFFFF;  // Mask out the flags
     uint idx = counter;
     counter++;
@@ -304,6 +316,16 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         IgnoreHit();
     }
 
+    // Add to first hit photon collection count
+    // TODO: Also handle caustic photons
+#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+    if (InstanceIndex() == 0)
+    {
+        const uint firstHitIdx = gPhotonFirstHitMap[primIndex];
+        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    }
+#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+
     // Photon contribution
     uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
     let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
@@ -315,6 +337,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     {
         rayData.radiance += max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
     }
+
+    // Exit
     IgnoreHit();
 }
 

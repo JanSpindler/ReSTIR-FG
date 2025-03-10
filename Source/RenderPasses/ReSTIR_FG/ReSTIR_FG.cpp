@@ -1868,6 +1868,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     mCollectPhotonPass.pProgram->addDefine("RESERVOIR_PHOTON_DIRECT", mCausticResamplingForFGDirect ? "1" : "0");
     mCollectPhotonPass.pProgram->addDefines(getMaterialDefines());
 
+    // Gaussian photon guiding defines
+    mGeneratePhotonPass.pProgram->addDefine(
+        "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
+
     // Program vars
     if (!mCollectPhotonPass.pVars)
     {
@@ -1920,7 +1924,8 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
         }
     }
 
-    // Bind first hit collection counts buffer
+    // 3D gaussian photon guiding
+    var["gPhotonFirstHitMap"] = mp3dgPhotonFirstHitMapBuffer;
     var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
 
     // Bind reservoir and light buffer depending on the boost buffer
