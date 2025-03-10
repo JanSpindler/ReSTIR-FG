@@ -1754,22 +1754,25 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
 void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
 {
-     // Copy the photonCounter to a CPU Buffer
-     pRenderContext->copyBufferRegion(
-         mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount].get(), 0, mpPhotonCounter[mFrameCount % kPhotonCounterCount].get(), 0,
-         sizeof(uint32_t) * 2
-     );
+    // Copy the photonCounter to a CPU Buffer
+    pRenderContext->copyBufferRegion(
+        mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount].get(),
+        0,
+        mpPhotonCounter[mFrameCount % kPhotonCounterCount].get(),
+        0,
+        sizeof(uint32_t) * 2);
 
-     void* data = mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount]->map(Buffer::MapType::Read);
-     std::memcpy(&mCurrentPhotonCount, data, sizeof(uint) * 2);
-     mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount]->unmap();
+    void* data = mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount]->map(Buffer::MapType::Read);
+    std::memcpy(&mCurrentPhotonCount, data, sizeof(uint) * 2);
+    mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount]->unmap();
 
-     // Change Photon dispatch count dynamically.
-     if (mUseDynamicPhotonDispatchCount)
-     {
+    // Change Photon dispatch count dynamically.
+    if (mUseDynamicPhotonDispatchCount)
+    {
         // Only use global photons for the dynamic dispatch count
         uint globalPhotonCount = mCurrentPhotonCount[0];
         uint globalMaxPhotons = mNumMaxPhotons[0];
+
         // If counter is invalid, reset
         if (globalPhotonCount == 0)
         {
@@ -1781,16 +1784,18 @@ void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
         // If smaller, increase dispatch size
         if (globalPhotonCount < bufferSizeCompValue)
         {
-            uint newDispatched = (uint)((mNumDispatchedPhotons + changeSize) / mPhotonYExtent) * mPhotonYExtent; // mod YExtend == 0
+            // mod YExtend == 0
+            uint newDispatched = (uint)((mNumDispatchedPhotons + changeSize) / mPhotonYExtent) * mPhotonYExtent;
             mNumDispatchedPhotons = std::min(newDispatched, mPhotonDynamicDispatchMax);
         }
         // If bigger, decrease dispatch size
         else if (globalPhotonCount >= globalMaxPhotons)
         {
-            uint newDispatched = (uint)((mNumDispatchedPhotons - changeSize) / mPhotonYExtent) * mPhotonYExtent; // mod YExtend == 0
+            // mod YExtend == 0
+            uint newDispatched = (uint)((mNumDispatchedPhotons - changeSize) / mPhotonYExtent) * mPhotonYExtent;
             mNumDispatchedPhotons = std::max(newDispatched, mPhotonYExtent);
         }
-     }
+    }
 }
 
 void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& renderData)
