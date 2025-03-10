@@ -563,7 +563,9 @@ void rayGen()
     uint currentCausticBounces = 0;
     bool storeAsCaustic = false;
     bool reflectedDiffuse = false;
-        
+
+    uint firstHitIndex = 0;
+
     // Recursion where the photons are shot
     for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)
     {
@@ -583,10 +585,29 @@ void rayGen()
         {
             break;
         }
-        
+
+        // Store photon info
         photonPos = rayData.origin;
         photon.dir = ray.Direction;
         reflectedDiffuse = rayData.diffuseHit;
+
+        // Store first hit photon even when the first hit is not stored in the photon map
+        // Because resulting photons along the path might be collected
+#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+        if (i == 0)
+        {
+            // Get first hit photon index
+            InterlockedAdd(gFirstHitPhotonCounter[0], 1u, firstHitIndex);
+
+            // Check if buffer is full
+            // TODO: Custom buffer size
+            if (firstHitIndex < kPhotonBufferSize[0])
+            {
+                // If not full -> store first hit photon position
+                gFirstHitPhotonPos[firstHitIndex] = photonPos;
+            }
+        }
+#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
         // Gen Roulette value for rejecting
         float rndRoulette = sampleNext1D(rayData.sg);
@@ -599,7 +620,7 @@ void rayGen()
             minDistanceRoulette = sampleNext1D(rayData.sg) < gGenerationLampIntersectGuardStoreProbability;
             photon.flux *= 1.f / gGenerationLampIntersectGuardStoreProbability;
         }
-                       
+
         // Store photons
         if (reflectedDiffuse && (roulette || storeAsCaustic) && minDistanceRoulette)
         {
@@ -627,16 +648,24 @@ void rayGen()
                 // Only store photon if the buffer space allows it
                 if (photonIndex <= kPhotonBufferSize[photonType])
                 {
+                    // Store photon
                     AABB photonAABB = AABB(photonPos - gPhotonRadius[photonType], photonPos + gPhotonRadius[photonType]);
                     gPhotonAABB[photonType][photonIndex] = photonAABB;
                     PhotonData pd = PhotonData();
                     pd.flux = photon.flux;
                     pd.dir = -photon.dir;
                     pd.packedNormal = rayData.packedNormal;
-                    pd.isFirstHit = i==0;
+                    pd.isFirstHit = i == 0;
                 
                     gPackedPhotonData[photonType][photonIndex] = pd.pack();
-                } 
+
+                    // Store mapping from photon index to first hit index
+                    // TODO: Right now only handling global photons
+                    if (photonType == 0)
+                    {
+                        gPhotonFirstHitMap[photonIndex] = firstHitIndex;
+                    }
+                }
             }
         }
 
