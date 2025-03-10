@@ -372,7 +372,9 @@ void miss(inout RayData rayData : SV_RayPayload)
 }
 
 [shader("closesthit")]
-void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void closestHit(
+    inout RayData rayData : SV_RayPayload,
+    BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     const float3 incomingRayDir = -WorldRayDirection();
     // Evaluate Falcor's material parameters at the hit point.
@@ -421,7 +423,9 @@ void closestHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersecti
 
 // Use anyhit for alpha test if activated
 [shader("anyhit")]
-void anyHit(inout RayData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+void anyHit(
+    inout RayData rayData : SV_RayPayload,
+    BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
     if (gFlags & (uint) GenerationFlags::AlphaTest)
     {
@@ -473,7 +477,9 @@ void rayGen()
 
     const float invRejection = 1.f / gRejection;
     const float invInvRejection = 1.f / (1.f - gRejection);
-    SampleGenerator lightSg = SampleGenerator(launchIndex, gFrameCount + 11 * 32); //Sample Generator for the light sample
+
+    // Sample Generator for the light sample
+    SampleGenerator lightSg = SampleGenerator(launchIndex, gFrameCount + 11 * 32);
 
     RayDesc ray;
     PhotonLightSample pls;
@@ -481,13 +487,13 @@ void rayGen()
 #if USE_EMISSIVE_LIGHT
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
 #endif  // USE_EMISSIVE_LIGHT
-    {   // Analytic light sample
+    {
+        // Analytic light sample
         float3 sampleDir;
         if (!createLightSampleAnalytic(lightSg, pls, sampleDir))
         {
             return;
         }
-    
         ray.Direction = sampleDir;
     }
 #if USE_EMISSIVE_LIGHT  
@@ -530,11 +536,12 @@ void rayGen()
             pls.flux *= dot(pls.normal, ray.Direction);
         }
     }
-#endif // USE_EMISSIVE_LIGHT  
-    
-    pls.flux /= launchDim.x * launchDim.y; // Division through all dipatched photons
+#endif // USE_EMISSIVE_LIGHT
 
-    // Prepare ray payload.
+    // Division through all dipatched photons
+    pls.flux /= launchDim.x * launchDim.y;
+
+    // Prepare ray payload
     RayData rayData = RayData.create();
     rayData.sg = SampleGenerator(launchIndex, gFrameCount + 1 * 32 );
 
@@ -571,7 +578,7 @@ void rayGen()
             ray,
             rayData);
 
-        // Stop if a light source was hit
+        // Stop if a light source was hit or the ray missed
         if (rayData.isEmissive || (rayData.terminated & kRayFlagTerminatedMiss > 0))
         {
             break;
@@ -590,20 +597,23 @@ void rayGen()
         if (rayData.distance < gGenerationLampIntersectGuard)
         {
             minDistanceRoulette = sampleNext1D(rayData.sg) < gGenerationLampIntersectGuardStoreProbability;
-            photon.flux *= 1.f/gGenerationLampIntersectGuardStoreProbability;
+            photon.flux *= 1.f / gGenerationLampIntersectGuardStoreProbability;
         }
                        
         // Store photons
         if (reflectedDiffuse && (roulette || storeAsCaustic) && minDistanceRoulette)
         {
-            uint photonType = storeAsCaustic ? 1 : 0; // Global = 0 or caustic = 1
+            // Global = 0 or caustic = 1
+            uint photonType = storeAsCaustic ? 1 : 0;
             bool storePhoton = true;
 
+            // Photon Culling
             if (kUsePhotonCulling && (kUseCausticCulling || photonType == 0))
             {
-                storePhoton = cullingTest(photonPos); // Photon Culling
+                storePhoton = cullingTest(photonPos);
             }
 
+            // Store
             if (storePhoton)
             {
                 uint photonIndex = 0;
