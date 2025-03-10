@@ -343,6 +343,10 @@ private:
 
     ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
     ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
+    // TODOs:
+    // - Buffer for storing mapping to first hit index
+    // - Buffer for storing pos for each first index
+    // - Atomic counter for sequentially increasing first hit index
 
     //
     // Render Passes/Programms

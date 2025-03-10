@@ -1369,6 +1369,8 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mp3dgGaussianTexture->setName("ReSTIR_FG::3DGaussianTexture");
         pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
     }
+
+
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()

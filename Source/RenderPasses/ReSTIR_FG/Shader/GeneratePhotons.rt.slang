@@ -359,8 +359,7 @@ bool cullingTest(float3 origin)
     uint hashSize = (gHashSize - 1);
     uint h = hash(cell) & hashSize;
 
-    bool mask = gPhotonCullingMask[ReSTIR_LinearIndexToZCurve(h)];
-    return mask >= 1.f ? true : false;
+    return gPhotonCullingMask[ReSTIR_LinearIndexToZCurve(h)];
 }
 
 [shader("miss")]
@@ -477,8 +476,8 @@ void rayGen()
     PhotonLightSample pls;
 
 #if USE_EMISSIVE_LIGHT
-    if (gFlags & (uint) GenerationFlags::AnalyticLight)
-#endif
+    if (gFlags & (uint)GenerationFlags::AnalyticLight)
+#endif  // USE_EMISSIVE_LIGHT
     {   // Analytic light sample
         float3 sampleDir;
         if (!createLightSampleAnalytic(lightSg, pls, sampleDir))
@@ -504,9 +503,9 @@ void rayGen()
         // Sample direction without photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
         if (sampleNext1D(lightSg) > gBeta)
-#else
+#else  // USE_3D_GAUSSIAN_PHOTON_GUIDING
         if (true)
-#endif
+#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
         {
             // Sample uniform
             float photonDirPdf = 1.0f;
@@ -527,13 +526,8 @@ void rayGen()
             pls.flux /= photonDirPdf;
             pls.flux *= dot(pls.normal, ray.Direction);
         }
-//#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
-//#endif
-//        // Sample direction with photon guiding
-//#if USE_3D_GAUSSIAN_PHOTON_GUIDING
-//#endif
     }
-#endif    
+#endif // USE_EMISSIVE_LIGHT  
     
     pls.flux /= launchDim.x * launchDim.y; // Division through all dipatched photons
 
