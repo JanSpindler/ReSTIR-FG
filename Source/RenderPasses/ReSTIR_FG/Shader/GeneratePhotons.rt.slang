@@ -62,7 +62,7 @@ Texture2D<uint> gPhotonCullingMask;
 // 3D gaussian photon guiding
 RWStructuredBuffer<Gaussian3D> gGaussians;
 RWBuffer<uint> gFirstHitPhotonCounter;
-RWStructuredBuffer<float3> gFirstHitPhotonPos;
+RWStructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<uint> gPhotonFirstHitMap;
 
 enum class GenerationFlags // : uint32_t
@@ -483,6 +483,7 @@ void rayGen()
 
     RayDesc ray;
     PhotonLightSample pls;
+    uint lightIdx = 0;
 
 #if USE_EMISSIVE_LIGHT
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
@@ -500,7 +501,6 @@ void rayGen()
     else
     {
         // Sample emissive light
-        uint lightIdx = 0;
         if (!createLightSample(lightSg, pls, lightIdx))
         {
             return;
@@ -604,7 +604,11 @@ void rayGen()
             if (firstHitIndex < kPhotonBufferSize[0])
             {
                 // If not full -> store first hit photon position
-                gFirstHitPhotonPos[firstHitIndex] = photonPos;
+                FirstHitPhotonInfo firstHitPhotonInfo;
+                firstHitPhotonInfo.pos = photonPos;
+                firstHitPhotonInfo.samplingPdf = 1.0f;
+                firstHitPhotonInfo.lightIdx = lightIdx;
+                gFirstHitPhotonInfo[firstHitIndex] = firstHitPhotonInfo;
             }
         }
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING

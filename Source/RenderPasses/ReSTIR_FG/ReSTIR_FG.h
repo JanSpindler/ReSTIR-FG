@@ -352,7 +352,7 @@ private:
     ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
     ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
     ref<Buffer> mp3dgFirstHitPhotonCount; // Buffer for an atomic counter counting the number of first hit photons
-    ref<Buffer> mp3dgFirstHitPhotonPosBuffer; // Buffer storing the first photon positions
+    ref<Buffer> mp3dgFirstHitPhotonInfoBuffer; // Buffer storing the first photon information
     ref<Buffer> mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
     ref<Buffer> mp3dgPhotonFirstHitMapBuffer; // Buffer storing the mapping for each photon to its first hit index
 

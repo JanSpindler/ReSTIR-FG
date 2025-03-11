@@ -57,6 +57,13 @@ struct Gaussian3D
     }
 };
 
+struct FirstHitPhotonInfo
+{
+    float3 pos;
+    float samplingPdf;
+    uint lightIdx;
+};
+
 namespace
 {
     const std::string kTraceTransmissionDeltaShader = "RenderPasses/ReSTIR_FG/Shader/TraceTransmissionDelta.rt.slang";
@@ -1388,11 +1395,11 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             &zero);
     }
 
-    if (!mp3dgFirstHitPhotonPosBuffer)
+    if (!mp3dgFirstHitPhotonInfoBuffer)
     {
-        mp3dgFirstHitPhotonPosBuffer = Buffer::createStructured(
+        mp3dgFirstHitPhotonInfoBuffer = Buffer::createStructured(
             mpDevice,
-            sizeof(float3),
+            sizeof(FirstHitPhotonInfo),
             mNumMaxPhotons[0],
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
@@ -1769,7 +1776,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     // 3D gaussian photon guiding buffers
     var["gGaussians"] = mp3dgGaussianBuffer;
     var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount;
-    var["gFirstHitPhotonPos"] = mp3dgFirstHitPhotonPosBuffer;
+    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
     var["gPhotonFirstHitMap"] = mp3dgPhotonFirstHitMapBuffer;
 
     // Trace the photons

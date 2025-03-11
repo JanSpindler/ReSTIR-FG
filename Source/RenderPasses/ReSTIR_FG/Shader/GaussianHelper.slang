@@ -1,5 +1,8 @@
 #pragma once
 
+static const float PI = 3.14159265359f;
+static const float SQRT_2 = 1.41421356237f;
+
 struct Gaussian3D
 {
     float3 mean; // Mean
@@ -7,8 +10,12 @@ struct Gaussian3D
     float weight; // Unnormalized weight used in GMM
 };
 
-static const float PI = 3.14159265359f;
-static const float SQRT_2 = 1.41421356237f;
+struct FirstHitPhotonInfo
+{
+    float3 pos;
+    float samplingPdf;
+    uint lightIdx;
+};
 
 // Approximation of the error function
 // Abramowitz and Stegun 7.1.26
