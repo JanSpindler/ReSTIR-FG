@@ -148,7 +148,15 @@ private:
 
     /** Special pass if the collection is split in caustic and final gather
      */
-    void collectPhotonsSplit(RenderContext* pRenderContext, const RenderData& renderData, ShaderVar& var, std::string profileName, bool fg);
+    void collectPhotonsSplit(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        ShaderVar& var,
+        std::string profileName,
+        bool fg);
+
+    // Calulates the gradient for each first hit photon
+    void calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData);
 
     /** Resampling pass, which resamples the generated sampled based on the resampling mode
     */
@@ -379,6 +387,7 @@ private:
     RayTraceProgramHelper mGeneratePhotonPass;
     RayTraceProgramHelper mCollectPhotonPass;
 
+    ref<ComputePass> mpCalculateGaussianGradientPass;   // Calculate the gradient for each first hit photon
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes
     ref<ComputePass> mpCausticResamplingPass;           // Resampling Pass for Caustics
     ref<ComputePass> mpFinalShadingPass;                // Final Shading Pass

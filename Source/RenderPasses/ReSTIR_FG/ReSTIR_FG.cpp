@@ -433,6 +433,12 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         collectPhotons(pRenderContext, renderData);
     }
 
+    // Calculate gaussian gradients
+    if (mUse3DGaussianPhotonGuiding)
+    {
+        calculateGaussianGradientPass(pRenderContext, renderData);
+    }
+
     // Final gather resampling
     if ((mRenderMode == RenderMode::ReSTIRFG) || (mRenderMode == RenderMode::ReSTIRGI))
     {
@@ -2008,7 +2014,39 @@ void ReSTIR_FG::collectPhotonsSplit(
         uint3(targetDim, 1));
 }
 
-void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData) {
+void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
+
+    // Init shader
+    if (!mpCalculateGaussianGradientPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kCalculateGaussainGradiantShader).csEntry("main").setShaderModel(kShaderModel);
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getMaterialDefines());
+
+        mpCalculateGaussianGradientPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpCalculateGaussianGradientPass);
+
+    // Set variables
+    auto var = mpCalculateGaussianGradientPass->getRootVar();
+
+    // Execute
+    const uint firstHitPhotonCount = mCurrentPhotonCount[0]; // TODO
+    mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(firstHitPhotonCount, 1, 1));
+}
+
+
+void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
     std::string profileName = "SpatiotemporalResampling";
     if (mResamplingMode == ResamplingMode::Temporal)
     {
