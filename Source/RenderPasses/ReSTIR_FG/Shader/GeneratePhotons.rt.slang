@@ -484,6 +484,7 @@ void rayGen()
     RayDesc ray;
     PhotonLightSample pls;
     uint lightIdx = 0;
+    float firstHitSamplingPdf = 0.0f;
 
 #if USE_EMISSIVE_LIGHT
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
@@ -523,6 +524,7 @@ void rayGen()
                 return;
             }
             pls.flux /= photonDirPdf;
+            firstHitSamplingPdf = photonDirPdf; // TODO: Correct MIS
         }
         else
         {
@@ -534,6 +536,7 @@ void rayGen()
             }
             pls.flux /= photonDirPdf;
             pls.flux *= dot(pls.normal, ray.Direction);
+            firstHitSamplingPdf = photonDirPdf; // TODO: Correct MIS
         }
     }
 #endif // USE_EMISSIVE_LIGHT
@@ -606,7 +609,7 @@ void rayGen()
                 // If not full -> store first hit photon position
                 FirstHitPhotonInfo firstHitPhotonInfo;
                 firstHitPhotonInfo.pos = photonPos;
-                firstHitPhotonInfo.samplingPdf = 1.0f;
+                firstHitPhotonInfo.samplingPdf = firstHitSamplingPdf;
                 firstHitPhotonInfo.lightIdx = lightIdx;
                 gFirstHitPhotonInfo[firstHitIndex] = firstHitPhotonInfo;
             }
