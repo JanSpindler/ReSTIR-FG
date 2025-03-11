@@ -68,6 +68,7 @@ namespace
     const std::string kCausticResamplingPassShader = "RenderPasses/ReSTIR_FG/Shader/CausticResamplingPass.cs.slang";
     const std::string kFinalShadingPassShader = "RenderPasses/ReSTIR_FG/Shader/FinalShading.cs.slang";
     const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/DirectAnalytic.cs.slang";
+    const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
 
     const std::string kShaderModel = "6_5";
     const uint kMaxPayloadBytes = 96u;
@@ -1444,10 +1445,10 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
     mGeneratePhotonPass.initRTProgram(mpDevice, mpScene, kGeneratePhotonsShader, kMaxPayloadBytes, globalTypeConformances);
     mTraceTransmissionDelta.initRTProgram(mpDevice, mpScene, kTraceTransmissionDeltaShader, kMaxPayloadBytes, globalTypeConformances);
 
-    //Special Program for the Photon Collection as the photon acceleration structure is used
+    // Special Program for the Photon Collection as the photon acceleration structure is used
     mCollectPhotonPass.initRTCollectionProgram(mpDevice, mpScene, kCollectPhotonsShader, kMaxPayloadBytesCollect, globalTypeConformances);
 
-    //ReSTIR GI shader
+    // ReSTIR GI shader
     {
         RtProgram::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
@@ -1456,7 +1457,9 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
         desc.setMaxAttributeSize(mpScene->getRaytracingMaxAttributeSize());
         desc.setMaxTraceRecursionDepth(1);
         if (!mpScene->hasProceduralGeometry())
+        {
             desc.setPipelineFlags(RtPipelineFlags::SkipProceduralPrimitives);
+        }
 
         mReSTIRGISamplePass.pBindingTable = RtBindingTable::create(2, 2, mpScene->getGeometryCount());
         auto& sbt = mReSTIRGISamplePass.pBindingTable;
@@ -2006,16 +2009,20 @@ void ReSTIR_FG::collectPhotonsSplit(
 }
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData) {
-     std::string profileName = "SpatiotemporalResampling";
-     if (mResamplingMode == ResamplingMode::Temporal)
+    std::string profileName = "SpatiotemporalResampling";
+    if (mResamplingMode == ResamplingMode::Temporal)
+    {
         profileName = "TemporalResampling";
-     else if (mResamplingMode == ResamplingMode::Spatial)
+    }
+    else if (mResamplingMode == ResamplingMode::Spatial)
+    {
         profileName = "SpatialResampling";
+    }
 
-     FALCOR_PROFILE(pRenderContext, profileName);
+    FALCOR_PROFILE(pRenderContext, profileName);
 
-     if (!mpResamplingPass)
-     {
+    if (!mpResamplingPass)
+    {
         Program::Desc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kResamplingPassShader).csEntry("main").setShaderModel(kShaderModel);
@@ -2032,69 +2039,70 @@ void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& 
         defines.add(getMaterialDefines());
 
         mpResamplingPass = ComputePass::create(mpDevice, desc, defines, true);
-     }
+    }
 
-     FALCOR_ASSERT(mpResamplingPass);
+    FALCOR_ASSERT(mpResamplingPass);
 
-     //If defines change, refresh the program
-     mpResamplingPass->getProgram()->addDefine("MODE_SPATIOTEMPORAL", mResamplingMode == ResamplingMode::SpartioTemporal ? "1" : "0");
-     mpResamplingPass->getProgram()->addDefine("MODE_TEMPORAL", mResamplingMode == ResamplingMode::Temporal ? "1" : "0");
-     mpResamplingPass->getProgram()->addDefine("MODE_SPATIAL", mResamplingMode == ResamplingMode::Spatial ? "1" : "0");
-     mpResamplingPass->getProgram()->addDefine("BIAS_CORRECTION_MODE", std::to_string((uint)mBiasCorrectionMode));
-     mpResamplingPass->getProgram()->addDefine("USE_REDUCED_RESERVOIR_FORMAT" ,mUseReducedReservoirFormat ? "1" : "0");
-     mpResamplingPass->getProgram()->addDefines(getMaterialDefines());
+    // If defines change, refresh the program
+    mpResamplingPass->getProgram()->addDefine("MODE_SPATIOTEMPORAL", mResamplingMode == ResamplingMode::SpartioTemporal ? "1" : "0");
+    mpResamplingPass->getProgram()->addDefine("MODE_TEMPORAL", mResamplingMode == ResamplingMode::Temporal ? "1" : "0");
+    mpResamplingPass->getProgram()->addDefine("MODE_SPATIAL", mResamplingMode == ResamplingMode::Spatial ? "1" : "0");
+    mpResamplingPass->getProgram()->addDefine("BIAS_CORRECTION_MODE", std::to_string((uint)mBiasCorrectionMode));
+    mpResamplingPass->getProgram()->addDefine("USE_REDUCED_RESERVOIR_FORMAT" ,mUseReducedReservoirFormat ? "1" : "0");
+    mpResamplingPass->getProgram()->addDefines(getMaterialDefines());
      
     // Set variables
-     auto var = mpResamplingPass->getRootVar();
+    auto var = mpResamplingPass->getRootVar();
 
-     mpScene->setRaytracingShaderData(pRenderContext, var, 1); // Set scene data
-     mpSampleGenerator->setShaderData(var);                    // Sample generator
+    mpScene->setRaytracingShaderData(pRenderContext, var, 1); // Set scene data
+    mpSampleGenerator->setShaderData(var);                    // Sample generator
 
-     //Bind Reservoir and surfaces
-     uint idxCurr = mFrameCount % 2;
-     uint idxPrev = (mFrameCount + 1) % 2;
+    // Bind Reservoir and surfaces
+    uint idxCurr = mFrameCount % 2;
+    uint idxPrev = (mFrameCount + 1) % 2;
 
-     var["gSurface"] = mpSurfaceBuffer[idxCurr];
-     var["gSurfacePrev"] = mpSurfaceBuffer[idxPrev];
+    var["gSurface"] = mpSurfaceBuffer[idxCurr];
+    var["gSurfacePrev"] = mpSurfaceBuffer[idxPrev];
 
-     //Swap the reservoir and sample indices for spatial resampling
-     if (mResamplingMode == ResamplingMode::Spatial)
+    // Swap the reservoir and sample indices for spatial resampling
+    if (mResamplingMode == ResamplingMode::Spatial)
+    {
         std::swap(idxCurr, idxPrev);
+    }
 
-     var["gReservoir"]          = mpReservoirBuffer[idxCurr];
-     var["gReservoirPrev"]      = mpReservoirBuffer[idxPrev];
-     var["gFGSampleData"]       = mpFGSampelDataBuffer[idxCurr];
-     var["gFGSampleDataPrev"]   = mpFGSampelDataBuffer[idxPrev];
+    var["gReservoir"]          = mpReservoirBuffer[idxCurr];
+    var["gReservoirPrev"]      = mpReservoirBuffer[idxPrev];
+    var["gFGSampleData"]       = mpFGSampelDataBuffer[idxCurr];
+    var["gFGSampleDataPrev"]   = mpFGSampelDataBuffer[idxPrev];
     
+    // View
+    var["gView"] = mpViewDir;
+    var["gPrevView"] = mpViewDirPrev;
+    var["gMVec"] = renderData[kInputMotionVectors]->asTexture();
+    var["gSampleGenState"] = mpSampleGenState;
 
-     //View
-     var["gView"] = mpViewDir;
-     var["gPrevView"] = mpViewDirPrev;
-     var["gMVec"] = renderData[kInputMotionVectors]->asTexture();
-     var["gSampleGenState"] = mpSampleGenState;
+    std::string uniformName = "PerFrame";
+    var[uniformName]["gFrameCount"] = mFrameCount;
 
-     std::string uniformName = "PerFrame";
-     var[uniformName]["gFrameCount"] = mFrameCount;
+    uniformName = "Constant";
+    var[uniformName]["gFrameDim"] = renderData.getDefaultTextureDims();
+    var[uniformName]["gMaxAge"] = mTemporalMaxAge;
+    var[uniformName]["gSpatialSamples"] = mspatialSamples;
+    var[uniformName]["gSamplingRadius"] = mSamplingRadius;
+    var[uniformName]["gDepthThreshold"] = mRelativeDepthThreshold;
+    var[uniformName]["gNormalThreshold"] = mNormalThreshold;
+    var[uniformName]["gDisocclusionBoostSamples"] = mDisocclusionBoostSamples;
+    var[uniformName]["gAttenuationRadius"] = mSampleRadiusAttenuation;
+    var[uniformName]["gJacobianMinMax"] = mJacobianMinMax;
 
-     uniformName = "Constant";
-     var[uniformName]["gFrameDim"] = renderData.getDefaultTextureDims();
-     var[uniformName]["gMaxAge"] = mTemporalMaxAge;
-     var[uniformName]["gSpatialSamples"] = mspatialSamples;
-     var[uniformName]["gSamplingRadius"] = mSamplingRadius;
-     var[uniformName]["gDepthThreshold"] = mRelativeDepthThreshold;
-     var[uniformName]["gNormalThreshold"] = mNormalThreshold;
-     var[uniformName]["gDisocclusionBoostSamples"] = mDisocclusionBoostSamples;
-     var[uniformName]["gAttenuationRadius"] = mSampleRadiusAttenuation;
-     var[uniformName]["gJacobianMinMax"] = mJacobianMinMax;
+    // Execute
+    const uint2 targetDim = renderData.getDefaultTextureDims();
+    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    mpResamplingPass->execute(pRenderContext, uint3(targetDim, 1));
 
-     // Execute
-     const uint2 targetDim = renderData.getDefaultTextureDims();
-     FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-     mpResamplingPass->execute(pRenderContext, uint3(targetDim, 1));
-
-     // Barrier for written buffer
-     pRenderContext->uavBarrier(mpReservoirBuffer[idxCurr].get());
-     pRenderContext->uavBarrier(mpFGSampelDataBuffer[idxCurr].get());
+    // Barrier for written buffer
+    pRenderContext->uavBarrier(mpReservoirBuffer[idxCurr].get());
+    pRenderContext->uavBarrier(mpFGSampelDataBuffer[idxCurr].get());
 }
 
 void ReSTIR_FG::causticResamplingPass(RenderContext* pRenderContext, const RenderData& renderData) {
