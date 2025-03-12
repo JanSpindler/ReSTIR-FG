@@ -63,9 +63,20 @@ float f0(const float3 x, const float3 x0, const float3 mu, const float sigma)
     return term1 + (term2 * term3);
 }
 
-float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
+float GaussianNormTerm(const float sigma)
 {
     const float denom = 2.0f * PI * sigma * sigma;
     const float denom3 = denom * denom * denom;
-    return f0(x, x0, mu, sigma) / sqrt(denom3);
+    return sqrt(denom3);
+}
+
+float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
+{
+    return f0(x, x0, mu, sigma) / GaussianNormTerm(sigma);
+}
+
+float EvalUnormGaussian3D(const in Gaussian3D gaussian, const float3 position)
+{
+    const float distance = length(position - gaussian.mean);
+    return exp(-0.5 * distance * distance / (gaussian.sigma * gaussian.sigma));
 }
