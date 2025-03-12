@@ -48,7 +48,8 @@ cbuffer GaussianPhotonGuiding
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
-cbuffer Light{
+cbuffer Light
+{
     EmissiveLightSampler gEmissiveSampler;
 }
 #endif

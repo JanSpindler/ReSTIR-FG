@@ -1341,11 +1341,11 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
+    const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
+    const size_t gaussianCount = lightCount * m3dgGaussianCount;
     if (!mp3dgGaussianBuffer)
     {
         // Init gaussians
-        const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
-        const size_t gaussianCount = lightCount * m3dgGaussianCount;
         std::vector<Gaussian3D> gaussians(gaussianCount);
 
         // Init N random gaussians in the scene
@@ -1417,6 +1417,15 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mp3dgPhotonFirstHitMapBuffer = Buffer::create(
             mpDevice,
             sizeof(uint) * mNumMaxPhotons[0],
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    }
+
+    if (!mp3dgGradientBuffer)
+    {
+        mp3dgGradientBuffer = Buffer::createStructured(
+            mpDevice,
+            sizeof(Gaussian3D),
+            gaussianCount,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
 }
@@ -2026,6 +2035,9 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     // Profile
     FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
 
+    // Clear gradient buffer
+    pRenderContext->clearUAV(mp3dgGradientBuffer->getUAV().get(), float4(0.0f));
+
     // Init shader
     if (!mpCalculateGaussianGradientPass)
     {
@@ -2045,6 +2057,11 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
 
     // Set variables
     auto var = mpCalculateGaussianGradientPass->getRootVar();
+    var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gFirstHitPhotonCount"] = mp3dgFirstHitPhotonCount;
+    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
+    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
+    var["gGradients"] = mp3dgGradientBuffer;
 
     // Execute
     const uint firstHitPhotonCount = mCurrentPhotonCount[0]; // TODO
