@@ -3,6 +3,11 @@
 
 import GaussianHelper;
 
+cbuffer Constants
+{
+    uint gGaussianCount;
+}
+
 StructuredBuffer<Gaussian3D> gGaussians;
 Buffer<uint> gFirstHitPhotonCount;
 Buffer<uint> gFirstHitCollectionCounts;
@@ -41,7 +46,61 @@ float DerivNormGaussianWrtSigma(const in Gaussian3D gaussian, const float3 posit
         (DerivGaussianNormTermWrtSigma(gaussian.sigma) * EvalUnormGaussian3D(gaussian, position));
 }
 
-// TODO: Dont forget to multiply mean and sigma gradients with weight
+void DerivGmm(const uint lightIdx, const float3 position, const float pdfFactor)
+{
+    // Get first gaussian index
+    const uint firstGaussianIdx = lightIdx * gGaussianCount;
+
+    // Store softmax weights
+    // TODO: Allocate somewhere else and calculate only once before
+    static float softmaxWeights[128];
+    float softmaxSum = 0.0f;
+    for (uint idx = 0; idx < gGaussianCount; ++idx)
+    {
+        const uint gaussianIdx = firstGaussianIdx + idx;
+        softmaxSum += exp(gGaussians[gaussianIdx].weight);
+    }
+    for (uint idx = 0; idx < gGaussianCount; ++idx)
+    {
+        const uint gaussianIdx = firstGaussianIdx + idx;
+        softmaxWeights[idx] = exp(gGaussians[gaussianIdx].weight) / softmaxSum;
+    }
+
+    for (uint idx = 0; idx < gGaussianCount; ++idx)
+    {
+        // Mean
+        const uint gaussianIdx = firstGaussianIdx + idx;
+        const Gaussian3D gaussian = gGaussians[gaussianIdx];
+        const float softmaxWeight = softmaxWeights[gaussianIdx];
+        const float3 meanDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtMean(gaussian, position);
+
+        // Sigma
+        const float sigmaDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtSigma(gaussian, position);
+
+        // Weight
+        float weightDeriv = 0.0f;
+        for (uint otherIdx = 0; otherIdx < gGaussianCount; ++otherIdx)
+        {
+            if (idx == otherIdx)
+            {
+                weightDeriv += softmaxWeights[idx] * (1.0f - softmaxWeights[idx]);
+            }
+            else
+            {
+                weightDeriv += -softmaxWeights[otherIdx] * softmaxWeights[idx];
+            }
+        }
+        weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
+
+        // Add to gradient
+        // TODO: Can't atomic add floats
+        //InterlockedAdd(gGradients[gaussianIdx].mean.x, meanDeriv.x);
+        //InterlockedAdd(gGradients[gaussianIdx].mean.y, meanDeriv.y);
+        //InterlockedAdd(gGradients[gaussianIdx].mean.z, meanDeriv.z);
+        //InterlockedAdd(gGradients[gaussianIdx].sigma, sigmaDeriv);
+        //InterlockedAdd(gGradients[gaussianIdx].weight, weightDeriv);
+    }
+}
 
 [numthreads(32, 1, 1)]
 void main(uint2 index : SV_DispatchThreadID)
@@ -59,4 +118,7 @@ void main(uint2 index : SV_DispatchThreadID)
     const float pdfFactor = targetPdf / samplingPdf;
 
     // Calculate gradient wrt. parameters of gaussian
+    const uint lightIdx = gFirstHitPhotonInfo[firstHitPhotonIdx].lightIdx;
+    const float3 position = gFirstHitPhotonInfo[firstHitPhotonIdx].pos;
+    DerivGmm(lightIdx, position, pdfFactor);
 }
