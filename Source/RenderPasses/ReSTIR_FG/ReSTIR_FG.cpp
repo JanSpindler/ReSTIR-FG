@@ -771,6 +771,12 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                         mp3dgFirstHitCollectionCountsBuffer.reset();
                     }
                 }
+
+                group.text(
+                    "First Hit Photons: " + std::to_string(m3dgActualFirstHitPhotonCount) +
+                    " / " + std::to_string(m3dgMaxFirstHitPhotonCount) +
+                    " (" + std::to_string(100.0f * static_cast<float>(m3dgActualFirstHitPhotonCount) / static_cast<float>(m3dgMaxFirstHitPhotonCount)) +
+                    "%)");
             }
         }
     }
@@ -1397,13 +1403,16 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
 
     if (!mp3dgFirstHitPhotonCount)
     {
-        const uint zero = 0;
         mp3dgFirstHitPhotonCount = Buffer::create(
             mpDevice,
             sizeof(uint),
-            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource,
-            Buffer::CpuAccess::None,
-            &zero);
+            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+
+        mp3dgFirstHitPhotonCountCPU = Buffer::create(
+            mpDevice,
+            sizeof(uint),
+            ResourceBindFlags::None,
+            Buffer::CpuAccess::Read);
     }
 
     if (!mp3dgFirstHitPhotonInfoBuffer)
@@ -1821,7 +1830,19 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     pRenderContext->uavBarrier(mpPhotonData[0].get());
     pRenderContext->uavBarrier(mpPhotonAABB[1].get());
     pRenderContext->uavBarrier(mpPhotonData[1].get());
+    pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.get());
 
+    // First hit photon count
+    if (mUse3DGaussianPhotonGuiding)
+    {
+        // Copy the first hit photon count to a CPU buffer
+        pRenderContext->copyBufferRegion(mp3dgFirstHitPhotonCountCPU.get(), 0, mp3dgFirstHitPhotonCount.get(), 0, sizeof(uint));
+        void* data = mp3dgFirstHitPhotonCountCPU->map(Buffer::MapType::Read);
+        std::memcpy(&m3dgActualFirstHitPhotonCount, data, sizeof(uint));
+        mp3dgFirstHitPhotonCountCPU->unmap();
+    }
+
+    // Global and caustic photon counts
     if (!mMixedLights || mMixedLights && secondPass)
     {
         handlePhotonCounter(pRenderContext);

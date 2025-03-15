@@ -104,7 +104,7 @@ void DerivGmm(const uint lightIdx, const float3 position, const float pdfFactor)
     }
 }
 
-[numthreads(128, 1, 1)]
+[numthreads(256, 1, 1)]
 void main(uint2 index : SV_DispatchThreadID)
 {
     // Get first hit photon index

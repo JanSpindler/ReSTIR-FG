@@ -306,7 +306,8 @@ private:
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
     float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
     float m3dgBeta = 0.8f; // MIS weight for 3D gaussian sampling and uniform sampling
-    uint m3dgMaxFirstHitPhotonCount = 100000; // Maximum number of first hit photons
+    uint m3dgMaxFirstHitPhotonCount = 1000000; // Maximum number of first hit photons
+    uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
@@ -353,6 +354,7 @@ private:
     ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
     ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
     ref<Buffer> mp3dgFirstHitPhotonCount; // Buffer for an atomic counter counting the number of first hit photons
+    ref<Buffer> mp3dgFirstHitPhotonCountCPU; // For showing in UI
     ref<Buffer> mp3dgFirstHitPhotonInfoBuffer; // Buffer storing the first photon information
     ref<Buffer> mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
     ref<Buffer> mp3dgPhotonFirstHitMapBuffer[2]; // Buffer storing the mapping for each photon to its first hit index
