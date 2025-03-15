@@ -74,7 +74,7 @@ Texture2D<uint2> gCausticSurfacePrev;
 Texture2D<float4> gCausticPrev;
 
 // 3D gaussian photon guiding
-Buffer<uint> gPhotonFirstHitMap;
+Buffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gFirstHitCollectionCounts;
 
 // Outputs
@@ -259,11 +259,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     // Add to first hit photon collection count
     // TODO: Also handle caustic photons
 #ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
-    if (InstanceIndex() == 0)
-    {
-        const uint firstHitIdx = gPhotonFirstHitMap[primIndex];
-        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
-    }
+    const uint firstHitIdx = gPhotonFirstHitMap[instanceIndex][primIndex];
+    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
     //
@@ -292,10 +289,11 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 [shader("anyhit")]
 void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_IntersectionAttributes)
 {
+    const uint instanceIdx = InstanceIndex();
     const uint primIndex = PrimitiveIndex();
 
     // Get Photon data
-    PhotonData pd = PhotonData(gPackedPhotonData[InstanceIndex()][primIndex]);
+    PhotonData pd = PhotonData(gPackedPhotonData[instanceIdx][primIndex]);
         
     // Get hit data from payload
     const HitInfo hit = HitInfo(rayData.packedHitInfo);
@@ -319,11 +317,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     // Add to first hit photon collection count
     // TODO: Also handle caustic photons
 #ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
-    if (InstanceIndex() == 0)
-    {
-        const uint firstHitIdx = gPhotonFirstHitMap[primIndex];
-        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
-    }
+    const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primIndex];
+    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
     // Photon contribution

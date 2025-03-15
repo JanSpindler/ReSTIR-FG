@@ -760,6 +760,17 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
 
                 changed |= group.var("Beta (MIS)", m3dgBeta, 0.0f, 1.0f);
+
+                const bool rebuildFirstPhoton = group.var("Max First Hit Photons", m3dgMaxFirstHitPhotonCount);
+                if (m3dgMaxFirstHitPhotonCount > 0)
+                {
+                    changed |= rebuildFirstPhoton;
+                    if (rebuildFirstPhoton)
+                    {
+                        mp3dgFirstHitPhotonInfoBuffer.reset();
+                        mp3dgFirstHitCollectionCountsBuffer.reset();
+                    }
+                }
             }
         }
     }
@@ -1400,7 +1411,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mp3dgFirstHitPhotonInfoBuffer = Buffer::createStructured(
             mpDevice,
             sizeof(FirstHitPhotonInfo),
-            mNumMaxPhotons[0],
+            m3dgMaxFirstHitPhotonCount,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
 
@@ -1408,16 +1419,19 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     {
         mp3dgFirstHitCollectionCountsBuffer = Buffer::create(
             mpDevice,
-            sizeof(uint) * mNumMaxPhotons[0],
+            sizeof(uint) * m3dgMaxFirstHitPhotonCount,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
 
-    if (!mp3dgPhotonFirstHitMapBuffer)
+    for (size_t idx = 0; idx < 2; ++idx)
     {
-        mp3dgPhotonFirstHitMapBuffer = Buffer::create(
-            mpDevice,
-            sizeof(uint) * mNumMaxPhotons[0],
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        if (!mp3dgPhotonFirstHitMapBuffer[idx])
+        {
+            mp3dgPhotonFirstHitMapBuffer[idx] = Buffer::create(
+                mpDevice,
+                sizeof(uint) * mNumMaxPhotons[idx],
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        }
     }
 
     if (!mp3dgGradientBuffer)
@@ -1765,6 +1779,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gB"] = m3dgB;
     var[nameBuf]["gGmmMinPdf"] = m3dgMinPdf;
     var[nameBuf]["gBeta"] = m3dgBeta;
+    var[nameBuf]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Light samples constants
     if (mpEmissiveLightSampler)
@@ -1785,7 +1800,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var["gGaussians"] = mp3dgGaussianBuffer;
     var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount;
     var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
-    var["gPhotonFirstHitMap"] = mp3dgPhotonFirstHitMapBuffer;
+    for (uint32_t idx = 0; idx < 2; ++idx)
+    {
+        var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
+    }
 
     // Trace the photons
     if (traceScene)
@@ -1949,7 +1967,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
-    var["gPhotonFirstHitMap"] = mp3dgPhotonFirstHitMapBuffer;
+    for (uint32_t idx = 0; idx < 2; ++idx)
+    {
+        var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
+    }
     var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
 
     // Bind reservoir and light buffer depending on the boost buffer

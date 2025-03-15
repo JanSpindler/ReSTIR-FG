@@ -45,6 +45,7 @@ cbuffer GaussianPhotonGuiding
     float gB;
     float gGmmMinPdf;
     float gBeta;
+    uint gMaxFirstHitPhotonCount;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
@@ -64,7 +65,7 @@ Texture2D<uint> gPhotonCullingMask;
 RWStructuredBuffer<Gaussian3D> gGaussians;
 RWBuffer<uint> gFirstHitPhotonCounter;
 RWStructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
-RWBuffer<uint> gPhotonFirstHitMap;
+RWBuffer<uint> gPhotonFirstHitMap[2];
 
 enum class GenerationFlags // : uint32_t
 {
@@ -605,7 +606,7 @@ void rayGen()
 
             // Check if buffer is full
             // TODO: Custom buffer size
-            if (firstHitIndex < kPhotonBufferSize[0])
+            if (firstHitIndex < gMaxFirstHitPhotonCount)
             {
                 // If not full -> store first hit photon position
                 FirstHitPhotonInfo firstHitPhotonInfo;
@@ -668,11 +669,7 @@ void rayGen()
                     gPackedPhotonData[photonType][photonIndex] = pd.pack();
 
                     // Store mapping from photon index to first hit index
-                    // TODO: Right now only handling global photons
-                    if (photonType == 0)
-                    {
-                        gPhotonFirstHitMap[photonIndex] = firstHitIndex;
-                    }
+                    gPhotonFirstHitMap[photonType][photonIndex] = firstHitIndex;
                 }
             }
         }
