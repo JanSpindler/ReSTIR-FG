@@ -19,6 +19,7 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/TraceTransmissionDelta.rt.slang
     Shader/GaussianHelper.slang
     Shader/CalculateGaussianGradient.cs.slang
+    Shader/OptimizeGaussians.cs.slang
 )
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)

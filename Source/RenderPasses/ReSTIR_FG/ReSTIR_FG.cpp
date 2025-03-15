@@ -76,6 +76,7 @@ namespace
     const std::string kFinalShadingPassShader = "RenderPasses/ReSTIR_FG/Shader/FinalShading.cs.slang";
     const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/DirectAnalytic.cs.slang";
     const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
+    const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
 
     const std::string kShaderModel = "6_5";
     const uint kMaxPayloadBytes = 96u;
@@ -440,10 +441,11 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         collectPhotons(pRenderContext, renderData);
     }
 
-    // Calculate gaussian gradients
+    // Calculate gaussian gradient and optimize
     if (mUse3DGaussianPhotonGuiding)
     {
         calculateGaussianGradientPass(pRenderContext, renderData);
+        optimizeGaussiansPass(pRenderContext, renderData);
     }
 
     // Final gather resampling
@@ -2110,6 +2112,41 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(firstHitPhotonCount, 1, 1));
 }
 
+void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "OptimizeGaussians");
+
+    // Init shader
+    if (!mpOptimizeGaussiansPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kOptimizeGaussiansShader).csEntry("main").setShaderModel(kShaderModel);
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getMaterialDefines());
+
+        mpOptimizeGaussiansPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpOptimizeGaussiansPass);
+
+    // Set variables
+    const uint totalGaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
+    auto var = mpOptimizeGaussiansPass->getRootVar();
+    var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gGradients"] = mp3dgGradientBuffer;
+    var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
+
+    // Execute
+    const uint threadCount = totalGaussianCount % 32 == 0 ?
+        totalGaussianCount :
+        totalGaussianCount + 32 - (totalGaussianCount % 32);
+    mpOptimizeGaussiansPass->execute(pRenderContext, uint3(totalGaussianCount, 1, 1));
+}
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData)
 {

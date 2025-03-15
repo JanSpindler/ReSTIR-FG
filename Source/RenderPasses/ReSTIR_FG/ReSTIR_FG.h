@@ -158,6 +158,9 @@ private:
     // Calulates the gradient for each first hit photon
     void calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    // Optimize gaussians
+    void optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData);
+
     /** Resampling pass, which resamples the generated sampled based on the resampling mode
     */
     void resamplingPass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -393,6 +396,7 @@ private:
     RayTraceProgramHelper mCollectPhotonPass;
 
     ref<ComputePass> mpCalculateGaussianGradientPass;   // Calculate the gradient for each first hit photon
+    ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes
     ref<ComputePass> mpCausticResamplingPass;           // Resampling Pass for Caustics
     ref<ComputePass> mpFinalShadingPass;                // Final Shading Pass
