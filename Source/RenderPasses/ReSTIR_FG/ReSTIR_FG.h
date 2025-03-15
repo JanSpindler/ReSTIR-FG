@@ -306,7 +306,7 @@ private:
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
     float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
     float m3dgBeta = 0.8f; // MIS weight for 3D gaussian sampling and uniform sampling
-    uint m3dgMaxFirstHitPhotonCount = 1000000; // Maximum number of first hit photons
+    uint m3dgMaxFirstHitPhotonCount = 100000; // Maximum number of first hit photons
     uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
 
     // ReSTIR GI

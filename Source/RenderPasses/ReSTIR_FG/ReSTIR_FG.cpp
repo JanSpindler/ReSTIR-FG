@@ -2106,7 +2106,7 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
 
     // Execute
-    const uint firstHitPhotonCount = mCurrentPhotonCount[0]; // TODO
+    const uint firstHitPhotonCount = math::min(m3dgActualFirstHitPhotonCount, m3dgMaxFirstHitPhotonCount);
     mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(firstHitPhotonCount, 1, 1));
 }
 
