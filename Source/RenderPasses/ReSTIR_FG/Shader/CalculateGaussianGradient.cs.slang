@@ -12,7 +12,7 @@ StructuredBuffer<Gaussian3D> gGaussians;
 Buffer<uint> gFirstHitPhotonCount;
 Buffer<uint> gFirstHitCollectionCounts;
 StructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
-RWStructuredBuffer<Gaussian3D> gGradients;
+RWBuffer<int> gGradients;
 
 static const float SQRT_8_PI3 = 15.7496099457224197f;
 
@@ -93,16 +93,18 @@ void DerivGmm(const uint lightIdx, const float3 position, const float pdfFactor)
         weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
 
         // Add to gradient
-        // TODO: Can't atomic add floats
-        //InterlockedAdd(gGradients[gaussianIdx].mean.x, meanDeriv.x);
-        //InterlockedAdd(gGradients[gaussianIdx].mean.y, meanDeriv.y);
-        //InterlockedAdd(gGradients[gaussianIdx].mean.z, meanDeriv.z);
-        //InterlockedAdd(gGradients[gaussianIdx].sigma, sigmaDeriv);
-        //InterlockedAdd(gGradients[gaussianIdx].weight, weightDeriv);
+        // Need to use integer since InterlockedAdd is not possible with floats
+        // TODO: Optimize
+        const uint gradientIdx = gaussianIdx * 5;
+        InterlockedAdd(gGradients[gradientIdx + 0], QuantizeGradient(meanDeriv.x));
+        InterlockedAdd(gGradients[gradientIdx + 1], QuantizeGradient(meanDeriv.y));
+        InterlockedAdd(gGradients[gradientIdx + 2], QuantizeGradient(meanDeriv.z));
+        InterlockedAdd(gGradients[gradientIdx + 3], QuantizeGradient(sigmaDeriv));
+        InterlockedAdd(gGradients[gradientIdx + 4], QuantizeGradient(weightDeriv));
     }
 }
 
-[numthreads(32, 1, 1)]
+[numthreads(128, 1, 1)]
 void main(uint2 index : SV_DispatchThreadID)
 {
     // Get first hit photon index

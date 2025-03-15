@@ -1422,10 +1422,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
 
     if (!mp3dgGradientBuffer)
     {
-        mp3dgGradientBuffer = Buffer::createStructured(
+        mp3dgGradientBuffer = Buffer::create(
             mpDevice,
-            sizeof(Gaussian3D),
-            gaussianCount,
+            sizeof(int) * 5 * gaussianCount,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
 }
