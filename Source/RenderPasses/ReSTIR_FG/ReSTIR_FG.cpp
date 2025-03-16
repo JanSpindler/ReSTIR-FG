@@ -2133,11 +2133,11 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     // Set variables
     auto var = mpCalculateGaussianGradientPass->getRootVar();
     var["gGaussians"] = mp3dgGaussianBuffer;
-    var["gFirstHitPhotonCount"] = mp3dgFirstHitPhotonCount;
     var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
     var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
     var["gGradients"] = mp3dgGradientBuffer;
     var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
+    var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Execute
     const uint firstHitPhotonCount = math::min(m3dgActualFirstHitPhotonCount, m3dgMaxFirstHitPhotonCount);

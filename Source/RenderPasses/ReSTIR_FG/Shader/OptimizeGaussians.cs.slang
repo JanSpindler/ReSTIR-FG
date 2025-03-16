@@ -34,5 +34,5 @@ void main(uint2 index : SV_DispatchThreadID)
     static const float learningRate = 0.0001f;
     gGaussians[gaussianIdx].mean -= learningRate * meanGradient;
     //gGaussians[gaussianIdx].sigma -= learningRate * sigmaGradient;
-    //gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
+    gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
 }

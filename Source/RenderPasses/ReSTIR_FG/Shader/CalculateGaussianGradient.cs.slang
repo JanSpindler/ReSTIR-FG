@@ -7,10 +7,10 @@ import Printing;
 cbuffer Constants
 {
     uint gGaussianCount;
+    uint gMaxFirstHitPhotonCount;
 }
 
 StructuredBuffer<Gaussian3D> gGaussians;
-Buffer<uint> gFirstHitPhotonCount;
 Buffer<uint> gFirstHitCollectionCounts;
 StructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<int> gGradients;
@@ -102,12 +102,6 @@ void DerivGmm(const uint lightIdx, const float3 position, const float pdfFactor)
         InterlockedAdd(gGradients[gradientIdx + 2], QuantizeGradient(meanDeriv.z));
         InterlockedAdd(gGradients[gradientIdx + 3], QuantizeGradient(sigmaDeriv));
         InterlockedAdd(gGradients[gradientIdx + 4], QuantizeGradient(weightDeriv));
-
-        //InterlockedAdd(gGradients[gradientIdx + 0], QuantizeGradient(1.0f));
-        //InterlockedAdd(gGradients[gradientIdx + 1], QuantizeGradient(1.0f));
-        //InterlockedAdd(gGradients[gradientIdx + 2], QuantizeGradient(1.0f));
-        //InterlockedAdd(gGradients[gradientIdx + 3], QuantizeGradient(0.0f));
-        //InterlockedAdd(gGradients[gradientIdx + 4], QuantizeGradient(0.0f));
     }
 }
 
@@ -116,7 +110,7 @@ void main(uint2 index : SV_DispatchThreadID)
 {
     // Get first hit photon index
     const uint firstHitPhotonIdx = index.x;
-    if (firstHitPhotonIdx >= gFirstHitPhotonCount[0])
+    if (firstHitPhotonIdx >= gMaxFirstHitPhotonCount)
     {
         return;
     }
