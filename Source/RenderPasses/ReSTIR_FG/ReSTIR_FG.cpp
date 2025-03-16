@@ -751,6 +751,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
 
             if (mUse3DGaussianPhotonGuiding)
             {
+                changed |= group.checkbox("Copy Info to CPU", m3dgCopyToCPU);
+
                 const bool rebuildGaussianBuffer = group.var("Gaussians per Light", m3dgGaussianCount);
                 m3dgGaussianCount = math::max<uint>(m3dgGaussianCount, 1);
                 changed |= rebuildGaussianBuffer;
@@ -774,11 +776,14 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     }
                 }
 
-                group.text(
-                    "First Hit Photons: " + std::to_string(m3dgActualFirstHitPhotonCount) +
-                    " / " + std::to_string(m3dgMaxFirstHitPhotonCount) +
-                    " (" + std::to_string(100.0f * static_cast<float>(m3dgActualFirstHitPhotonCount) / static_cast<float>(m3dgMaxFirstHitPhotonCount)) +
-                    "%)");
+                if (m3dgCopyToCPU)
+                {
+                    group.text(
+                        "First Hit Photons: " + std::to_string(m3dgActualFirstHitPhotonCount) +
+                        " / " + std::to_string(m3dgMaxFirstHitPhotonCount) +
+                        " (" + std::to_string(static_cast<float>(m3dgActualFirstHitPhotonCount) / static_cast<float>(m3dgMaxFirstHitPhotonCount)) +
+                        ")");
+                }
             }
         }
     }
@@ -1432,6 +1437,12 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             mpDevice,
             sizeof(uint) * m3dgMaxFirstHitPhotonCount,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+
+        mp3dgFirstHitCollectionCountsBufferCPU = Buffer::create(
+            mpDevice,
+            sizeof(uint) * m3dgMaxFirstHitPhotonCount,
+            ResourceBindFlags::None,
+            Buffer::CpuAccess::Read);
     }
 
     for (size_t idx = 0; idx < 2; ++idx)
@@ -1832,11 +1843,13 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     pRenderContext->uavBarrier(mpPhotonData[0].get());
     pRenderContext->uavBarrier(mpPhotonAABB[1].get());
     pRenderContext->uavBarrier(mpPhotonData[1].get());
-    pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.get());
 
     // First hit photon count
-    if (mUse3DGaussianPhotonGuiding)
+    if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
     {
+        // Barrier
+        pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.get());
+
         // Copy the first hit photon count to a CPU buffer
         pRenderContext->copyBufferRegion(mp3dgFirstHitPhotonCountCPU.get(), 0, mp3dgFirstHitPhotonCount.get(), 0, sizeof(uint));
         void* data = mp3dgFirstHitPhotonCountCPU->map(Buffer::MapType::Read);
@@ -2038,6 +2051,23 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
             mCollectPhotonPass.pVars,
             uint3(targetDim, 1));
     }
+
+    // Copy the first hit collection counts to a CPU buffer
+    if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
+    {
+        pRenderContext->uavBarrier(mp3dgFirstHitCollectionCountsBuffer.get());
+        pRenderContext->copyBufferRegion(
+            mp3dgFirstHitCollectionCountsBufferCPU.get(), 0, mp3dgFirstHitCollectionCountsBuffer.get(), 0,
+            sizeof(uint) * m3dgMaxFirstHitPhotonCount
+        );
+        void* data = mp3dgFirstHitCollectionCountsBufferCPU->map(Buffer::MapType::Read);
+        std::vector<uint> firstHitCollectionCounts(m3dgMaxFirstHitPhotonCount);
+        std::memcpy(firstHitCollectionCounts.data(), data, sizeof(uint) * m3dgMaxFirstHitPhotonCount);
+
+
+
+        __nop();
+    }
 }
 
 void ReSTIR_FG::collectPhotonsSplit(
@@ -2079,7 +2109,7 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
 
     // Clear gradient buffer
-    pRenderContext->clearUAV(mp3dgGradientBuffer->getUAV().get(), float4(0.0f));
+    pRenderContext->clearUAV(mp3dgGradientBuffer->getUAV().get(), uint4(0.0f));
 
     // Init shader
     if (!mpCalculateGaussianGradientPass)

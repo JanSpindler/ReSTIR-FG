@@ -81,7 +81,7 @@ float EvalUnormGaussian3D(const in Gaussian3D gaussian, const float3 position)
     return exp(-0.5 * distance * distance / (gaussian.sigma * gaussian.sigma));
 }
 
-static const float QUANTIZATION = 1024.0f;
+static const float QUANTIZATION = 16384.0f;
 
 int QuantizeGradient(const float gradient)
 {

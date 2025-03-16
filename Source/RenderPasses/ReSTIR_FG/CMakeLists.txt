@@ -20,6 +20,8 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/GaussianHelper.slang
     Shader/CalculateGaussianGradient.cs.slang
     Shader/OptimizeGaussians.cs.slang
+	Shader/Printing.slang
+    Shader/gpu-printing-ops.h
 )
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)

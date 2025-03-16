@@ -2,6 +2,7 @@
 #include "Utils/Math/MathConstants.slangh"
 
 import GaussianHelper;
+import Printing;
 
 cbuffer Constants
 {
@@ -101,6 +102,12 @@ void DerivGmm(const uint lightIdx, const float3 position, const float pdfFactor)
         InterlockedAdd(gGradients[gradientIdx + 2], QuantizeGradient(meanDeriv.z));
         InterlockedAdd(gGradients[gradientIdx + 3], QuantizeGradient(sigmaDeriv));
         InterlockedAdd(gGradients[gradientIdx + 4], QuantizeGradient(weightDeriv));
+
+        //InterlockedAdd(gGradients[gradientIdx + 0], QuantizeGradient(1.0f));
+        //InterlockedAdd(gGradients[gradientIdx + 1], QuantizeGradient(1.0f));
+        //InterlockedAdd(gGradients[gradientIdx + 2], QuantizeGradient(1.0f));
+        //InterlockedAdd(gGradients[gradientIdx + 3], QuantizeGradient(0.0f));
+        //InterlockedAdd(gGradients[gradientIdx + 4], QuantizeGradient(0.0f));
     }
 }
 
@@ -115,8 +122,13 @@ void main(uint2 index : SV_DispatchThreadID)
     }
 
     // Calculate pdf factor
-    const float targetPdf = (float)gFirstHitCollectionCounts[firstHitPhotonIdx];
+    // const float targetPdf = (float)gFirstHitCollectionCounts[firstHitPhotonIdx];
+    const float targetPdf = gFirstHitCollectionCounts[firstHitPhotonIdx] > 0 ? 1.0f : 0.0f;
     const float samplingPdf = gFirstHitPhotonInfo[firstHitPhotonIdx].samplingPdf;
+    if (samplingPdf <= 0.0f)
+    {
+        return;
+    }
     const float pdfFactor = targetPdf / samplingPdf;
 
     // Calculate gradient wrt. parameters of gaussian

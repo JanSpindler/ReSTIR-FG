@@ -605,7 +605,6 @@ void rayGen()
             InterlockedAdd(gFirstHitPhotonCounter[0], 1u, firstHitIndex);
 
             // Check if buffer is full
-            // TODO: Custom buffer size
             if (firstHitIndex < gMaxFirstHitPhotonCount)
             {
                 // If not full -> store first hit photon position

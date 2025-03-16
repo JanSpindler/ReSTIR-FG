@@ -31,8 +31,8 @@ void main(uint2 index : SV_DispatchThreadID)
     const float weightGradient = DequantizeGradient(gGradients[gradientIdx + 4]);
 
     // SGD
-    static const float learningRate = 100.0f;
+    static const float learningRate = 0.0001f;
     gGaussians[gaussianIdx].mean -= learningRate * meanGradient;
-    gGaussians[gaussianIdx].sigma -= learningRate * sigmaGradient;
-    gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
+    //gGaussians[gaussianIdx].sigma -= learningRate * sigmaGradient;
+    //gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
 }
