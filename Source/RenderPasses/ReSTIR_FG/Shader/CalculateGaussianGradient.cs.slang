@@ -122,10 +122,9 @@ void main(uint2 index : SV_DispatchThreadID)
     }
 
     // Calculate pdf factor
-    // const float targetPdf = (float)gFirstHitCollectionCounts[firstHitPhotonIdx];
-    const float targetPdf = gFirstHitCollectionCounts[firstHitPhotonIdx] > 0 ? 1.0f : 0.0f;
+    const float targetPdf = (float)gFirstHitCollectionCounts[firstHitPhotonIdx];
     const float samplingPdf = gFirstHitPhotonInfo[firstHitPhotonIdx].samplingPdf;
-    if (samplingPdf <= 0.0f)
+    if (targetPdf <= 0.0f || samplingPdf <= 0.0f)
     {
         return;
     }
