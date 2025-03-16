@@ -258,7 +258,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 
     // Add to first hit photon collection count
     // TODO: Also handle caustic photons
-#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIndex][primIndex];
     InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
@@ -316,7 +316,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 
     // Add to first hit photon collection count
     // TODO: Also handle caustic photons
-#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primIndex];
     InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING

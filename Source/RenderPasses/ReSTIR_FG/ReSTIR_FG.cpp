@@ -1947,7 +1947,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     mCollectPhotonPass.pProgram->addDefines(getMaterialDefines());
 
     // Gaussian photon guiding defines
-    mGeneratePhotonPass.pProgram->addDefine(
+    mCollectPhotonPass.pProgram->addDefine(
         "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
 
     // Program vars
@@ -2053,21 +2053,23 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 
     // Copy the first hit collection counts to a CPU buffer
-    if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
-    {
-        pRenderContext->uavBarrier(mp3dgFirstHitCollectionCountsBuffer.get());
-        pRenderContext->copyBufferRegion(
-            mp3dgFirstHitCollectionCountsBufferCPU.get(), 0, mp3dgFirstHitCollectionCountsBuffer.get(), 0,
-            sizeof(uint) * m3dgMaxFirstHitPhotonCount
-        );
-        void* data = mp3dgFirstHitCollectionCountsBufferCPU->map(Buffer::MapType::Read);
-        std::vector<uint> firstHitCollectionCounts(m3dgMaxFirstHitPhotonCount);
-        std::memcpy(firstHitCollectionCounts.data(), data, sizeof(uint) * m3dgMaxFirstHitPhotonCount);
+    //if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
+    //{
+    //    pRenderContext->uavBarrier(mp3dgFirstHitCollectionCountsBuffer.get());
+    //    pRenderContext->copyBufferRegion(
+    //        mp3dgFirstHitCollectionCountsBufferCPU.get(), 0, mp3dgFirstHitCollectionCountsBuffer.get(), 0,
+    //        sizeof(uint) * m3dgMaxFirstHitPhotonCount
+    //    );
+    //    void* data = mp3dgFirstHitCollectionCountsBufferCPU->map(Buffer::MapType::Read);
+    //    std::vector<uint> firstHitCollectionCounts(m3dgMaxFirstHitPhotonCount);
+    //    std::memcpy(firstHitCollectionCounts.data(), data, sizeof(uint) * m3dgMaxFirstHitPhotonCount);
 
-
-
-        __nop();
-    }
+    //    const uint maxCollectionCount = *std::max_element(firstHitCollectionCounts.begin(), firstHitCollectionCounts.end());
+    //    if (maxCollectionCount > 0)
+    //    {
+    //        __nop();
+    //    }
+    //}
 }
 
 void ReSTIR_FG::collectPhotonsSplit(
