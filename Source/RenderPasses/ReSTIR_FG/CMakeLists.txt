@@ -1,8 +1,14 @@
+if(NOT FALCOR_HAS_CUDA)
+    return()
+endif()
+
 add_plugin(ReSTIR_FG)
 
 target_sources(ReSTIR_FG PRIVATE
 	ReSTIR_FG.cpp
     ReSTIR_FG.h
+    FalcorCUDA.cpp
+    FalcorCUDA.h
 
     Shader/CausticResamplingPass.cs.slang
 	Shader/CollectPhotons.rt.slang
@@ -23,6 +29,8 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/Printing.slang
     Shader/gpu-printing-ops.h
 )
+
+set_target_properties(ReSTIR_FG PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)
 

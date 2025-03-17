@@ -29,6 +29,7 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include <random>
+#include "FalcorCUDA.h"
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
@@ -240,6 +241,12 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
 
     // Create sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+
+    // Initializes the CUDA driver API.
+    if (!FalcorCUDA::initCUDA())
+    {
+        throw RuntimeError("CUDA driver API initialization failed.");
+    }
 }
 
 void ReSTIR_FG::parseProperties(const Properties& props)

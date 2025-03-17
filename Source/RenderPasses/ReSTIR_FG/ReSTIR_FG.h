@@ -57,7 +57,7 @@ public:
     virtual bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
     virtual bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
-    //GUI Structs and enum
+    // GUI Structs and enum
     enum class ResamplingMode : uint
     {
         Temporal = 0u,
