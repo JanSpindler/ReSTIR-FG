@@ -29,10 +29,10 @@
 #include "Core/API/Texture.h"
 #include "Core/API/RenderContext.h"
 
-#include <host_defines.h>
-
-typedef __device_builtin__ unsigned long long cudaSurfaceObject_t;
+#ifndef __CUDACC__
+typedef unsigned long long cudaSurfaceObject_t;
 typedef struct cudaMipmappedArray* cudaMipmappedArray_t;
+#endif
 
 namespace FalcorCUDA
 {
