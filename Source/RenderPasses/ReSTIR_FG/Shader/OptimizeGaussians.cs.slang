@@ -8,8 +8,23 @@ cbuffer Constants
     uint gTotalGaussianCount;
 }
 
+static const float gLearningRate = 0.001f;
+static const float gBeta1 = 0.9f;
+static const float gBeta2 = 0.999f;
+static const float gOptimTimeStep = 2.0f;
+static const float EPSILON = 1e-8f;
+
 RWStructuredBuffer<Gaussian3D> gGaussians;
 Buffer<int> gGradients;
+
+float Adam(const float g, inout float m, inout float v)
+{
+    m = gBeta1 * m + (1.0f - gBeta1) * g;
+    v = gBeta2 * v + (1.0f - gBeta2) * g * g;
+    const float numerator = m / (1.0f - pow(gBeta1, gOptimTimeStep));
+    const float denominator = sqrt(v / (1.0f - pow(gBeta2, gOptimTimeStep))) + EPSILON;
+    return numerator / denominator;
+}
 
 [numthreads(32, 1, 1)]
 void main(uint2 index : SV_DispatchThreadID)
@@ -34,5 +49,5 @@ void main(uint2 index : SV_DispatchThreadID)
     static const float learningRate = 0.0001f;
     gGaussians[gaussianIdx].mean -= learningRate * meanGradient;
     //gGaussians[gaussianIdx].sigma -= learningRate * sigmaGradient;
-    gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
+    //gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
 }
