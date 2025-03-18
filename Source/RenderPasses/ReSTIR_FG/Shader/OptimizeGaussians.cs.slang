@@ -48,6 +48,9 @@ void main(uint2 index : SV_DispatchThreadID)
     // SGD
     static const float learningRate = 0.0001f;
     gGaussians[gaussianIdx].mean -= learningRate * meanGradient;
-    //gGaussians[gaussianIdx].sigma -= learningRate * sigmaGradient;
-    //gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
+    gGaussians[gaussianIdx].sigma -= 0.001f * learningRate * sigmaGradient;
+    gGaussians[gaussianIdx].weight -= learningRate * weightGradient;
+
+    // TODO: Remove?
+    gGaussians[gaussianIdx].sigma = clamp(gGaussians[gaussianIdx].sigma, 0.5f, 2.0f);
 }

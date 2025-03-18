@@ -982,7 +982,7 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     // 3D gaussian photon guiding
     m3dgB = k3dgCb / sceneExtend;
     m3dgAnalyticLightCount = mpScene->getLightCount();
-    m3dgGeometricLightCount = mpScene->getLightCollection(pRenderContext)->getTotalLightCount();
+    m3dgGeometricLightCount = mpScene->getLightCollection(pRenderContext)->getMeshLights().size();
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
