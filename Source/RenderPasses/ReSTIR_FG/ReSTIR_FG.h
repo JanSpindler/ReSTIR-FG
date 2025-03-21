@@ -37,6 +37,8 @@
 
 #include "Rendering/AccelerationStructure/CustomAccelerationStructure.h"
 
+#include <Utils/CudaUtils.h>
+
 using namespace Falcor;
 
 class ReSTIR_FG : public RenderPass

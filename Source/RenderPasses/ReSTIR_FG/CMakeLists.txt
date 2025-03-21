@@ -7,8 +7,6 @@ add_plugin(ReSTIR_FG)
 target_sources(ReSTIR_FG PRIVATE
 	ReSTIR_FG.cpp
     ReSTIR_FG.h
-    FalcorCUDA.cpp
-    FalcorCUDA.h
 
     Shader/CausticResamplingPass.cs.slang
 	Shader/CollectPhotons.rt.slang
