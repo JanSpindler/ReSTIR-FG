@@ -365,7 +365,7 @@ private:
     ref<Buffer> mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
     ref<Buffer> mp3dgFirstHitCollectionCountsBufferCPU; // For showing in UI
     ref<Buffer> mp3dgPhotonFirstHitMapBuffer[2]; // Buffer storing the mapping for each photon to its first hit index
-    ref<Buffer> mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians
+    InteropBuffer mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians
     //ref<Buffer> mp3dgOptimizationBuffer; // Buffer storing the optimization data for the 3D gaussians (Adam)
 
     //
