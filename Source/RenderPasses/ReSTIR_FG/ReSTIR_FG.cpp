@@ -765,6 +765,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 if (rebuildGaussianBuffer)
                 {
                     mp3dgGaussianBuffer.reset();
+                    mp3dgGradientBuffer.buffer.reset();
+                    mp3dgOptimizationBuffer.reset();
                 }
 
                 changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
@@ -1138,6 +1140,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         {
             mpPhotonAABB[i].reset();
             mpPhotonData[i].reset();
+            mp3dgPhotonFirstHitMapBuffer[i].reset();
         }
     }
 
