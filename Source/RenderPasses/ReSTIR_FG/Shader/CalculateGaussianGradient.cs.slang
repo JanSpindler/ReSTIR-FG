@@ -14,6 +14,7 @@ StructuredBuffer<Gaussian3D> gGaussians;
 Buffer<uint> gFirstHitCollectionCounts;
 StructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<int> gGradients;
+Buffer<uint> gFirstHitPhotonCount;
 
 static const float SQRT_8_PI3 = 15.7496099457224197f;
 
@@ -110,7 +111,7 @@ void main(uint2 index : SV_DispatchThreadID)
 {
     // Get first hit photon index
     const uint firstHitPhotonIdx = index.x;
-    if (firstHitPhotonIdx >= gMaxFirstHitPhotonCount)
+    if (firstHitPhotonIdx >= min(gMaxFirstHitPhotonCount, gFirstHitPhotonCount[0]))
     {
         return;
     }
