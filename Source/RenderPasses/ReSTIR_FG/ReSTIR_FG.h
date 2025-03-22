@@ -157,8 +157,11 @@ private:
         std::string profileName,
         bool fg);
 
-    // Calulates the gradient for each first hit photon
+    // Calculate the gradient for each first hit photon
     void calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData);
+
+    // Calculate the gradient using CUDA
+    void calculateGaussianGradientCuda();
 
     // Optimize gaussians
     void optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -357,12 +360,12 @@ private:
     ref<Texture> mpViewDirDIPrev;      // Previous View dir for direct surfaces
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
 
-    ref<Buffer> mp3dgGaussianBuffer; // Buffer for 3D gaussians
+    InteropBuffer mp3dgGaussianBuffer; // Buffer for 3D gaussians
     ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
     ref<Buffer> mp3dgFirstHitPhotonCount; // Buffer for an atomic counter counting the number of first hit photons
     ref<Buffer> mp3dgFirstHitPhotonCountCPU; // For showing in UI
-    ref<Buffer> mp3dgFirstHitPhotonInfoBuffer; // Buffer storing the first photon information
-    ref<Buffer> mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
+    InteropBuffer mp3dgFirstHitPhotonInfoBuffer; // Buffer storing the first photon information
+    InteropBuffer mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
     ref<Buffer> mp3dgFirstHitCollectionCountsBufferCPU; // For showing in UI
     ref<Buffer> mp3dgPhotonFirstHitMapBuffer[2]; // Buffer storing the mapping for each photon to its first hit index
     InteropBuffer mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians

@@ -29,6 +29,7 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include <random>
+#include "calc_gradient.h"
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
@@ -37,6 +38,29 @@ static float3 GenRandomFloat3()
 {
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
     return float3(dis(gen), dis(gen), dis(gen));
+}
+
+template <typename T>
+static InteropBuffer CreateStructuredInteropBuffer(
+    const ref<Device> pDevice,
+    const size_t count,
+    const Falcor::Buffer::CpuAccess cpuAccess = Falcor::Buffer::CpuAccess::None,
+    const void* data = nullptr)
+{
+    InteropBuffer interop;
+
+    // Create a new DX <-> CUDA shared buffer using the Falcor API to create, then find its CUDA pointer.
+    interop.buffer = Buffer::createStructured(
+        pDevice,
+        sizeof(T),
+        count,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess | Resource::BindFlags::Shared,
+        cpuAccess,
+        data);
+    interop.devicePtr = (CUdeviceptr)getSharedDevicePtr(interop.buffer->getSharedApiHandle(), (uint32_t)interop.buffer->getSize());
+    checkInvariant(interop.devicePtr != (CUdeviceptr)0, "Failed to create CUDA device ptr for buffer");
+
+    return interop;
 }
 
 struct Gaussian3D
@@ -764,7 +788,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 changed |= rebuildGaussianBuffer;
                 if (rebuildGaussianBuffer)
                 {
-                    mp3dgGaussianBuffer.reset();
+                    mp3dgGaussianBuffer.buffer.reset();
                     mp3dgGradientBuffer.buffer.reset();
                     mp3dgOptimizationBuffer.reset();
                 }
@@ -779,8 +803,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     changed |= rebuildFirstPhoton;
                     if (rebuildFirstPhoton)
                     {
-                        mp3dgFirstHitPhotonInfoBuffer.reset();
-                        mp3dgFirstHitCollectionCountsBuffer.reset();
+                        mp3dgFirstHitPhotonInfoBuffer.buffer.reset();
+                        mp3dgFirstHitCollectionCountsBuffer.buffer.reset();
                     }
                 }
 
@@ -1376,7 +1400,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     // 3D gaussian photon guiding
     const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
     const size_t gaussianCount = lightCount * m3dgGaussianCount;
-    if (!mp3dgGaussianBuffer)
+    if (!mp3dgGaussianBuffer.buffer)
     {
         // Init gaussians
         std::vector<Gaussian3D> gaussians(gaussianCount);
@@ -1392,14 +1416,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         }
 
         // Create buffer
-        mp3dgGaussianBuffer = Buffer::createStructured(
-            mpDevice,
-            sizeof(Gaussian3D),
-            gaussianCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None,
-            gaussians.data());
-        mp3dgGaussianBuffer->setName("ReSTIR_FG::3DGaussianBuffer");
+        mp3dgGaussianBuffer = CreateStructuredInteropBuffer<Gaussian3D>(mpDevice, gaussianCount, Buffer::CpuAccess::None, gaussians.data());
     }
 
     if (!mp3dgGaussianTexture)
@@ -1413,7 +1430,6 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             1,
             nullptr,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-        mp3dgGaussianTexture->setName("ReSTIR_FG::3DGaussianTexture");
         pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
     }
 
@@ -1431,21 +1447,14 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             Buffer::CpuAccess::Read);
     }
 
-    if (!mp3dgFirstHitPhotonInfoBuffer)
+    if (!mp3dgFirstHitPhotonInfoBuffer.buffer)
     {
-        mp3dgFirstHitPhotonInfoBuffer = Buffer::createStructured(
-            mpDevice,
-            sizeof(FirstHitPhotonInfo),
-            m3dgMaxFirstHitPhotonCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        mp3dgFirstHitPhotonInfoBuffer = CreateStructuredInteropBuffer<FirstHitPhotonInfo>(mpDevice, m3dgMaxFirstHitPhotonCount);
     }
 
-    if (!mp3dgFirstHitCollectionCountsBuffer)
+    if (!mp3dgFirstHitCollectionCountsBuffer.buffer)
     {
-        mp3dgFirstHitCollectionCountsBuffer = Buffer::create(
-            mpDevice,
-            sizeof(uint) * m3dgMaxFirstHitPhotonCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        mp3dgFirstHitCollectionCountsBuffer = createInteropBuffer(mpDevice, sizeof(uint) * m3dgMaxFirstHitPhotonCount);
 
         mp3dgFirstHitCollectionCountsBufferCPU = Buffer::create(
             mpDevice,
@@ -1466,7 +1475,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     }
 
     if (!mp3dgGradientBuffer.buffer)
-    {
+    {   
         mp3dgGradientBuffer = createInteropBuffer(mpDevice, sizeof(Gaussian3D) * gaussianCount);
     }
 }
@@ -1825,9 +1834,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
 
     // 3D gaussian photon guiding buffers
-    var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
     var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount;
-    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
+    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
     for (uint32_t idx = 0; idx < 2; ++idx)
     {
         var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
@@ -1933,7 +1942,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
     // Clear first hit collection counts
-    pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer->getUAV().get(), uint4(0));
+    pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer.buffer->getUAV().get(), uint4(0));
 
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
@@ -2013,7 +2022,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     {
         var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
     }
-    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
+    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
 
     // Bind reservoir and light buffer depending on the boost buffer
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
@@ -2138,15 +2147,20 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
 
     // Set variables
     auto var = mpCalculateGaussianGradientPass->getRootVar();
-    var["gGaussians"] = mp3dgGaussianBuffer;
-    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer;
-    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer;
+    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
+    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
+    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
     var["gGradients"] = mp3dgGradientBuffer.buffer;
     var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
     var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Execute
     mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
+}
+
+void ReSTIR_FG::calculateGaussianGradientCuda()
+{
+
 }
 
 void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -2174,7 +2188,7 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     // Set variables
     const uint totalGaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
     auto var = mpOptimizeGaussiansPass->getRootVar();
-    var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
     var["gGradients"] = mp3dgGradientBuffer.buffer;
     var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
 
@@ -2484,7 +2498,7 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
     var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
     var[nameBuf]["gCs"] = k3dgCs;
     var[nameBuf]["gB"] = m3dgB;
-    var["gGaussians"] = mp3dgGaussianBuffer;
+    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)

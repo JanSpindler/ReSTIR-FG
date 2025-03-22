@@ -8,6 +8,9 @@ target_sources(ReSTIR_FG PRIVATE
 	ReSTIR_FG.cpp
     ReSTIR_FG.h
 
+    calc_gradient.cu
+    calc_gradient.h
+
     Shader/CausticResamplingPass.cs.slang
 	Shader/CollectPhotons.rt.slang
 	Shader/DirectAnalytic.cs.slang
