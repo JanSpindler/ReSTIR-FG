@@ -161,7 +161,7 @@ private:
     void calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData);
 
     // Calculate the gradient using CUDA
-    void calculateGaussianGradientCuda();
+    void calculateGaussianGradientCuda(RenderContext* pRenderContext);
 
     // Optimize gaussians
     void optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData);

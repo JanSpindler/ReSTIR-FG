@@ -451,7 +451,8 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Calculate gaussian gradient and optimize
     if (mUse3DGaussianPhotonGuiding)
     {
-        calculateGaussianGradientPass(pRenderContext, renderData);
+        //calculateGaussianGradientPass(pRenderContext, renderData);
+        calculateGaussianGradientCuda(pRenderContext);
         optimizeGaussiansPass(pRenderContext, renderData);
     }
 
@@ -2133,8 +2134,18 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
 }
 
-void ReSTIR_FG::calculateGaussianGradientCuda()
+void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
 {
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
+
+    // Clear gradient buffer
+    pRenderContext->clearUAV(mp3dgGradientBuffer.buffer->getUAV().get(), float4(0.0f));
+
+    // Ensure all previous GPU operations are completed
+    pRenderContext->flush();
+
+    // Calculate gradients
     CalculateGaussianGradient(
         m3dgGaussianCount,
         m3dgMaxFirstHitPhotonCount,
@@ -2143,6 +2154,9 @@ void ReSTIR_FG::calculateGaussianGradientCuda()
         reinterpret_cast<const FirstHitPhotonInfo*>(mp3dgFirstHitPhotonInfoBuffer.devicePtr),
         reinterpret_cast<const uint*>(mp3dgFirstHitPhotonCount.devicePtr),
         reinterpret_cast<Gaussian3D*>(mp3dgGradientBuffer.devicePtr));
+
+    // Ensure CUDA kernel has completed before proceeding
+    syncCudaDevice();
 }
 
 void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)

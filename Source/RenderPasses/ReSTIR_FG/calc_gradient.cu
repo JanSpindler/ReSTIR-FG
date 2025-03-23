@@ -2,12 +2,10 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 
-#ifndef __CUDACC__
-#error "This file must be compiled with a CUDA C++ compiler"
-#endif
-
 // TODO: Optimize gradient calculation for speed
 // TODO: Double check correctness
+
+using uint = uint32_t; // For syntax highlighting
 
 static constexpr float SQRT_8_PI3 = 15.7496099457224197f;
 static constexpr float PI = 3.14159265358979323846f;
@@ -130,9 +128,7 @@ static __forceinline__ __device__ void DerivGmm(
         weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
 
         // Add to gradient
-        // Need to use integer since InterlockedAdd is not possible with floats
         // TODO: Optimize
-        const uint gradientIdx = gaussianIdx * 5;
         atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.x), meanDeriv.x);
         atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.y), meanDeriv.y);
         atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.z), meanDeriv.z);
@@ -187,4 +183,12 @@ void CalculateGaussianGradient(
     const uint* firstHitPhotonCount,
     Gaussian3D* gradients)
 {
+    CalculateGaussianGradientKernel<<<(maxFistHitPhotonCount + 127) / 128, 128>>>(
+        gaussianCount,
+        maxFistHitPhotonCount,
+        gaussians,
+        firstHitCollectionCounts,
+        firstHitPhotonInfo,
+        firstHitPhotonCount,
+        gradients);
 }
