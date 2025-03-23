@@ -1433,12 +1433,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
     }
 
-    if (!mp3dgFirstHitPhotonCount)
+    if (!mp3dgFirstHitPhotonCount.buffer)
     {
-        mp3dgFirstHitPhotonCount = Buffer::create(
-            mpDevice,
-            sizeof(uint),
-            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+        mp3dgFirstHitPhotonCount = createInteropBuffer(mpDevice, sizeof(uint));
 
         mp3dgFirstHitPhotonCountCPU = Buffer::create(
             mpDevice,
@@ -1726,7 +1723,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
 
         // Clear first hit photon counter
-        pRenderContext->clearUAV(mp3dgFirstHitPhotonCount->getUAV().get(), uint4(0));
+        pRenderContext->clearUAV(mp3dgFirstHitPhotonCount.buffer->getUAV().get(), uint4(0));
     }
 
     // Get dimensions of ray dispatch.
@@ -1835,7 +1832,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
     // 3D gaussian photon guiding buffers
     var["gGaussians"] = mp3dgGaussianBuffer.buffer;
-    var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount;
+    var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount.buffer;
     var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
     for (uint32_t idx = 0; idx < 2; ++idx)
     {
@@ -1863,10 +1860,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
     {
         // Barrier
-        pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.get());
+        pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.buffer.get());
 
         // Copy the first hit photon count to a CPU buffer
-        pRenderContext->copyBufferRegion(mp3dgFirstHitPhotonCountCPU.get(), 0, mp3dgFirstHitPhotonCount.get(), 0, sizeof(uint));
+        pRenderContext->copyBufferRegion(mp3dgFirstHitPhotonCountCPU.get(), 0, mp3dgFirstHitPhotonCount.buffer.get(), 0, sizeof(uint));
         void* data = mp3dgFirstHitPhotonCountCPU->map(Buffer::MapType::Read);
         std::memcpy(&m3dgActualFirstHitPhotonCount, data, sizeof(uint));
         mp3dgFirstHitPhotonCountCPU->unmap();
@@ -2151,7 +2148,7 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
     var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
     var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
     var["gGradients"] = mp3dgGradientBuffer.buffer;
-    var["gFirstHitPhotonCount"] = mp3dgFirstHitPhotonCount;
+    var["gFirstHitPhotonCount"] = mp3dgFirstHitPhotonCount.buffer;
     var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
     var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
