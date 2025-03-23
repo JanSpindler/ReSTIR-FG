@@ -4,6 +4,7 @@
 #include "FirstHitPhotonInfo.h"
 
 void CalculateGaussianGradient(
+    const uint gaussianCount,
     const uint maxFistHitPhotonCount,
     const Gaussian3D* gaussians,
     const uint* firstHitCollectionCounts,

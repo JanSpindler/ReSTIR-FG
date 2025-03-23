@@ -2136,6 +2136,7 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
 void ReSTIR_FG::calculateGaussianGradientCuda()
 {
     CalculateGaussianGradient(
+        m3dgGaussianCount,
         m3dgMaxFirstHitPhotonCount,
         reinterpret_cast<const Gaussian3D*>(mp3dgGaussianBuffer.devicePtr),
         reinterpret_cast<const uint*>(mp3dgFirstHitCollectionCountsBuffer.devicePtr),
