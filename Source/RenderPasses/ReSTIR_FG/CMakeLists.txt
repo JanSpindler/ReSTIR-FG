@@ -7,6 +7,9 @@ add_plugin(ReSTIR_FG)
 target_sources(ReSTIR_FG PRIVATE
 	ReSTIR_FG.cpp
     ReSTIR_FG.h
+    Gaussian3D.h
+    FirstHitPhotonInfo.h
+    falcor_cuda_math.h
 
     calc_gradient.cu
     calc_gradient.h

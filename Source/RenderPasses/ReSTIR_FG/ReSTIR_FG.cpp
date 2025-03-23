@@ -30,6 +30,8 @@
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include <random>
 #include "calc_gradient.h"
+#include "Gaussian3D.h"
+#include "FirstHitPhotonInfo.h"
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
@@ -62,31 +64,6 @@ static InteropBuffer CreateStructuredInteropBuffer(
 
     return interop;
 }
-
-struct Gaussian3D
-{
-    float3 mean;
-    float sigma;
-    float weight;
-
-    constexpr struct Gaussian3D() : mean(0.f), sigma(1.f), weight(0.f)
-    {
-    }
-
-    constexpr struct Gaussian3D(const float3& mean, const float sigma, const float weight) :
-        mean(mean),
-        sigma(sigma),
-        weight(weight)
-    {
-    }
-};
-
-struct FirstHitPhotonInfo
-{
-    float3 pos;
-    float samplingPdf;
-    uint lightIdx;
-};
 
 namespace
 {
@@ -2158,7 +2135,13 @@ void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, con
 
 void ReSTIR_FG::calculateGaussianGradientCuda()
 {
-
+    CalculateGaussianGradient(
+        m3dgMaxFirstHitPhotonCount,
+        reinterpret_cast<const Gaussian3D*>(mp3dgGaussianBuffer.devicePtr),
+        reinterpret_cast<const uint*>(mp3dgFirstHitCollectionCountsBuffer.devicePtr),
+        reinterpret_cast<const FirstHitPhotonInfo*>(mp3dgFirstHitPhotonInfoBuffer.devicePtr),
+        reinterpret_cast<const uint*>(mp3dgFirstHitPhotonCount.devicePtr),
+        reinterpret_cast<Gaussian3D*>(mp3dgGradientBuffer.devicePtr));
 }
 
 void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)

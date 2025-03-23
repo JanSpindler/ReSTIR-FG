@@ -1,10 +1,12 @@
 #pragma once
 
-#include "Falcor.h"
+#include "Gaussian3D.h"
+#include "FirstHitPhotonInfo.h"
 
 void CalculateGaussianGradient(
-    const size_t maxFirstHitPhotonCount,
-    const Falcor::ref<Falcor::Buffer> gaussians,
-    const Falcor::ref<Falcor::Buffer> firstHitCollectionCounts,
-    const Falcor::ref<Falcor::Buffer> firstHitPhotonInfo,
-    const Falcor::ref<Falcor::Buffer> gradients);
+    const uint maxFistHitPhotonCount,
+    const Gaussian3D* gaussians,
+    const uint* firstHitCollectionCounts,
+    const FirstHitPhotonInfo* firstHitPhotonInfo,
+    const uint* firstHitPhotonCount,
+    Gaussian3D* gradients);
