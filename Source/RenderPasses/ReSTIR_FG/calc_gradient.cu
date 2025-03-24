@@ -135,16 +135,15 @@ static __forceinline__ __device__ void DerivGmm(
         float weightDeriv = 0.0f;
         for (uint otherIdx = 0; otherIdx < gaussianCount; ++otherIdx)
         {
-            if (idx == otherIdx)
-            {
-                weightDeriv += softmaxWeights[idx] * (1.0f - softmaxWeights[idx]);
-            }
-            else
-            {
-                weightDeriv += -softmaxWeights[otherIdx] * softmaxWeights[idx];
-            }
+            const Gaussian3D& otherGaussian = gaussians[firstGaussianIdx + otherIdx];
+
+            const float gaussianFactor = EvalUnormGaussian3D(otherGaussian, position) * GaussianNormTerm(otherGaussian.sigma);
+            const float softmaxDerivFactor = idx == otherIdx ?
+                softmaxWeights[idx] * (1.0f - softmaxWeights[idx]) :
+                -softmaxWeights[otherIdx] * softmaxWeights[idx];
+            weightDeriv += softmaxDerivFactor * gaussianFactor;
         }
-        weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
+        weightDeriv *= -1.0f * pdfFactor;
 
         // Add gradient safely
         NumericAtomicAdd(&gradients[gaussianIdx].mean.x, meanDeriv.x);

@@ -67,6 +67,7 @@ void main(uint2 index : SV_DispatchThreadID)
     gGaussians[gaussianIdx].sigma -= sigmaGradient;
     gGaussians[gaussianIdx].weight -= weightGradient;
 
-    // TODO: Remove?
+    // TODO: Handle differently
     gGaussians[gaussianIdx].sigma = clamp(gGaussians[gaussianIdx].sigma, 0.5f, 2.0f);
+    gGaussians[gaussianIdx].weight = clamp(gGaussians[gaussianIdx].weight, -2.0f, 2.0f);
 }
