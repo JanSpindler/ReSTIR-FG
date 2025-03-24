@@ -2023,6 +2023,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
         var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
     }
     var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
+    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Bind reservoir and light buffer depending on the boost buffer
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];

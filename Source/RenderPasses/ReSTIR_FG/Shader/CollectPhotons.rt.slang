@@ -52,6 +52,11 @@ cbuffer TemporalFilter
     uint _pad;
 }
 
+cbuffer GaussianPhotonGuiding
+{
+    uint gMaxFirstHitPhotonCount;
+}
+
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gView;
@@ -226,7 +231,10 @@ void anyHitReservoir(
 void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
 {
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primitiveIdx];
-    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    if (firstHitIdx < gMaxFirstHitPhotonCount)
+    {
+        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    }
 }
 
 // Photon Collection via anyHit
