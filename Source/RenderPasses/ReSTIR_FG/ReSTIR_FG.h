@@ -157,9 +157,6 @@ private:
         std::string profileName,
         bool fg);
 
-    // Calculate the gradient for each first hit photon
-    void calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData);
-
     // Calculate the gradient using CUDA
     void calculateGaussianGradientCuda(RenderContext* pRenderContext);
 

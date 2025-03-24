@@ -2116,45 +2116,6 @@ void ReSTIR_FG::collectPhotonsSplit(
         uint3(targetDim, 1));
 }
 
-void ReSTIR_FG::calculateGaussianGradientPass(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
-
-    // Clear gradient buffer
-    pRenderContext->clearUAV(mp3dgGradientBuffer.buffer->getUAV().get(), float4(0.0f));
-
-    // Init shader
-    if (!mpCalculateGaussianGradientPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kCalculateGaussainGradiantShader).csEntry("main").setShaderModel(kShaderModel);
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getMaterialDefines());
-
-        mpCalculateGaussianGradientPass = ComputePass::create(mpDevice, desc, defines, true);
-    }
-    FALCOR_ASSERT(mpCalculateGaussianGradientPass);
-
-    // Set variables
-    auto var = mpCalculateGaussianGradientPass->getRootVar();
-    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
-    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
-    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
-    var["gGradients"] = mp3dgGradientBuffer.buffer;
-    var["gFirstHitPhotonCount"] = mp3dgFirstHitPhotonCount.buffer;
-    var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
-    var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
-
-    // Execute
-    mpCalculateGaussianGradientPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
-}
-
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
 {
     // Profile

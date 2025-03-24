@@ -74,21 +74,3 @@ float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 {
     return f0(x, x0, mu, sigma) / GaussianNormTerm(sigma);
 }
-
-float EvalUnormGaussian3D(const in Gaussian3D gaussian, const float3 position)
-{
-    const float distance = length(position - gaussian.mean);
-    return exp(-0.5 * distance * distance / (gaussian.sigma * gaussian.sigma));
-}
-
-static const float QUANTIZATION = 16384.0f;
-
-int QuantizeGradient(const float gradient)
-{
-    return int(gradient * QUANTIZATION);
-}
-
-float DequantizeGradient(const int gradient)
-{
-    return float(gradient) / QUANTIZATION;
-}

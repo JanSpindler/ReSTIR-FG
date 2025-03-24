@@ -28,7 +28,6 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/SurfaceDataFG.slang
 	Shader/TraceTransmissionDelta.rt.slang
     Shader/GaussianHelper.slang
-    Shader/CalculateGaussianGradient.cs.slang
     Shader/OptimizeGaussians.cs.slang
 	Shader/Printing.slang
     Shader/gpu-printing-ops.h
