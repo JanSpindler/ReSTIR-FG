@@ -309,7 +309,7 @@ private:
     static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
     static constexpr float k3dgCs = 0.65f;
     float m3dgB = 1.0f; // Scaling factor applied to scene positions
-    uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
+    uint m3dgGaussianCount = 4; // Number of 3D gaussians per light
     uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
     float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
@@ -361,6 +361,7 @@ private:
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
 
     InteropBuffer mp3dgGaussianBuffer; // Buffer for 3D gaussians
+    ref<Buffer> mp3dgGaussianBufferCPU;
     ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
     InteropBuffer mp3dgFirstHitPhotonCount; // Buffer for an atomic counter counting the number of first hit photons
     ref<Buffer> mp3dgFirstHitPhotonCountCPU; // For showing in UI
@@ -369,6 +370,7 @@ private:
     ref<Buffer> mp3dgFirstHitCollectionCountsBufferCPU; // For showing in UI
     ref<Buffer> mp3dgPhotonFirstHitMapBuffer[2]; // Buffer storing the mapping for each photon to its first hit index
     InteropBuffer mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians
+    ref<Buffer> mp3dgGradientBufferCPU; 
     ref<Buffer> mp3dgOptimizationBuffer; // Buffer storing the optimization data for the 3D gaussians (Adam)
 
     //

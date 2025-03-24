@@ -1,6 +1,7 @@
 #include "calc_gradient.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <stdio.h>
 
 // TODO: Optimize gradient calculation for speed
 // TODO: Double check correctness
@@ -9,6 +10,16 @@ using uint = uint32_t; // For syntax highlighting
 
 static constexpr float SQRT_8_PI3 = 15.7496099457224197f;
 static constexpr float PI = 3.14159265358979323846f;
+
+static __forceinline__ __device__ bool CheckNumeric(const float x)
+{
+    return !isnan(x) && !isinf(x);
+}
+
+static __forceinline__ __device__ bool CheckNumeric(const float3& v)
+{
+    return CheckNumeric(v.x) && CheckNumeric(v.y) && CheckNumeric(v.z);
+}
 
 static __forceinline__ __device__ float length(const float3& v)
 {
@@ -108,9 +119,17 @@ static __forceinline__ __device__ void DerivGmm(
         const Gaussian3D& gaussian = gaussians[gaussianIdx];
         const float softmaxWeight = softmaxWeights[gaussianIdx];
         const float3 meanDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtMean(gaussian, position);
+        if (!CheckNumeric(meanDeriv))
+        {
+            continue;
+        }
 
         // Sigma
         const float sigmaDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtSigma(gaussian, position);
+        if (!CheckNumeric(sigmaDeriv))
+        {
+            continue;
+        }
 
         // Weight
         float weightDeriv = 0.0f;
@@ -126,6 +145,10 @@ static __forceinline__ __device__ void DerivGmm(
             }
         }
         weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
+        if (!CheckNumeric(weightDeriv))
+        {
+            continue;
+        }
 
         // Add to gradient
         // TODO: Optimize
@@ -154,17 +177,21 @@ __global__ void CalculateGaussianGradientKernel(
     }
 
     // Calculate pdf factor
-    const float targetPdf = (float)firstHitCollectionCounts[firstHitPhotonIdx];
+    const float targetPdf = static_cast<float>(firstHitCollectionCounts[firstHitPhotonIdx]);
     const float samplingPdf = firstHitPhotonInfo[firstHitPhotonIdx].samplingPdf;
     if (targetPdf <= 0.0f || samplingPdf <= 0.0f)
     {
         return;
     }
     const float pdfFactor = targetPdf / samplingPdf;
+    if (!CheckNumeric(pdfFactor))
+    {
+        return;
+    }
 
     // Calculate gradient wrt. parameters of gaussian
     const uint lightIdx = firstHitPhotonInfo[firstHitPhotonIdx].lightIdx;
-    const float3 position = firstHitPhotonInfo[firstHitPhotonIdx].pos;
+    const float3& position = firstHitPhotonInfo[firstHitPhotonIdx].pos;
     DerivGmm(
         gaussians,
         gradients,
