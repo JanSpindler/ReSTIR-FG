@@ -223,6 +223,12 @@ void anyHitReservoir(
     IgnoreHit();
 }
 
+void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
+{
+    const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primitiveIdx];
+    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+}
+
 // Photon Collection via anyHit
 #if USE_STOCHASTIC_COLLECT
 
@@ -257,10 +263,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
 
     // Add to first hit photon collection count
-    // TODO: Also handle caustic photons
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-    const uint firstHitIdx = gPhotonFirstHitMap[instanceIndex][primIndex];
-    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    TrackPhotonCollection(instanceIndex, primIndex);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
     //
@@ -315,10 +319,8 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
 
     // Add to first hit photon collection count
-    // TODO: Also handle caustic photons
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-    const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primIndex];
-    InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+    TrackPhotonCollection(instanceIdx, primIndex);
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
     // Photon contribution

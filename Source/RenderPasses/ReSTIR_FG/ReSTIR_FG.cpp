@@ -768,6 +768,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     mp3dgGaussianBuffer.buffer.reset();
                     mp3dgGradientBuffer.buffer.reset();
                     mp3dgOptimizationBuffer.reset();
+                    mp3dgLightFirstHitCountBuffer.reset();
                 }
 
                 changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
@@ -1453,6 +1454,14 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
                 sizeof(uint) * mNumMaxPhotons[idx],
                 ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
         }
+    }
+
+    if (!mp3dgLightFirstHitCountBuffer)
+    {
+        mp3dgLightFirstHitCountBuffer = Buffer::create(
+            mpDevice,
+            sizeof(uint) * lightCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
 
     if (!mp3dgGradientBuffer.buffer)
