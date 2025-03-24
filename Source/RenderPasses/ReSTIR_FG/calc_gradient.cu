@@ -86,6 +86,14 @@ static __forceinline__ __device__ float DerivNormGaussianWrtSigma(const Gaussian
            (DerivGaussianNormTermWrtSigma(gaussian.sigma) * EvalUnormGaussian3D(gaussian, position));
 }
 
+static __forceinline__ __device__ void NumericAtomicAdd(float* dest, const float value)
+{
+    if (CheckNumeric(value))
+    {
+        atomicAdd(dest, value);
+    }
+}
+
 static __forceinline__ __device__ void DerivGmm(
     const Gaussian3D* gaussians,
     Gaussian3D* gradients,
@@ -119,17 +127,9 @@ static __forceinline__ __device__ void DerivGmm(
         const Gaussian3D& gaussian = gaussians[gaussianIdx];
         const float softmaxWeight = softmaxWeights[gaussianIdx];
         const float3 meanDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtMean(gaussian, position);
-        if (!CheckNumeric(meanDeriv))
-        {
-            continue;
-        }
 
         // Sigma
         const float sigmaDeriv = -1.0f * pdfFactor * softmaxWeight * DerivNormGaussianWrtSigma(gaussian, position);
-        if (!CheckNumeric(sigmaDeriv))
-        {
-            continue;
-        }
 
         // Weight
         float weightDeriv = 0.0f;
@@ -145,18 +145,13 @@ static __forceinline__ __device__ void DerivGmm(
             }
         }
         weightDeriv *= -1.0f * pdfFactor * EvalUnormGaussian3D(gaussian, position) * GaussianNormTerm(gaussian.sigma);
-        if (!CheckNumeric(weightDeriv))
-        {
-            continue;
-        }
 
-        // Add to gradient
-        // TODO: Optimize
-        atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.x), meanDeriv.x);
-        atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.y), meanDeriv.y);
-        atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].mean.z), meanDeriv.z);
-        atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].sigma), sigmaDeriv);
-        atomicAdd(reinterpret_cast<float*>(&gradients[gaussianIdx].weight), weightDeriv);
+        // Add gradient safely
+        NumericAtomicAdd(&gradients[gaussianIdx].mean.x, meanDeriv.x);
+        NumericAtomicAdd(&gradients[gaussianIdx].mean.y, meanDeriv.y);
+        NumericAtomicAdd(&gradients[gaussianIdx].mean.z, meanDeriv.z);
+        NumericAtomicAdd(&gradients[gaussianIdx].sigma, sigmaDeriv);
+        NumericAtomicAdd(&gradients[gaussianIdx].weight, weightDeriv);
     }
 }
 

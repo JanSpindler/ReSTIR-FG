@@ -1385,7 +1385,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         // Init N random gaussians in the scene
         // TODO: Robust initialization from paper
         const float3 sceneExtent = mpScene->getSceneBounds().extent();
-        const float sigma = math::length(sceneExtent) / 16.0f;
+        const float sigma = math::length(sceneExtent) / 10.0f;
         for (size_t gaussIdx = 0; gaussIdx < gaussianCount; ++gaussIdx)
         {
             const float3 mean = mpScene->getSceneBounds().minPoint + GenRandomFloat3() * sceneExtent;
@@ -2170,34 +2170,36 @@ void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
     // Ensure CUDA kernel has completed before proceeding
     syncCudaDevice();
 
-    //// Copy gaussian buffer to CPU
-    //pRenderContext->uavBarrier(mp3dgGaussianBuffer.buffer.get());
-    //const size_t gaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
-    //pRenderContext->copyBufferRegion(
-    //    mp3dgGaussianBufferCPU.get(),
-    //    0,
-    //    mp3dgGaussianBuffer.buffer.get(),
-    //    0,
-    //    sizeof(Gaussian3D) * gaussianCount);
-    //std::vector<Gaussian3D> gaussians(gaussianCount);
-    //void* data = mp3dgGaussianBufferCPU->map(Buffer::MapType::Read);
-    //std::memcpy(gaussians.data(), data, sizeof(Gaussian3D) * gaussianCount);
-    //mp3dgGaussianBufferCPU->unmap();
+#if 0
+    // Copy gaussian buffer to CPU
+    pRenderContext->uavBarrier(mp3dgGaussianBuffer.buffer.get());
+    const size_t gaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
+    pRenderContext->copyBufferRegion(
+        mp3dgGaussianBufferCPU.get(),
+        0,
+        mp3dgGaussianBuffer.buffer.get(),
+        0,
+        sizeof(Gaussian3D) * gaussianCount);
+    std::vector<Gaussian3D> gaussians(gaussianCount);
+    void* data = mp3dgGaussianBufferCPU->map(Buffer::MapType::Read);
+    std::memcpy(gaussians.data(), data, sizeof(Gaussian3D) * gaussianCount);
+    mp3dgGaussianBufferCPU->unmap();
 
-    //// Copy the gradient buffer to the CPU
-    //pRenderContext->uavBarrier(mp3dgGradientBuffer.buffer.get());
-    //pRenderContext->copyBufferRegion(
-    //    mp3dgGradientBufferCPU.get(),
-    //    0,
-    //    mp3dgGradientBuffer.buffer.get(),
-    //    0,
-    //    sizeof(Gaussian3D) * gaussianCount);
-    //std::vector<Gaussian3D> gradients(gaussianCount);
-    //data = mp3dgGradientBufferCPU->map(Buffer::MapType::Read);
-    //std::memcpy(gradients.data(), data, sizeof(Gaussian3D) * gaussianCount);
-    //mp3dgGradientBufferCPU->unmap();
+    // Copy the gradient buffer to the CPU
+    pRenderContext->uavBarrier(mp3dgGradientBuffer.buffer.get());
+    pRenderContext->copyBufferRegion(
+        mp3dgGradientBufferCPU.get(),
+        0,
+        mp3dgGradientBuffer.buffer.get(),
+        0,
+        sizeof(Gaussian3D) * gaussianCount);
+    std::vector<Gaussian3D> gradients(gaussianCount);
+    data = mp3dgGradientBufferCPU->map(Buffer::MapType::Read);
+    std::memcpy(gradients.data(), data, sizeof(Gaussian3D) * gaussianCount);
+    mp3dgGradientBufferCPU->unmap();
 
-    //__nop();
+    __nop();
+#endif
 }
 
 void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)
