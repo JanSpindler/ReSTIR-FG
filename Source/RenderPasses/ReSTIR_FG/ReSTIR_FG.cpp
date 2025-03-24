@@ -2203,6 +2203,8 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     auto var = mpOptimizeGaussiansPass->getRootVar();
     var["gGaussians"] = mp3dgGaussianBuffer.buffer;
     var["gGradients"] = mp3dgGradientBuffer.buffer;
+    var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
+    var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
     var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
 
     // Execute

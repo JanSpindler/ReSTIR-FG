@@ -5,10 +5,11 @@ import GaussianHelper;
 
 cbuffer Constants
 {
+    uint gGaussianCount;
     uint gTotalGaussianCount;
 }
 
-static const float gLearningRate = 1e-4f;
+static const float gLearningRate = 1e+1f;
 static const float gBeta1 = 0.9f;
 static const float gBeta2 = 0.999f;
 static const float gOptimTimeStep = 2.0f;
@@ -16,6 +17,7 @@ static const float EPSILON = 1e-8f;
 
 RWStructuredBuffer<Gaussian3D> gGaussians;
 StructuredBuffer<Gaussian3D> gGradients;
+Buffer<uint> gLightFirstHitCounts;
 
 float Adam(const float g, inout float m, inout float v)
 {
@@ -46,11 +48,15 @@ void main(uint2 index : SV_DispatchThreadID)
         return;
     }
 
+    // Get light first hit count
+    const uint lightIdx = (gaussianIdx - (gaussianIdx % gGaussianCount)) / gGaussianCount;
+    const float lightNormFactor = 1.0f / (float)gLightFirstHitCounts[lightIdx];
+
     // Get the gradient
     const Gaussian3D gradient = gGradients[gaussianIdx];
-    const float3 meanGradient = gradient.mean * gLearningRate;
-    const float sigmaGradient = gradient.sigma * gLearningRate;
-    const float weightGradient = gradient.weight * gLearningRate;
+    const float3 meanGradient = gradient.mean * gLearningRate * lightNormFactor;
+    const float sigmaGradient = gradient.sigma * gLearningRate * lightNormFactor;
+    const float weightGradient = gradient.weight * gLearningRate * lightNormFactor;
     if (!CheckNumeric(meanGradient) || !CheckNumeric(sigmaGradient) || !CheckNumeric(weightGradient))
     {
         return;
