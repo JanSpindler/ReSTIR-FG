@@ -66,6 +66,7 @@ RWStructuredBuffer<Gaussian3D> gGaussians;
 RWBuffer<uint> gFirstHitPhotonCounter;
 RWStructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<uint> gPhotonFirstHitMap[2];
+RWBuffer<uint> gLightFirstHitCounts;
 
 enum class GenerationFlags // : uint32_t
 {
@@ -607,7 +608,10 @@ void rayGen()
             // Check if buffer is full
             if (firstHitIndex < gMaxFirstHitPhotonCount)
             {
-                // If not full -> store first hit photon position
+                // Track light fist hit count
+                InterlockedAdd(gLightFirstHitCounts[lightIdx], 1u);
+
+                // Store first hit photon position
                 FirstHitPhotonInfo firstHitPhotonInfo;
                 firstHitPhotonInfo.pos = photonPos;
                 firstHitPhotonInfo.samplingPdf = firstHitSamplingPdf;

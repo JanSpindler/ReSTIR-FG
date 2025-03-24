@@ -1723,6 +1723,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
         // Clear first hit photon counter
         pRenderContext->clearUAV(mp3dgFirstHitPhotonCount.buffer->getUAV().get(), uint4(0));
+
+        // Clear light first hit buffer
+        pRenderContext->clearUAV(mp3dgLightFirstHitCountBuffer->getUAV().get(), uint4(0));
     }
 
     // Get dimensions of ray dispatch.
@@ -1837,6 +1840,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     {
         var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
     }
+    var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
 
     // Trace the photons
     if (traceScene)
@@ -2121,7 +2125,7 @@ void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
     // Profile
     FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
 
-    // Clear gradient buffer
+    // Clear buffers
     pRenderContext->clearUAV(mp3dgGradientBuffer.buffer->getUAV().get(), float4(0.0f));
 
     // Ensure all previous GPU operations are completed
