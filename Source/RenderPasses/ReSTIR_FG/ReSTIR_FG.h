@@ -96,6 +96,12 @@ public:
         Reservoir = 3u
     };
 
+    enum class Optimizer : uint
+    {
+        SGD = 0u,
+        Adam = 1u
+    };
+
 private:
     /** Parse incoming properties
     */
@@ -314,6 +320,12 @@ private:
     uint m3dgMaxFirstHitPhotonCount = 100000; // Maximum number of first hit photons
     uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
+
+    Optimizer m3dgOptimizer = Optimizer::Adam; // Optimizer used for optimizing the 3D gaussians
+    float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
+    float m3dgBeta1 = 0.9f;                    // Beta1 for the optimizer
+    float m3dgBeta2 = 0.999f;                  // Beta2 for the optimizer
+    uint m3dgOptimStep = 0;                    // Current optimization step
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI

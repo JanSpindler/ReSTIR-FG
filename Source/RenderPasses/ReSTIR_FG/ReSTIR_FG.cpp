@@ -67,157 +67,120 @@ static InteropBuffer CreateStructuredInteropBuffer(
 
 namespace
 {
-    const std::string kTraceTransmissionDeltaShader = "RenderPasses/ReSTIR_FG/Shader/TraceTransmissionDelta.rt.slang";
-    const std::string kFinalGatherSamplesShader = "RenderPasses/ReSTIR_FG/Shader/GenerateFinalGatherSamples.rt.slang";
-    const std::string kReSTIRGISampleShader = "RenderPasses/ReSTIR_FG/Shader/GenerateGIPathSamples.rt.slang";
-    const std::string kGeneratePhotonsShader = "RenderPasses/ReSTIR_FG/Shader/GeneratePhotons.rt.slang";
-    const std::string kCollectPhotonsShader = "RenderPasses/ReSTIR_FG/Shader/CollectPhotons.rt.slang";
-    const std::string kResamplingPassShader = "RenderPasses/ReSTIR_FG/Shader/ResamplingPass.cs.slang";
-    const std::string kCausticResamplingPassShader = "RenderPasses/ReSTIR_FG/Shader/CausticResamplingPass.cs.slang";
-    const std::string kFinalShadingPassShader = "RenderPasses/ReSTIR_FG/Shader/FinalShading.cs.slang";
-    const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/DirectAnalytic.cs.slang";
-    const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
-    const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
+const std::string kTraceTransmissionDeltaShader = "RenderPasses/ReSTIR_FG/Shader/TraceTransmissionDelta.rt.slang";
+const std::string kFinalGatherSamplesShader = "RenderPasses/ReSTIR_FG/Shader/GenerateFinalGatherSamples.rt.slang";
+const std::string kReSTIRGISampleShader = "RenderPasses/ReSTIR_FG/Shader/GenerateGIPathSamples.rt.slang";
+const std::string kGeneratePhotonsShader = "RenderPasses/ReSTIR_FG/Shader/GeneratePhotons.rt.slang";
+const std::string kCollectPhotonsShader = "RenderPasses/ReSTIR_FG/Shader/CollectPhotons.rt.slang";
+const std::string kResamplingPassShader = "RenderPasses/ReSTIR_FG/Shader/ResamplingPass.cs.slang";
+const std::string kCausticResamplingPassShader = "RenderPasses/ReSTIR_FG/Shader/CausticResamplingPass.cs.slang";
+const std::string kFinalShadingPassShader = "RenderPasses/ReSTIR_FG/Shader/FinalShading.cs.slang";
+const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/DirectAnalytic.cs.slang";
+const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
+const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
 
-    const std::string kShaderModel = "6_5";
-    const uint kMaxPayloadBytes = 96u;
-    const uint kMaxPayloadBytesCollect = 64u;
-    const uint kMaxPayloadBytesGenerateFGSamples = 20u;
-    const uint kMaxPayloadBytesGI = 32u;
+const std::string kShaderModel = "6_5";
+const uint kMaxPayloadBytes = 96u;
+const uint kMaxPayloadBytesCollect = 64u;
+const uint kMaxPayloadBytesGenerateFGSamples = 20u;
+const uint kMaxPayloadBytesGI = 32u;
 
-    // Render Pass inputs and outputs
-    const std::string kInputVBuffer = "vbuffer";
-    const std::string kInputMotionVectors = "mvec";
+// Render Pass inputs and outputs
+const std::string kInputVBuffer = "vbuffer";
+const std::string kInputMotionVectors = "mvec";
 
-    const Falcor::ChannelList kInputChannels{
-        {kInputVBuffer, "gVBuffer", "Visibility buffer in packed format"},
-        {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)", true /* optional */},
-    };
+const Falcor::ChannelList kInputChannels{
+    {kInputVBuffer, "gVBuffer", "Visibility buffer in packed format"},
+    {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)", true /* optional */},
+};
 
-    const std::string kOutputColor = "color";
-    const std::string kOutputEmission = "emission";
-    const std::string kOutputDiffuseRadiance = "diffuseRadiance";
-    const std::string kOutputSpecularRadiance = "specularRadiance";
-    const std::string kOutputDiffuseReflectance = "diffuseReflectance";
-    const std::string kOutputSpecularReflectance = "specularReflectance";
-    const std::string kOutputResidualRadiance = "residualRadiance";     //The rest (transmission, delta)
-    const std::string kOutputGaussianDirectionPdf = "gaussianDirectionPdf";
+const std::string kOutputColor = "color";
+const std::string kOutputEmission = "emission";
+const std::string kOutputDiffuseRadiance = "diffuseRadiance";
+const std::string kOutputSpecularRadiance = "specularRadiance";
+const std::string kOutputDiffuseReflectance = "diffuseReflectance";
+const std::string kOutputSpecularReflectance = "specularReflectance";
+const std::string kOutputResidualRadiance = "residualRadiance"; // The rest (transmission, delta)
+const std::string kOutputGaussianDirectionPdf = "gaussianDirectionPdf";
 
-    const Falcor::ChannelList kOutputChannels{
-        {
-            kOutputColor,
-            "gOutColor",
-            "Output Color (linear)",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-        {
-            kOutputEmission,
-            "gOutEmission",
-            "Output Emission",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-        {
-            kOutputDiffuseRadiance,
-            "gOutDiffuseRadiance",
-            "Output demodulated diffuse color (linear)",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-        {
-            kOutputSpecularRadiance,
-            "gOutSpecularRadiance",
-            "Output demodulated specular color (linear)",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-        {
-            kOutputDiffuseReflectance,
-            "gOutDiffuseReflectance",
-            "Output primary surface diffuse reflectance",
-            true /*optional*/,
-            ResourceFormat::RGBA16Float
-        },
-        {
-            kOutputSpecularReflectance,
-            "gOutSpecularReflectance",
-            "Output primary surface specular reflectance",
-            true /*optional*/,
-            ResourceFormat::RGBA16Float
-        },
-        {
-            kOutputResidualRadiance,
-            "gOutResidualRadiance",
-            "Output residual color (transmission/delta)",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-        {
-            kOutputGaussianDirectionPdf,
-            "gOutGaussianDirectionPdf",
-            "Output pdf for the gaussian direction",
-            true /*optional*/,
-            ResourceFormat::RGBA32Float
-        },
-    };
+const Falcor::ChannelList kOutputChannels{
+    {kOutputColor, "gOutColor", "Output Color (linear)", true /*optional*/, ResourceFormat::RGBA32Float},
+    {kOutputEmission, "gOutEmission", "Output Emission", true /*optional*/, ResourceFormat::RGBA32Float},
+    {kOutputDiffuseRadiance, "gOutDiffuseRadiance", "Output demodulated diffuse color (linear)", true /*optional*/,
+     ResourceFormat::RGBA32Float},
+    {kOutputSpecularRadiance, "gOutSpecularRadiance", "Output demodulated specular color (linear)", true /*optional*/,
+     ResourceFormat::RGBA32Float},
+    {kOutputDiffuseReflectance, "gOutDiffuseReflectance", "Output primary surface diffuse reflectance", true /*optional*/,
+     ResourceFormat::RGBA16Float},
+    {kOutputSpecularReflectance, "gOutSpecularReflectance", "Output primary surface specular reflectance", true /*optional*/,
+     ResourceFormat::RGBA16Float},
+    {kOutputResidualRadiance, "gOutResidualRadiance", "Output residual color (transmission/delta)", true /*optional*/,
+     ResourceFormat::RGBA32Float},
+    {kOutputGaussianDirectionPdf, "gOutGaussianDirectionPdf", "Output pdf for the gaussian direction", true /*optional*/,
+     ResourceFormat::RGBA32Float},
+};
 
-    // Properties for Render Graph
-    const std::string kPropsPhotonBufferSizeG = "PhotonBufferSizeGlobal";
-    const std::string kPropsPhotonBufferSizeC = "PhotonBufferSizeCaustic";
-    const std::string kPropsAnalyticEmissiveRatio = "AnalyticEmissiveRatio";
-    const std::string kPropsPhotonBouncesG = "PhotonBouncesGlobal";
-    const std::string kPropsPhotonBouncesC = "PhotonBouncesCaustic";
-    const std::string kPropsPhotonRadiusG = "PhotonRadiusGlobal";
-    const std::string kPropsPhotonRadiusC = "PhotonRadiusCaustic";
-    const std::string kPropsEnableStochCollect = "EnableStochCollect";
-    const std::string kPropsStochCollectK = "StochCollectK";
-    const std::string kPropsEnablePhotonCullingG = "EnablePhotonCullingGlobal";
-    const std::string kPropsEnablePhotonCullingC = "EnablePhotonCullingCaustic";
-    const std::string kPropsCullingRad = "CullingRadius";
-    const std::string kPropsCullingBits = "CullingBits";
-    const std::string kPropsCausticCollectionMode = "CausticCollectionMode";
-    const std::string kPropsCausticResamplingMode = "CausticResamplingMode";
-    const std::string kPropsEnableDynamicDispatch = "EnableDynamicDispatch";
-    const std::string kPropsNumDispatchedPhotons = "NumDispatchedPhotons";
+// Properties for Render Graph
+const std::string kPropsPhotonBufferSizeG = "PhotonBufferSizeGlobal";
+const std::string kPropsPhotonBufferSizeC = "PhotonBufferSizeCaustic";
+const std::string kPropsAnalyticEmissiveRatio = "AnalyticEmissiveRatio";
+const std::string kPropsPhotonBouncesG = "PhotonBouncesGlobal";
+const std::string kPropsPhotonBouncesC = "PhotonBouncesCaustic";
+const std::string kPropsPhotonRadiusG = "PhotonRadiusGlobal";
+const std::string kPropsPhotonRadiusC = "PhotonRadiusCaustic";
+const std::string kPropsEnableStochCollect = "EnableStochCollect";
+const std::string kPropsStochCollectK = "StochCollectK";
+const std::string kPropsEnablePhotonCullingG = "EnablePhotonCullingGlobal";
+const std::string kPropsEnablePhotonCullingC = "EnablePhotonCullingCaustic";
+const std::string kPropsCullingRad = "CullingRadius";
+const std::string kPropsCullingBits = "CullingBits";
+const std::string kPropsCausticCollectionMode = "CausticCollectionMode";
+const std::string kPropsCausticResamplingMode = "CausticResamplingMode";
+const std::string kPropsEnableDynamicDispatch = "EnableDynamicDispatch";
+const std::string kPropsNumDispatchedPhotons = "NumDispatchedPhotons";
 
-    // UI Dropdowns
-    const Gui::DropdownList kResamplingModeList{
-        {(uint)ReSTIR_FG::ResamplingMode::Temporal, "Temporal"},
-        {(uint)ReSTIR_FG::ResamplingMode::Spatial, "Spatial"},
-        {(uint)ReSTIR_FG::ResamplingMode::SpartioTemporal, "SpatioTemporal"},
-    };
+// UI Dropdowns
+const Gui::DropdownList kResamplingModeList{
+    {(uint)ReSTIR_FG::ResamplingMode::Temporal, "Temporal"},
+    {(uint)ReSTIR_FG::ResamplingMode::Spatial, "Spatial"},
+    {(uint)ReSTIR_FG::ResamplingMode::SpartioTemporal, "SpatioTemporal"},
+};
 
-    const Gui::DropdownList kCausticResamplingModeList{
-        {(uint)ReSTIR_FG::ResamplingMode::Temporal, "Temporal"},
-        {(uint)ReSTIR_FG::ResamplingMode::SpartioTemporal, "SpatioTemporal"},
-    };
+const Gui::DropdownList kCausticResamplingModeList{
+    {(uint)ReSTIR_FG::ResamplingMode::Temporal, "Temporal"},
+    {(uint)ReSTIR_FG::ResamplingMode::SpartioTemporal, "SpatioTemporal"},
+};
 
-    const Gui::DropdownList kBiasCorrectionModeList{
-        {(uint)ReSTIR_FG::BiasCorrectionMode::Off, "Off"},
-        {(uint)ReSTIR_FG::BiasCorrectionMode::Basic, "Basic"},
-        {(uint)ReSTIR_FG::BiasCorrectionMode::RayTraced, "RayTraced"},
-    };
+const Gui::DropdownList kBiasCorrectionModeList{
+    {(uint)ReSTIR_FG::BiasCorrectionMode::Off, "Off"},
+    {(uint)ReSTIR_FG::BiasCorrectionMode::Basic, "Basic"},
+    {(uint)ReSTIR_FG::BiasCorrectionMode::RayTraced, "RayTraced"},
+};
 
-    const Gui::DropdownList kRenderModeList{
-        {(uint)ReSTIR_FG::RenderMode::FinalGather, "Final Gather"},
-        {(uint)ReSTIR_FG::RenderMode::ReSTIRGI, "ReSTIR GI"},
-        {(uint)ReSTIR_FG::RenderMode::ReSTIRFG, "ReSTIR FG"},
-    };
+const Gui::DropdownList kRenderModeList{
+    {(uint)ReSTIR_FG::RenderMode::FinalGather, "Final Gather"},
+    {(uint)ReSTIR_FG::RenderMode::ReSTIRGI, "ReSTIR GI"},
+    {(uint)ReSTIR_FG::RenderMode::ReSTIRFG, "ReSTIR FG"},
+};
 
-    const Gui::DropdownList kDirectLightRenderModeList{
-        {(uint)ReSTIR_FG::DirectLightingMode::None, "None"},
-        {(uint)ReSTIR_FG::DirectLightingMode::RTXDI, "RTXDI"},
-        {(uint)ReSTIR_FG::DirectLightingMode::AnalyticDirect, "AnalyticDirect"}
-    };
+const Gui::DropdownList kDirectLightRenderModeList{
+    {(uint)ReSTIR_FG::DirectLightingMode::None, "None"},
+    {(uint)ReSTIR_FG::DirectLightingMode::RTXDI, "RTXDI"},
+    {(uint)ReSTIR_FG::DirectLightingMode::AnalyticDirect, "AnalyticDirect"}
+};
 
-    const Gui::DropdownList kCausticCollectionModeList{
-        {(uint)ReSTIR_FG::CausticCollectionMode::All, "All"},
-        {(uint)ReSTIR_FG::CausticCollectionMode::None, "None"},
-        {(uint)ReSTIR_FG::CausticCollectionMode::Temporal, "Temporal"},
-        {(uint)ReSTIR_FG::CausticCollectionMode::Reservoir, "Reservoir"}
-    };
-}
+const Gui::DropdownList kCausticCollectionModeList{
+    {(uint)ReSTIR_FG::CausticCollectionMode::All, "All"},
+    {(uint)ReSTIR_FG::CausticCollectionMode::None, "None"},
+    {(uint)ReSTIR_FG::CausticCollectionMode::Temporal, "Temporal"},
+    {(uint)ReSTIR_FG::CausticCollectionMode::Reservoir, "Reservoir"}
+};
+
+const Gui::DropdownList k3dgOptimizerList{
+    {static_cast<uint>(ReSTIR_FG::Optimizer::SGD), "SGD"},
+    {static_cast<uint>(ReSTIR_FG::Optimizer::Adam), "Adam"}
+};
+} // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
@@ -793,6 +756,23 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                         " / " + std::to_string(m3dgMaxFirstHitPhotonCount) +
                         " (" + std::to_string(static_cast<float>(m3dgActualFirstHitPhotonCount) / static_cast<float>(m3dgMaxFirstHitPhotonCount)) +
                         ")");
+                }
+
+                // Optimizer
+                const bool changedOptimizer = group.dropdown("Optimizer", k3dgOptimizerList, reinterpret_cast<uint&>(m3dgOptimizer));
+                if (changedOptimizer)
+                {
+                    mp3dgOptimizationBuffer.reset();
+                }
+                changed |= changedOptimizer;
+
+                group.text("Optimizer step: " + std::to_string(m3dgOptimStep));
+                changed |= group.var("Learning Rate", m3dgLearningRate, 0.0f, 1.0f);
+
+                if (m3dgOptimizer == Optimizer::Adam)
+                {
+                    changed |= group.var("Adam Beta1", m3dgBeta1, 0.0f, 1.0f);
+                    changed |= group.var("Adam Beta2", m3dgBeta2, 0.0f, 1.0f);
                 }
             }
         }
@@ -1402,6 +1382,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             gaussianCount,
             ResourceBindFlags::None,
             Buffer::CpuAccess::Read);
+
+        // Reset optimization
+        m3dgOptimStep = 0;
     }
 
     if (!mp3dgGaussianTexture)
@@ -1473,6 +1456,21 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             gaussianCount,
             ResourceBindFlags::None,
             Buffer::CpuAccess::Read);
+    }
+
+    if (!mp3dgOptimizationBuffer)
+    {
+        const std::vector<Gaussian3DMoments> gaussianMoments(gaussianCount, Gaussian3DMoments());
+        mp3dgOptimizationBuffer = Buffer::createStructured(
+            mpDevice,
+            sizeof(Gaussian3DMoments),
+            gaussianCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None,
+            gaussianMoments.data());
+
+        // Reset optimization
+        m3dgOptimStep = 0;
     }
 }
 
@@ -2182,6 +2180,9 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     // Profile
     FALCOR_PROFILE(pRenderContext, "OptimizeGaussians");
 
+    // Increase optimizer step
+    ++m3dgOptimStep;
+
     // Init shader
     if (!mpOptimizeGaussiansPass)
     {
@@ -2205,8 +2206,13 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     var["gGaussians"] = mp3dgGaussianBuffer.buffer;
     var["gGradients"] = mp3dgGradientBuffer.buffer;
     var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
+    var["gGaussianMoments"] = mp3dgOptimizationBuffer;
     var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
     var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
+    var["Constants"]["gLearningRate"] = m3dgLearningRate;
+    var["Constants"]["gBeta1"] = m3dgBeta1;
+    var["Constants"]["gBeta2"] = m3dgBeta2;
+    var["Constants"]["gOptimStep"] = static_cast<float>(m3dgOptimStep);
 
     // Execute
     const uint threadCount = totalGaussianCount % 32 == 0 ?

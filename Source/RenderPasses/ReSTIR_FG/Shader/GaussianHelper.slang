@@ -10,6 +10,18 @@ struct Gaussian3D
     float weight; // Unnormalized weight used in GMM
 };
 
+struct Gaussian3DMoments
+{
+    float3 meanMoment1;
+    float3 meanMoment2;
+
+    float sigmaMoment1;
+    float sigmaMoment2;
+
+    float weightMoment1;
+    float weightMoment2;
+};
+
 struct FirstHitPhotonInfo
 {
     float3 pos;

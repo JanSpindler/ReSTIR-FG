@@ -7,26 +7,19 @@ cbuffer Constants
 {
     uint gGaussianCount;
     uint gTotalGaussianCount;
+
+    float gLearningRate;
+    float gBeta1;
+    float gBeta2;
+    float gOptimStep;
 }
 
-static const float gLearningRate = 1e+1f;
-static const float gBeta1 = 0.9f;
-static const float gBeta2 = 0.999f;
-static const float gOptimTimeStep = 2.0f;
 static const float EPSILON = 1e-8f;
 
 RWStructuredBuffer<Gaussian3D> gGaussians;
 StructuredBuffer<Gaussian3D> gGradients;
 Buffer<uint> gLightFirstHitCounts;
-
-float Adam(const float g, inout float m, inout float v)
-{
-    m = gBeta1 * m + (1.0f - gBeta1) * g;
-    v = gBeta2 * v + (1.0f - gBeta2) * g * g;
-    const float numerator = m / (1.0f - pow(gBeta1, gOptimTimeStep));
-    const float denominator = sqrt(v / (1.0f - pow(gBeta2, gOptimTimeStep))) + EPSILON;
-    return numerator / denominator;
-}
+RWStructuredBuffer<Gaussian3DMoments> gGaussianMoments;
 
 bool CheckNumeric(const float value)
 {
@@ -36,6 +29,20 @@ bool CheckNumeric(const float value)
 bool CheckNumeric(const float3 value)
 {
     return all(isfinite(value) && !isnan(value));
+}
+
+float Adam(const float g, inout float m, inout float v)
+{
+    m = gBeta1 * m + (1.0f - gBeta1) * g;
+    v = gBeta2 * v + (1.0f - gBeta2) * g * g;
+    const float numerator = m / (1.0f - pow(gBeta1, gOptimStep));
+    const float denominator = sqrt(v / (1.0f - pow(gBeta2, gOptimStep))) + EPSILON;
+    return numerator / denominator;
+}
+
+void OptimAdam(inout float param, const float gradient, inout float firstMoment, inout float secondMoment)
+{
+    param -= gLearningRate * Adam(gradient, firstMoment, secondMoment);
 }
 
 [numthreads(32, 1, 1)]
@@ -54,20 +61,30 @@ void main(uint2 index : SV_DispatchThreadID)
 
     // Get the gradient
     const Gaussian3D gradient = gGradients[gaussianIdx];
-    const float3 meanGradient = gradient.mean * gLearningRate * lightNormFactor;
-    const float sigmaGradient = gradient.sigma * gLearningRate * lightNormFactor;
-    const float weightGradient = gradient.weight * gLearningRate * lightNormFactor;
+    const float3 meanGradient = gradient.mean * lightNormFactor;
+    const float sigmaGradient = gradient.sigma * lightNormFactor;
+    const float weightGradient = gradient.weight * lightNormFactor;
     if (!CheckNumeric(meanGradient) || !CheckNumeric(sigmaGradient) || !CheckNumeric(weightGradient))
     {
         return;
     }
 
+#if 0
     // SGD
-    gGaussians[gaussianIdx].mean -= meanGradient;
-    gGaussians[gaussianIdx].sigma -= sigmaGradient;
-    gGaussians[gaussianIdx].weight -= weightGradient;
+    gGaussians[gaussianIdx].mean -= gLearningRate * meanGradient;
+    gGaussians[gaussianIdx].sigma -= gLearningRate * sigmaGradient;
+    gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient;
+#else
+    // Adam
+    OptimAdam(gGaussians[gaussianIdx].mean.x, meanGradient.x, gGaussianMoments[gaussianIdx].meanMoment1.x, gGaussianMoments[gaussianIdx].meanMoment2.x);
+    OptimAdam(gGaussians[gaussianIdx].mean.y, meanGradient.y, gGaussianMoments[gaussianIdx].meanMoment1.y, gGaussianMoments[gaussianIdx].meanMoment2.y);
+    OptimAdam(gGaussians[gaussianIdx].mean.z, meanGradient.z, gGaussianMoments[gaussianIdx].meanMoment1.z, gGaussianMoments[gaussianIdx].meanMoment2.z);
+    OptimAdam(gGaussians[gaussianIdx].sigma, sigmaGradient, gGaussianMoments[gaussianIdx].sigmaMoment1, gGaussianMoments[gaussianIdx].sigmaMoment2);
+    OptimAdam(gGaussians[gaussianIdx].weight, weightGradient, gGaussianMoments[gaussianIdx].weightMoment1, gGaussianMoments[gaussianIdx].weightMoment2);
+#endif
 
-    // TODO: Handle differently
+    // Safety checks
+    // TODO: Handle this in a better way
     gGaussians[gaussianIdx].sigma = clamp(gGaussians[gaussianIdx].sigma, 0.5f, 2.0f);
     gGaussians[gaussianIdx].weight = clamp(gGaussians[gaussianIdx].weight, -2.0f, 2.0f);
 }
