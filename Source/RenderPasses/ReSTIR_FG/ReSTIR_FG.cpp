@@ -734,6 +734,13 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     mp3dgLightFirstHitCountBuffer.reset();
                 }
 
+                if (group.button("ReInit Gaussians"))
+                {
+                    mp3dgGaussianBuffer.buffer.reset();
+                    mp3dgOptimizationBuffer.reset();
+                    changed = true;
+                }
+
                 changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
 
                 changed |= group.var("Beta (MIS)", m3dgBeta, 0.0f, 1.0f);
