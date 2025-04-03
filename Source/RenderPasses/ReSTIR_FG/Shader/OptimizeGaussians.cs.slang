@@ -69,13 +69,13 @@ void main(uint2 index : SV_DispatchThreadID)
         return;
     }
 
-#if 0
-    // SGD
-    gGaussians[gaussianIdx].mean -= gLearningRate * meanGradient;
-    gGaussians[gaussianIdx].sigma -= gLearningRate * sigmaGradient;
-    gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient;
-#else
-    // Adam
+    // Optimizer
+#if OPTIM_SGD
+    gGaussians[gaussianIdx].mean -= gLearningRate * meanGradient * 100.0f;
+    gGaussians[gaussianIdx].sigma -= gLearningRate * sigmaGradient * 100.0f;
+    gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient * 100.0f;
+#endif
+#if OPTIM_ADAM
     OptimAdam(gGaussians[gaussianIdx].mean.x, meanGradient.x, gGaussianMoments[gaussianIdx].meanMoment1.x, gGaussianMoments[gaussianIdx].meanMoment2.x);
     OptimAdam(gGaussians[gaussianIdx].mean.y, meanGradient.y, gGaussianMoments[gaussianIdx].meanMoment1.y, gGaussianMoments[gaussianIdx].meanMoment2.y);
     OptimAdam(gGaussians[gaussianIdx].mean.z, meanGradient.z, gGaussianMoments[gaussianIdx].meanMoment1.z, gGaussianMoments[gaussianIdx].meanMoment2.z);

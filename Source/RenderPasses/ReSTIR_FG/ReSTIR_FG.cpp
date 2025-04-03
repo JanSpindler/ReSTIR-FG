@@ -2195,6 +2195,9 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
         defines.add(mpScene->getSceneDefines());
         defines.add(mpSampleGenerator->getDefines());
         defines.add(getMaterialDefines());
+        defines.add("OPTIM_SGD", "0");
+        defines.add("OPTIM_ADAM", "0");
+
 
         mpOptimizeGaussiansPass = ComputePass::create(mpDevice, desc, defines, true);
     }
@@ -2213,6 +2216,10 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     var["Constants"]["gBeta1"] = m3dgBeta1;
     var["Constants"]["gBeta2"] = m3dgBeta2;
     var["Constants"]["gOptimStep"] = static_cast<float>(m3dgOptimStep);
+
+    // More defines
+    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m3dgOptimizer == Optimizer::SGD ? "1" : "0");
+    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_ADAM", m3dgOptimizer == Optimizer::Adam ? "1" : "0");
 
     // Execute
     const uint threadCount = totalGaussianCount % 32 == 0 ?
