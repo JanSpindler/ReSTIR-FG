@@ -42,6 +42,27 @@ static float3 GenRandomFloat3()
     return float3(dis(gen), dis(gen), dis(gen));
 }
 
+static InteropBuffer CreateInteropBuffer(
+    const ref<Device> pDevice,
+    const size_t size,
+    const Falcor::Buffer::CpuAccess cpuAccess = Falcor::Buffer::CpuAccess::None,
+    const void* data = nullptr)
+{
+    InteropBuffer interop;
+
+    // Create a new DX <-> CUDA shared buffer using the Falcor API to create, then find its CUDA pointer.
+    interop.buffer = Buffer::create(
+        pDevice,
+        size,
+        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess | Resource::BindFlags::Shared,
+        cpuAccess,
+        data);
+    interop.devicePtr = (CUdeviceptr)getSharedDevicePtr(interop.buffer->getSharedApiHandle(), (uint32_t)interop.buffer->getSize());
+    checkInvariant(interop.devicePtr != (CUdeviceptr)0, "Failed to create CUDA device ptr for buffer");
+
+    return interop;
+}
+
 template <typename T>
 static InteropBuffer CreateStructuredInteropBuffer(
     const ref<Device> pDevice,
@@ -732,12 +753,14 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     mp3dgGradientBuffer.buffer.reset();
                     mp3dgOptimizationBuffer.reset();
                     mp3dgLightFirstHitCountBuffer.reset();
+                    mp3dgSoftmaxBuffer.buffer.reset();
                 }
 
                 if (group.button("ReInit Gaussians"))
                 {
                     mp3dgGaussianBuffer.buffer.reset();
                     mp3dgOptimizationBuffer.reset();
+                    mp3dgSoftmaxBuffer.buffer.reset();
                     changed = true;
                 }
 
@@ -1479,6 +1502,12 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         // Reset optimization
         m3dgOptimStep = 0;
     }
+
+    if (!mp3dgSoftmaxBuffer.buffer)
+    {
+        const std::vector<float> softmaxWeights(gaussianCount, 1.0f / static_cast<float>(m3dgGaussianCount));
+        mp3dgSoftmaxBuffer = CreateInteropBuffer(mpDevice, sizeof(float) * gaussianCount, Buffer::CpuAccess::None, softmaxWeights.data());
+    }
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1846,6 +1875,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
     }
     var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
+    var["gSoftmaxWeights"] = mp3dgSoftmaxBuffer.buffer;
 
     // Trace the photons
     if (traceScene)
@@ -2145,6 +2175,7 @@ void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
         reinterpret_cast<const uint*>(mp3dgFirstHitCollectionCountsBuffer.devicePtr),
         reinterpret_cast<const FirstHitPhotonInfo*>(mp3dgFirstHitPhotonInfoBuffer.devicePtr),
         reinterpret_cast<const uint*>(mp3dgFirstHitPhotonCount.devicePtr),
+        reinterpret_cast<const float*>(mp3dgSoftmaxBuffer.devicePtr),
         reinterpret_cast<Gaussian3D*>(mp3dgGradientBuffer.devicePtr));
 
     // Ensure CUDA kernel has completed before proceeding

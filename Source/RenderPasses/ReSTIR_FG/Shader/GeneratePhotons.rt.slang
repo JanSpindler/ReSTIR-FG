@@ -67,6 +67,7 @@ RWBuffer<uint> gFirstHitPhotonCounter;
 RWStructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gLightFirstHitCounts;
+Buffer<float> gSoftmaxWeights;
 
 enum class GenerationFlags // : uint32_t
 {
@@ -179,22 +180,15 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
     // Get index of first gaussian belonging to this light
     const uint startGaussIdx = lightIdx * gGaussianCount;
 
-    // Calculate softmax denominator
-    float softmaxSum = 0.0f;
-    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
-    {
-        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
-        softmaxSum += exp(gaussian.weight);
-    }
-
     // Select a gaussian and sample position
     const float r = sampleNext1D(sg);
     float sum = 0.0f;
     float3 gmmPos;
     for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
     {
-        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
-        const float gaussWeight = exp(gaussian.weight) / softmaxSum;
+        const uint totalGaussianIdx = startGaussIdx + gaussIdx;
+        const Gaussian3D gaussian = gGaussians[totalGaussianIdx];
+        const float gaussWeight = gSoftmaxWeights[totalGaussianIdx];
         sum += gaussWeight;
         if (r <= sum)
         {
@@ -207,8 +201,9 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
     gmmPdf = 0.0f;
     for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
     {
-        const Gaussian3D gaussian = gGaussians[startGaussIdx + gaussIdx];
-        const float gaussWeight = exp(gaussian.weight) / softmaxSum;
+        const uint totalGaussianIdx = startGaussIdx + gaussIdx;
+        const Gaussian3D gaussian = gGaussians[totalGaussianIdx];
+        const float gaussWeight = gSoftmaxWeights[totalGaussianIdx];
         gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.sigma) * gaussWeight;
     }
 

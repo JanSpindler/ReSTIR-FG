@@ -16,11 +16,6 @@ static __forceinline__ __device__ bool CheckNumeric(const float x)
     return !isnan(x) && !isinf(x);
 }
 
-static __forceinline__ __device__ bool CheckNumeric(const float3& v)
-{
-    return CheckNumeric(v.x) && CheckNumeric(v.y) && CheckNumeric(v.z);
-}
-
 static __forceinline__ __device__ float length(const float3& v)
 {
     return sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
@@ -97,6 +92,7 @@ static __forceinline__ __device__ void NumericAtomicAdd(float* dest, const float
 static __forceinline__ __device__ void DerivGmm(
     const Gaussian3D* gaussians,
     Gaussian3D* gradients,
+    const float* softmaxWeights,
     const uint gaussianCount,
     const uint lightIdx,
     const float3& position,
@@ -105,21 +101,7 @@ static __forceinline__ __device__ void DerivGmm(
     // Get first gaussian index
     const uint firstGaussianIdx = lightIdx * gaussianCount;
 
-    // Store softmax weights
-    // TODO: Allocate somewhere else and calculate only once before
-    static float softmaxWeights[128];
-    float softmaxSum = 0.0f;
-    for (uint idx = 0; idx < gaussianCount; ++idx)
-    {
-        const uint gaussianIdx = firstGaussianIdx + idx;
-        softmaxSum += exp(gaussians[gaussianIdx].weight);
-    }
-    for (uint idx = 0; idx < gaussianCount; ++idx)
-    {
-        const uint gaussianIdx = firstGaussianIdx + idx;
-        softmaxWeights[idx] = exp(gaussians[gaussianIdx].weight) / softmaxSum;
-    }
-
+    // Add to gradient
     for (uint idx = 0; idx < gaussianCount; ++idx)
     {
         // Mean
@@ -161,6 +143,7 @@ __global__ void CalculateGaussianGradientKernel(
     const uint* firstHitCollectionCounts,
     const FirstHitPhotonInfo* firstHitPhotonInfo,
     const uint* firstHitPhotonCount,
+    const float* softmaxWeights,
     Gaussian3D* gradients)
 {
     // Get first hit photon index
@@ -189,6 +172,7 @@ __global__ void CalculateGaussianGradientKernel(
     DerivGmm(
         gaussians,
         gradients,
+        softmaxWeights,
         gaussianCount,
         lightIdx,
         position,
@@ -202,6 +186,7 @@ void CalculateGaussianGradient(
     const uint* firstHitCollectionCounts,
     const FirstHitPhotonInfo* firstHitPhotonInfo,
     const uint* firstHitPhotonCount,
+    const float* softmaxWeights,
     Gaussian3D* gradients)
 {
     CalculateGaussianGradientKernel<<<(maxFistHitPhotonCount + 127) / 128, 128>>>(
@@ -211,5 +196,6 @@ void CalculateGaussianGradient(
         firstHitCollectionCounts,
         firstHitPhotonInfo,
         firstHitPhotonCount,
+        softmaxWeights,
         gradients);
 }

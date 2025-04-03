@@ -10,4 +10,6 @@ void CalculateGaussianGradient(
     const uint* firstHitCollectionCounts,
     const FirstHitPhotonInfo* firstHitPhotonInfo,
     const uint* firstHitPhotonCount,
-    Gaussian3D* gradients);
+    const float* softmaxWeights,
+    Gaussian3D* gradients
+);

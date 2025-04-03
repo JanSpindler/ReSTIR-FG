@@ -382,6 +382,7 @@ private:
     InteropBuffer mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians
     ref<Buffer> mp3dgGradientBufferCPU; 
     ref<Buffer> mp3dgOptimizationBuffer; // Buffer storing the optimization data for the 3D gaussians (Adam)
+    InteropBuffer mp3dgSoftmaxBuffer;      // Buffer storing the softmax weights
 
     //
     // Render Passes/Programms
