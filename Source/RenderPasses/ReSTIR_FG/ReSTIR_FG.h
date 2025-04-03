@@ -169,6 +169,9 @@ private:
     // Optimize gaussians
     void optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData);
 
+    // Calculate softmax weights
+    void calculateSoftmaxWeightsPass(RenderContext* pRenderContext);
+
     /** Resampling pass, which resamples the generated sampled based on the resampling mode
     */
     void resamplingPass(RenderContext* pRenderContext, const RenderData& renderData);
@@ -417,6 +420,7 @@ private:
 
     ref<ComputePass> mpCalculateGaussianGradientPass;   // Calculate the gradient for each first hit photon
     ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
+    ref<ComputePass> mpCalculateSoftmaxWeightsPass;     // Calculate the softmax weights for the 3D gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes
     ref<ComputePass> mpCausticResamplingPass;           // Resampling Pass for Caustics
     ref<ComputePass> mpFinalShadingPass;                // Final Shading Pass

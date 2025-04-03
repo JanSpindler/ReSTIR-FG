@@ -99,6 +99,7 @@ const std::string kFinalShadingPassShader = "RenderPasses/ReSTIR_FG/Shader/Final
 const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/DirectAnalytic.cs.slang";
 const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
 const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
+const std::string kCalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
 
 const std::string kShaderModel = "6_5";
 const uint kMaxPayloadBytes = 96u;
@@ -2260,10 +2261,37 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_ADAM", m3dgOptimizer == Optimizer::Adam ? "1" : "0");
 
     // Execute
-    const uint threadCount = totalGaussianCount % 32 == 0 ?
-        totalGaussianCount :
-        totalGaussianCount + 32 - (totalGaussianCount % 32);
     mpOptimizeGaussiansPass->execute(pRenderContext, uint3(totalGaussianCount, 1, 1));
+}
+
+void ReSTIR_FG::calculateSoftmaxWeightsPass(RenderContext* pRenderContext)
+{
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "CalculateSoftmaxWeights");
+
+    // Init shader
+    if (!mpCalculateSoftmaxWeightsPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kCalculateSoftmaxWeightsShader).csEntry("main").setShaderModel(kShaderModel);
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getMaterialDefines());
+
+        mpCalculateSoftmaxWeightsPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpCalculateSoftmaxWeightsPass);
+
+    // Set variables
+
+    // More defines
+
+    // Execute
+    mpCalculateSoftmaxWeightsPass->execute(pRenderContext, uint3(m3dgAnalyticLightCount + m3dgGeometricLightCount, 1, 1));
 }
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData)
