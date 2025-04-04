@@ -438,6 +438,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         calculateGaussianGradientCuda(pRenderContext);
         optimizeGaussiansPass(pRenderContext, renderData);
+        calculateSoftmaxWeightsPass(pRenderContext);
     }
 
     // Final gather resampling
@@ -2287,8 +2288,14 @@ void ReSTIR_FG::calculateSoftmaxWeightsPass(RenderContext* pRenderContext)
     FALCOR_ASSERT(mpCalculateSoftmaxWeightsPass);
 
     // Set variables
+    auto var = mpCalculateSoftmaxWeightsPass->getRootVar();
+    var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
+    var["Constants"]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
+    var["Constants"]["gGeometricLightCount"] = m3dgGeometricLightCount;
 
-    // More defines
+    // Buffers
+    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
+    var["gSoftmaxWeights"] = mp3dgSoftmaxBuffer.buffer;
 
     // Execute
     mpCalculateSoftmaxWeightsPass->execute(pRenderContext, uint3(m3dgAnalyticLightCount + m3dgGeometricLightCount, 1, 1));
