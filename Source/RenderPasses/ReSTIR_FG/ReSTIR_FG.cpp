@@ -199,8 +199,8 @@ const Gui::DropdownList kCausticCollectionModeList{
 };
 
 const Gui::DropdownList k3dgOptimizerList{
-    {static_cast<uint>(ReSTIR_FG::Optimizer::SGD), "SGD"},
-    {static_cast<uint>(ReSTIR_FG::Optimizer::Adam), "Adam"}
+    {static_cast<uint>(ReSTIR_FG::GaussianOptimizer::SGD), "SGD"},
+    {static_cast<uint>(ReSTIR_FG::GaussianOptimizer::Adam), "Adam"}
 };
 } // namespace
 
