@@ -45,7 +45,7 @@ static __forceinline__ __device__ float GaussianNormTerm(const float sigma)
 {
     const float denom = 2.0f * PI * sigma * sigma;
     const float denom3 = denom * denom * denom;
-    return sqrt(denom3);
+    return 1.0f / sqrt(denom3);
 }
 
 static __forceinline__ __device__ float EvalUnormGaussian3D(const Gaussian3D& gaussian, const float3& position)
@@ -56,8 +56,8 @@ static __forceinline__ __device__ float EvalUnormGaussian3D(const Gaussian3D& ga
 
 static __forceinline__ __device__ float3 DerivNormGaussianWrtMean(const Gaussian3D& gaussian, const float3& position)
 {
-    const float denom = gaussian.sigma * gaussian.sigma * GaussianNormTerm(gaussian.sigma);
-    return (position - gaussian.mean) * EvalUnormGaussian3D(gaussian, position) / denom;
+    const float denom = gaussian.sigma * gaussian.sigma;
+    return GaussianNormTerm(gaussian.sigma) * (position - gaussian.mean) * EvalUnormGaussian3D(gaussian, position) / denom;
 }
 
 static __forceinline__ __device__ float DerivGaussianNormTermWrtSigma(const float sigma)

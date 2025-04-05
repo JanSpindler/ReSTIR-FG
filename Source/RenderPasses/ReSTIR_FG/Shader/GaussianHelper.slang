@@ -79,10 +79,10 @@ float GaussianNormTerm(const float sigma)
 {
     const float denom = 2.0f * PI * sigma * sigma;
     const float denom3 = denom * denom * denom;
-    return sqrt(denom3);
+    return 1.0f / sqrt(denom3);
 }
 
 float F0(const float3 x, const float3 x0, const float3 mu, const float sigma)
 {
-    return f0(x, x0, mu, sigma) / GaussianNormTerm(sigma);
+    return f0(x, x0, mu, sigma) * GaussianNormTerm(sigma);
 }

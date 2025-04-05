@@ -1509,6 +1509,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     {
         const std::vector<float> softmaxWeights(gaussianCount, 1.0f / static_cast<float>(m3dgGaussianCount));
         mp3dgSoftmaxBuffer = CreateInteropBuffer(mpDevice, sizeof(float) * gaussianCount, Buffer::CpuAccess::None, softmaxWeights.data());
+        mp3dgSoftmaxBufferCPU = Buffer::create(mpDevice, sizeof(float) * gaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 }
 
@@ -2299,6 +2300,25 @@ void ReSTIR_FG::calculateSoftmaxWeightsPass(RenderContext* pRenderContext)
 
     // Execute
     mpCalculateSoftmaxWeightsPass->execute(pRenderContext, uint3(m3dgAnalyticLightCount + m3dgGeometricLightCount, 1, 1));
+
+#if 0
+    // Copy softmax buffer to CPU
+    const uint gaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
+    pRenderContext->uavBarrier(mp3dgSoftmaxBuffer.buffer.get());
+    pRenderContext->copyBufferRegion(
+        mp3dgSoftmaxBufferCPU.get(),
+        0,
+        mp3dgSoftmaxBuffer.buffer.get(),
+        0,
+        sizeof(float) * gaussianCount);
+
+    std::vector<float> softmaxWeights(gaussianCount);
+    void* data = mp3dgSoftmaxBufferCPU->map(Buffer::MapType::Read);
+    std::memcpy(softmaxWeights.data(), data, sizeof(float) * gaussianCount);
+    mp3dgSoftmaxBufferCPU->unmap();
+
+    __nop();
+#endif
 }
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData)

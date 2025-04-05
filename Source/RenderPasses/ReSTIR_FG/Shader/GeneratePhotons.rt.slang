@@ -508,12 +508,14 @@ void rayGen()
         // Geometric lights come after analytic lights in gaussian buffer
         lightIdx += gAnalyticLightCount;
 
-        // Sample direction without photon guiding
+    // Sample direction without photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        if (sampleNext1D(lightSg) > gBeta)
-#else  // USE_3D_GAUSSIAN_PHOTON_GUIDING
-        if (true)
+        const float gmmProb = gBeta;
+#else // USE_3D_GAUSSIAN_PHOTON_GUIDING
+        const float gmmProb = 0.0f;
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+
+        if (sampleNext1D(lightSg) >= gmmProb)
         {
             // Sample uniform
             float photonDirPdf = 1.0f;
@@ -521,8 +523,7 @@ void rayGen()
             {
                 return;
             }
-            pls.flux /= photonDirPdf;
-            firstHitSamplingPdf = photonDirPdf; // TODO: Correct MIS
+            firstHitSamplingPdf = photonDirPdf * (1.0f - gmmProb);
         }
         else
         {
@@ -532,10 +533,11 @@ void rayGen()
             {
                 return;
             }
-            pls.flux /= photonDirPdf;
             pls.flux *= dot(pls.normal, ray.Direction);
-            firstHitSamplingPdf = photonDirPdf; // TODO: Correct MIS
+            firstHitSamplingPdf = photonDirPdf * gmmProb;
         }
+
+        pls.flux /= firstHitSamplingPdf;
     }
 #endif // USE_EMISSIVE_LIGHT
 

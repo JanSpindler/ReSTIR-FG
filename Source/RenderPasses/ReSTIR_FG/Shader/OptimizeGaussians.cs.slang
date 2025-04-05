@@ -71,9 +71,9 @@ void main(uint2 index : SV_DispatchThreadID)
 
     // Optimizer
 #if OPTIM_SGD
-    gGaussians[gaussianIdx].mean -= gLearningRate * meanGradient * 100.0f;
-    gGaussians[gaussianIdx].sigma -= gLearningRate * sigmaGradient * 100.0f;
-    gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient * 100.0f;
+    gGaussians[gaussianIdx].mean -= gLearningRate * meanGradient;
+    gGaussians[gaussianIdx].sigma -= gLearningRate * sigmaGradient;
+    gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient;
 #endif
 #if OPTIM_ADAM
     OptimAdam(gGaussians[gaussianIdx].mean.x, meanGradient.x, gGaussianMoments[gaussianIdx].meanMoment1.x, gGaussianMoments[gaussianIdx].meanMoment2.x);
@@ -85,6 +85,6 @@ void main(uint2 index : SV_DispatchThreadID)
 
     // Safety checks
     // TODO: Handle this in a better way
-    gGaussians[gaussianIdx].sigma = clamp(gGaussians[gaussianIdx].sigma, 0.5f, 2.0f);
-    gGaussians[gaussianIdx].weight = clamp(gGaussians[gaussianIdx].weight, -2.0f, 2.0f);
+    gGaussians[gaussianIdx].sigma = max(gGaussians[gaussianIdx].sigma, 0.5f);
+    gGaussians[gaussianIdx].weight = clamp(gGaussians[gaussianIdx].weight, -1.0f, 1.0f);
 }
