@@ -801,7 +801,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 group.text("Optimizer step: " + std::to_string(m3dgOptimStep));
                 changed |= group.var("Learning Rate", m3dgLearningRate, 0.0f, 1.0f);
 
-                if (m3dgOptimizer == Optimizer::Adam)
+                if (m3dgOptimizer == GaussianOptimizer::Adam)
                 {
                     changed |= group.var("Adam Beta1", m3dgBeta1, 0.0f, 1.0f);
                     changed |= group.var("Adam Beta2", m3dgBeta2, 0.0f, 1.0f);
@@ -2258,8 +2258,8 @@ void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const Rende
     var["Constants"]["gOptimStep"] = static_cast<float>(m3dgOptimStep);
 
     // More defines
-    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m3dgOptimizer == Optimizer::SGD ? "1" : "0");
-    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_ADAM", m3dgOptimizer == Optimizer::Adam ? "1" : "0");
+    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m3dgOptimizer == GaussianOptimizer::SGD ? "1" : "0");
+    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_ADAM", m3dgOptimizer == GaussianOptimizer::Adam ? "1" : "0");
 
     // Execute
     mpOptimizeGaussiansPass->execute(pRenderContext, uint3(totalGaussianCount, 1, 1));

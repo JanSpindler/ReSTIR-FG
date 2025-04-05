@@ -28,7 +28,8 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
- //Light samplers
+
+// Light samplers
 #include "Rendering/Lights/LightBVHSampler.h"
 #include "Rendering/Lights/EmissivePowerSampler.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
@@ -96,10 +97,16 @@ public:
         Reservoir = 3u
     };
 
-    enum class Optimizer : uint
+    enum class GaussianOptimizer : uint
     {
         SGD = 0u,
         Adam = 1u
+    };
+
+    enum class GaussianInitialization : uint
+    {
+        Random = 0u,
+        Robust = 1u
     };
 
 private:
@@ -324,11 +331,14 @@ private:
     uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
 
-    Optimizer m3dgOptimizer = Optimizer::Adam; // Optimizer used for optimizing the 3D gaussians
+    GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
     float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
     float m3dgBeta1 = 0.9f;                    // Beta1 for the optimizer
     float m3dgBeta2 = 0.999f;                  // Beta2 for the optimizer
     uint m3dgOptimStep = 0;                    // Current optimization step
+
+    GaussianInitialization m3dgInitialization = GaussianInitialization::Robust; // Initialization method for the 3D gaussians
+    uint m3dgInitClusters = 32;                                                 // Number of clusters used for the robust initialization
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
