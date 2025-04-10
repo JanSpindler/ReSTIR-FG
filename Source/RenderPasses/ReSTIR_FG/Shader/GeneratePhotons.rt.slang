@@ -175,6 +175,33 @@ float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
     return x + mu;
 }
 
+float GMMProb(const float3 pos0, const float3 gmmPos, const uint lightIdx)
+{
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+
+    // Get index of first gaussian belonging to this light
+    const uint startGaussIdx = lightIdx * gGaussianCount;
+
+    // Calculate pdf by marginalizing over all gaussians
+    float gmmPdf = 0.0f;
+    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
+    {
+        const uint totalGaussianIdx = startGaussIdx + gaussIdx;
+        const Gaussian3D gaussian = gGaussians[totalGaussianIdx];
+        const float gaussWeight = gSoftmaxWeights[totalGaussianIdx];
+        gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.sigma) * gaussWeight;
+    }
+
+    // Return
+    return gmmPdf;
+
+#else
+
+    return 0.0f;
+
+#endif
+}
+
 float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator sg, out float gmmPdf)
 {
     // Get index of first gaussian belonging to this light
@@ -198,14 +225,7 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
     }
 
     // Calculate pdf by marginalizing over all gaussians
-    gmmPdf = 0.0f;
-    for (uint gaussIdx = 0; gaussIdx < gGaussianCount; ++gaussIdx)
-    {
-        const uint totalGaussianIdx = startGaussIdx + gaussIdx;
-        const Gaussian3D gaussian = gGaussians[totalGaussianIdx];
-        const float gaussWeight = gSoftmaxWeights[totalGaussianIdx];
-        gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.sigma) * gaussWeight;
-    }
+    gmmPdf = GMMProb(pos0, gmmPos, lightIdx);
 
     // Return
     return gmmPos;
@@ -214,7 +234,7 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
 // -----------------------------------------------------------------------
 
 #if USE_EMISSIVE_LIGHT  // Function is only valid if the emissive sampler is set
-bool createLightSample(inout SampleGenerator sg, out PhotonLightSample pls, out uint lightIdx)
+bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample pls, out uint lightIdx)
 {
     // Init
     pls = {};
@@ -500,7 +520,7 @@ void rayGen()
     else
     {
         // Sample emissive light
-        if (!createLightSample(lightSg, pls, lightIdx))
+        if (!createLightSampleGeometric(lightSg, pls, lightIdx))
         {
             return;
         }
@@ -510,31 +530,35 @@ void rayGen()
 
     // Sample direction without photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        const float gmmProb = gBeta;
+        const float sampleGmmProb = gBeta;
 #else // USE_3D_GAUSSIAN_PHOTON_GUIDING
-        const float gmmProb = 0.0f;
+        const float sampleGmmProb = 0.0f;
 #endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
 
-        if (sampleNext1D(lightSg) >= gmmProb)
+        if (sampleNext1D(lightSg) >= sampleGmmProb)
         {
-            // Sample uniform
-            float photonDirPdf = 1.0f;
-            if (!SamplePhotonDirCosineWeighted(ray.Direction, photonDirPdf, lightSg, pls.normal))
+            // Sample cosine weighted
+            if (!SamplePhotonDirCosineWeighted(ray.Direction, firstHitSamplingPdf, lightSg, pls.normal))
             {
                 return;
             }
-            firstHitSamplingPdf = photonDirPdf * (1.0f - gmmProb);
+
+            // MIS weight
+            const float gmmProb = GMMProb(pls.posW, pls.posW + ray.Direction, lightIdx);
+            pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + gmmProb);
         }
         else
         {
             // Sample gmm
-            float photonDirPdf = 1.0f;
-            if (!SamplePhotonDirGmm(ray.Direction, photonDirPdf, lightSg, lightIdx, pls.posW))
+            if (!SamplePhotonDirGmm(ray.Direction, firstHitSamplingPdf, lightSg, lightIdx, pls.posW))
             {
                 return;
             }
             pls.flux *= dot(pls.normal, ray.Direction);
-            firstHitSamplingPdf = photonDirPdf * gmmProb;
+
+            // MIS weight
+            const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
+            pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + cosineWeightedPdf);
         }
 
         pls.flux /= firstHitSamplingPdf;
