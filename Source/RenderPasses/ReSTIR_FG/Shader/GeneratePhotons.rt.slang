@@ -487,6 +487,58 @@ bool SamplePhotonDirGmm(
     return true;
 }
 
+void GeneratePhotonGeometric(
+    inout SampleGenerator lightSg,
+    inout PhotonLightSample pls,
+    out uint lightIdx,
+    inout float firstHitSamplingPdf,
+    inout RayDesc ray)
+{
+    // Sample emissive light
+    if (!createLightSampleGeometric(lightSg, pls, lightIdx))
+    {
+        return;
+    }
+
+    // Geometric lights come after analytic lights in gaussian buffer
+    lightIdx += gAnalyticLightCount;
+
+    // Sample direction without photon guiding
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+    const float sampleGmmProb = gBeta;
+#else  // USE_3D_GAUSSIAN_PHOTON_GUIDING
+    const float sampleGmmProb = 0.0f;
+#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+
+    if (sampleNext1D(lightSg) >= sampleGmmProb)
+    {
+        // Sample cosine weighted
+        if (!SamplePhotonDirCosineWeighted(ray.Direction, firstHitSamplingPdf, lightSg, pls.normal))
+        {
+            return;
+        }
+
+        // MIS weight
+        const float gmmProb = GMMProb(pls.posW, pls.posW + ray.Direction, lightIdx);
+        pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + gmmProb);
+    }
+    else
+    {
+        // Sample gmm
+        if (!SamplePhotonDirGmm(ray.Direction, firstHitSamplingPdf, lightSg, lightIdx, pls.posW))
+        {
+            return;
+        }
+        pls.flux *= dot(pls.normal, ray.Direction);
+
+        // MIS weight
+        const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
+        pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + cosineWeightedPdf);
+    }
+
+    pls.flux /= firstHitSamplingPdf;
+}
+
 [shader("raygeneration")]
 void rayGen()
 {
@@ -519,49 +571,7 @@ void rayGen()
 #if USE_EMISSIVE_LIGHT  
     else
     {
-        // Sample emissive light
-        if (!createLightSampleGeometric(lightSg, pls, lightIdx))
-        {
-            return;
-        }
-
-        // Geometric lights come after analytic lights in gaussian buffer
-        lightIdx += gAnalyticLightCount;
-
-    // Sample direction without photon guiding
-#if USE_3D_GAUSSIAN_PHOTON_GUIDING
-        const float sampleGmmProb = gBeta;
-#else // USE_3D_GAUSSIAN_PHOTON_GUIDING
-        const float sampleGmmProb = 0.0f;
-#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
-
-        if (sampleNext1D(lightSg) >= sampleGmmProb)
-        {
-            // Sample cosine weighted
-            if (!SamplePhotonDirCosineWeighted(ray.Direction, firstHitSamplingPdf, lightSg, pls.normal))
-            {
-                return;
-            }
-
-            // MIS weight
-            const float gmmProb = GMMProb(pls.posW, pls.posW + ray.Direction, lightIdx);
-            pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + gmmProb);
-        }
-        else
-        {
-            // Sample gmm
-            if (!SamplePhotonDirGmm(ray.Direction, firstHitSamplingPdf, lightSg, lightIdx, pls.posW))
-            {
-                return;
-            }
-            pls.flux *= dot(pls.normal, ray.Direction);
-
-            // MIS weight
-            const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
-            pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + cosineWeightedPdf);
-        }
-
-        pls.flux /= firstHitSamplingPdf;
+        GeneratePhotonGeometric(lightSg, pls, lightIdx, firstHitSamplingPdf, ray);
     }
 #endif // USE_EMISSIVE_LIGHT
 
