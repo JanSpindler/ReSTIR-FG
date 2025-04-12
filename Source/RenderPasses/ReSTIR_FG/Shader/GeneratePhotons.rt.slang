@@ -487,6 +487,7 @@ bool SamplePhotonDirGmm(
     return true;
 }
 
+#if USE_EMISSIVE_LIGHT // Function is only valid if the emissive sampler is set
 void GeneratePhotonGeometric(
     inout SampleGenerator lightSg,
     inout PhotonLightSample pls,
@@ -538,6 +539,7 @@ void GeneratePhotonGeometric(
 
     pls.flux /= firstHitSamplingPdf;
 }
+#endif // USE_EMISSIVE_LIGHT
 
 [shader("raygeneration")]
 void rayGen()
