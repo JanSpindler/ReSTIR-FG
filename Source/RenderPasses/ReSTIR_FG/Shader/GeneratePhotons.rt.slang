@@ -487,7 +487,7 @@ bool SamplePhotonDirGmm(
     return true;
 }
 
-void GeneratePhotonAnalytic(
+bool GeneratePhotonAnalytic(
     inout SampleGenerator lightSg,
     inout PhotonLightSample pls,
     out uint lightIdx,
@@ -495,16 +495,15 @@ void GeneratePhotonAnalytic(
     inout RayDesc ray)
 {
     // Analytic light sample
-    float3 sampleDir;
-    if (!createLightSampleAnalytic(lightSg, pls, sampleDir))
+    if (!createLightSampleAnalytic(lightSg, pls, ray.Direction))
     {
-        return;
+        return false;
     }
-    ray.Direction = sampleDir;
+    return true;
 }
 
 #if USE_EMISSIVE_LIGHT // Function is only valid if the emissive sampler is set
-void GeneratePhotonGeometric(
+bool GeneratePhotonGeometric(
     inout SampleGenerator lightSg,
     inout PhotonLightSample pls,
     out uint lightIdx,
@@ -514,7 +513,7 @@ void GeneratePhotonGeometric(
     // Sample emissive light
     if (!createLightSampleGeometric(lightSg, pls, lightIdx))
     {
-        return;
+        return false;
     }
 
     // Geometric lights come after analytic lights in gaussian buffer
@@ -532,7 +531,7 @@ void GeneratePhotonGeometric(
         // Sample cosine weighted
         if (!SamplePhotonDirCosineWeighted(ray.Direction, firstHitSamplingPdf, lightSg, pls.normal))
         {
-            return;
+            return false;
         }
 
         // MIS weight
@@ -544,7 +543,7 @@ void GeneratePhotonGeometric(
         // Sample gmm
         if (!SamplePhotonDirGmm(ray.Direction, firstHitSamplingPdf, lightSg, lightIdx, pls.posW))
         {
-            return;
+            return false;
         }
         pls.flux *= dot(pls.normal, ray.Direction);
 
@@ -554,6 +553,7 @@ void GeneratePhotonGeometric(
     }
 
     pls.flux /= firstHitSamplingPdf;
+    return true;
 }
 #endif // USE_EMISSIVE_LIGHT
 
@@ -578,12 +578,18 @@ void rayGen()
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
 #endif  // USE_EMISSIVE_LIGHT
     {
-        GeneratePhotonAnalytic(lightSg, pls, lightIdx, firstHitSamplingPdf, ray);
+        if (!GeneratePhotonAnalytic(lightSg, pls, lightIdx, firstHitSamplingPdf, ray))
+        {
+            return;
+        }
     }
 #if USE_EMISSIVE_LIGHT  
     else
     {
-        GeneratePhotonGeometric(lightSg, pls, lightIdx, firstHitSamplingPdf, ray);
+        if (!GeneratePhotonGeometric(lightSg, pls, lightIdx, firstHitSamplingPdf, ray))
+        {
+            return;
+        }
     }
 #endif // USE_EMISSIVE_LIGHT
 
