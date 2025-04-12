@@ -487,6 +487,22 @@ bool SamplePhotonDirGmm(
     return true;
 }
 
+void GeneratePhotonAnalytic(
+    inout SampleGenerator lightSg,
+    inout PhotonLightSample pls,
+    out uint lightIdx,
+    inout float firstHitSamplingPdf,
+    inout RayDesc ray)
+{
+    // Analytic light sample
+    float3 sampleDir;
+    if (!createLightSampleAnalytic(lightSg, pls, sampleDir))
+    {
+        return;
+    }
+    ray.Direction = sampleDir;
+}
+
 #if USE_EMISSIVE_LIGHT // Function is only valid if the emissive sampler is set
 void GeneratePhotonGeometric(
     inout SampleGenerator lightSg,
@@ -562,13 +578,7 @@ void rayGen()
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
 #endif  // USE_EMISSIVE_LIGHT
     {
-        // Analytic light sample
-        float3 sampleDir;
-        if (!createLightSampleAnalytic(lightSg, pls, sampleDir))
-        {
-            return;
-        }
-        ray.Direction = sampleDir;
+        GeneratePhotonAnalytic(lightSg, pls, lightIdx, firstHitSamplingPdf, ray);
     }
 #if USE_EMISSIVE_LIGHT  
     else
