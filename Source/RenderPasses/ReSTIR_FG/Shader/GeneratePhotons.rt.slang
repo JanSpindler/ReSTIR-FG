@@ -293,10 +293,11 @@ bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample 
 }
 #endif
 
-float3 SampleAnalyticLightDirUniform(
+void SampleAnalyticLightDirUniform(
     inout SampleGenerator sg,
     const in LightData lightData,
-    out float invLightPdf)
+    out float lightPdf,
+    out float3 sampledDir)
 {
     float3 woLocal;
     float3 rnd = sampleNext3D(sg);
@@ -313,15 +314,58 @@ float3 SampleAnalyticLightDirUniform(
         woLocal = sample_sphere(rnd.xy);
     }
 
-    invLightPdf = M_2PI * (1.f - spotAngle);
-    return fromLocalToWorld(lightData.dirW, woLocal); // Used pls.normal before but seemed wrong
+    lightPdf = 1.0f / (M_2PI * (1.f - spotAngle));
+    sampledDir = fromLocalToWorld(lightData.dirW, woLocal); // Used pls.normal before but seemed wrong
+}
+
+bool SampleAnalyticLightDirGmm(
+    inout SampleGenerator sg,
+    const in LightData lightData,
+    const uint lightIdx,
+    out float lightPdf,
+    out float misWeight,
+    out float3 sampledDir)
+{
+    // Sample uniform
+    if (sampleNext1D(sg) >= gBeta)
+    {
+        SampleAnalyticLightDirUniform(sg, lightData, lightPdf, sampledDir);
+        const float gmmPdf = GMMProb(lightData.posW, lightData.posW + sampledDir, lightIdx);
+        misWeight = lightPdf / (lightPdf + gmmPdf);
+    }
+    // Sample gmm
+    else
+    {
+        // Default
+        misWeight = 0.0f;
+
+        // Sample GMM
+        const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, lightPdf);
+        sampledDir = normalize(gmmPos - lightData.posW);
+        if (lightPdf <= gGmmMinPdf)
+        {
+            return false;
+        }
+
+        // TODO: Account for penumbra. Is penumbra even active?
+        const float angle = acos(dot(sampledDir, lightData.dirW));
+        if (angle > lightData.openingAngle)
+        {
+            return false;
+        }
+        const float uniformPdf = 1.0f / (M_2PI * (1.f - lightData.cosOpeningAngle));
+        misWeight = lightPdf / (lightPdf + uniformPdf);
+    }
+
+    return true;
 }
 
 bool createLightSampleAnalytic(
     inout SampleGenerator sg,
     out PhotonLightSample pls,
     out float3 sampledDir,
-    out uint lightIdx)
+    out uint lightIdx,
+    inout float firstHitSamplingPdf)
 {
     // Init
     pls = {};
@@ -345,44 +389,33 @@ bool createLightSampleAnalytic(
     }
 
     // Sample direction
-    float invLightPdf;
+    float lightPdf = 0.0f;
 
-    // Sample direction without photon guiding
-#if !USE_3D_GAUSSIAN_PHOTON_GUIDING
-    sampledDir = SampleAnalyticLightDirUniform(sg, lightData, invLightPdf);
-#endif
-
-    // Sample direction with photon guiding
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-    // Sample dir from GMM
-    float gmmPdf = 1.0f;
-    const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, gmmPdf);
-    sampledDir = normalize(gmmPos - lightData.posW);
-    if (gmmPdf <= gGmmMinPdf)
+    float misWeight = 0.0f;
+    if (!SampleAnalyticLightDirGmm(sg, lightData, lightIdx, lightPdf, misWeight, sampledDir))
     {
         return false;
     }
-    invLightPdf = 1.0f / gmmPdf;
-
-    // Set the flux to 0 if the light is a spotlight and the dir is outside the cone
-    if (dot(sampledDir, lightData.dirW) < lightData.cosOpeningAngle)
-    {
-        pls.flux = float3(0.0f);
-    }
+    firstHitSamplingPdf = lightPdf; // Does not include the prob of choosing this light
+    pls.flux *= misWeight;          // MIS weight
+#else
+    SampleAnalyticLightDirUniform(sg, lightData, lightPdf, sampledDir);
 #endif
 
-    if (invLightPdf <= 0.f)
+    if (lightPdf <= 0.f)
     {
         return false;
     }
 
-    invLightPdf *= lightCount; // Take the select pdf into account
+    // Take the select pdf into account
+    lightPdf /= lightCount;
     
     // Fill the photon light struct
     pls.posW = lightData.posW;
     pls.normal = lightData.dirW;
-    pls.flux = lightData.intensity * invLightPdf;
-    
+    pls.flux = lightData.intensity / lightPdf;
+
     return true;
 }
 
@@ -509,12 +542,8 @@ bool GeneratePhotonAnalytic(
     inout float firstHitSamplingPdf,
     inout RayDesc ray)
 {
-    // Analytic light sample
-    if (!createLightSampleAnalytic(lightSg, pls, ray.Direction, lightIdx))
-    {
-        return false;
-    }
-    return true;
+    // TODO: Useless function
+    return createLightSampleAnalytic(lightSg, pls, ray.Direction, lightIdx, firstHitSamplingPdf);
 }
 
 #if USE_EMISSIVE_LIGHT // Function is only valid if the emissive sampler is set
