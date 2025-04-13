@@ -293,6 +293,30 @@ bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample 
 }
 #endif
 
+float3 SampleAnalyticLightDirUniform(
+    inout SampleGenerator sg,
+    const in LightData lightData,
+    out float invLightPdf)
+{
+    float3 woLocal;
+    float3 rnd = sampleNext3D(sg);
+    rnd.z = 0; // No smooth fade at edge of spotlight
+    float spotAngle = lightData.cosOpeningAngle;
+
+    if (lightData.openingAngle < M_2PI) // If the opening angle is smaller than 2PI it is a spotlight
+    {
+        spotAngle = cos(lightData.openingAngle - lightData.penumbraAngle * rnd.z);
+        woLocal = sample_cone(rnd.xy, spotAngle);
+    }
+    else // Pointlight
+    {
+        woLocal = sample_sphere(rnd.xy);
+    }
+
+    invLightPdf = M_2PI * (1.f - spotAngle);
+    return fromLocalToWorld(lightData.dirW, woLocal); // Used pls.normal before but seemed wrong
+}
+
 bool createLightSampleAnalytic(
     inout SampleGenerator sg,
     out PhotonLightSample pls,
@@ -325,21 +349,7 @@ bool createLightSampleAnalytic(
 
     // Sample direction without photon guiding
 #if !USE_3D_GAUSSIAN_PHOTON_GUIDING
-    float3 woLocal;
-    float3 rnd = sampleNext3D(sg);
-    rnd.z = 0; // No smooth fade at edge of spotlight
-    float spotAngle = lightData.cosOpeningAngle;
-    if (lightData.openingAngle < M_2PI) // If the opening angle is smaller than 2PI it is a spotlight
-    {
-        spotAngle = cos(lightData.openingAngle - lightData.penumbraAngle * rnd.z);
-        woLocal = sample_cone(rnd.xy, spotAngle);
-    }
-    else // Pointlight
-    {
-        woLocal = sample_sphere(rnd.xy);
-    }
-    invLightPdf = M_2PI * (1.f - spotAngle);
-    sampledDir = fromLocalToWorld(lightData.dirW, woLocal); // Used pls.normal before but seemed wrong
+    sampledDir = SampleAnalyticLightDirUniform(sg, lightData, invLightPdf);
 #endif
 
     // Sample direction with photon guiding
