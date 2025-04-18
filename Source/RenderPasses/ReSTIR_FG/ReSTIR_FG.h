@@ -137,6 +137,9 @@ private:
     */
     void prepareRayTracingShaders(RenderContext* pRenderContext);
 
+    //
+    void generateCausticPoints(RenderContext* pRenderContext, const RenderData& renderData, const uint geometryID);
+
     /** Trace Tranmissive and delta materials
     */
     void traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData);
@@ -330,6 +333,8 @@ private:
     uint m3dgMaxFirstHitPhotonCount = 100000; // Maximum number of first hit photons
     uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
+    std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
+    uint m3dgCausticPointCount = 1000;    // Number of caustic points
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
     float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
@@ -429,7 +434,7 @@ private:
     RayTraceProgramHelper mGeneratePhotonPass;
     RayTraceProgramHelper mCollectPhotonPass;
 
-    ref<ComputePass> mpCalculateGaussianGradientPass;   // Calculate the gradient for each first hit photon
+    ref<ComputePass> mpGenerateCausticPointsPass;          // Generate mesh points for gaussian initialization
     ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
     ref<ComputePass> mpCalculateSoftmaxWeightsPass;     // Calculate the softmax weights for the 3D gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes

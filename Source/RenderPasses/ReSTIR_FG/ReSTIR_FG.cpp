@@ -100,6 +100,7 @@ const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/Dir
 const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
 const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
 const std::string kCalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
+const std::string kGenerateCausticPointsShader = "RenderPasses/ReSTIR_FG/Shader/GenerateCausticPoints.cs.slang";
 
 const std::string kShaderModel = "6_5";
 const uint kMaxPayloadBytes = 96u;
@@ -387,6 +388,9 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         mpRTXDI->beginFrame(pRenderContext, mScreenRes);
     }
+
+    // Init gaussians
+    generateCausticPoints(pRenderContext, renderData, m3dgCausticGeometryInstanceIDs[0]);
 
     // RenderPasses
     traceTransmissiveDelta(pRenderContext, renderData);
@@ -998,6 +1002,31 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     m3dgB = k3dgCb / sceneExtend;
     m3dgAnalyticLightCount = mpScene->getLightCount();
     m3dgGeometricLightCount = mpScene->getLightCollection(pRenderContext)->getMeshLights().size();
+
+    // Gaussian initialization
+    m3dgCausticGeometryInstanceIDs.clear();
+    for (size_t geomInstanceIdx = 0; geomInstanceIdx < mpScene->getGeometryInstanceCount(); ++geomInstanceIdx)
+    {
+        const uint materialId = mpScene->getGeometryInstance(geomInstanceIdx).materialID;
+        const ref<Material> material = mpScene->getMaterial(MaterialID(materialId));
+        const ref<BasicMaterial> basicMaterial = material->toBasicMaterial();
+
+        //occlusion(R), roughness(G), metallic(B)
+        const float4 specularParams = basicMaterial->getSpecularParams();
+        const float roughness = specularParams.g;
+        const float metallic = specularParams.b;
+        const bool deltaSpecular = material->getHeader().isDeltaSpecular();
+
+        // Check if caustic caster
+        if ((metallic > 0.0f) || (roughness < 0.2f) || deltaSpecular)
+        {
+            const uint geometryId = mpScene->getGeometryInstance(geomInstanceIdx).geometryID;
+            if (mpScene->getGeometryType(GlobalGeometryID(geometryId)) == GeometryType::TriangleMesh)
+            {
+                m3dgCausticGeometryInstanceIDs.push_back(geomInstanceIdx);
+            }
+        }
+    }
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1581,6 +1610,38 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
 
         mReSTIRGISamplePass.pProgram = RtProgram::create(mpDevice, desc, mpScene->getSceneDefines());
     }
+}
+
+void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const RenderData& renderData, const uint geometryInstanceID)
+{
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "GenerateCausticPoints");
+
+    // Init shader
+    if (!mpGenerateCausticPointsPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kGenerateCausticPointsShader).csEntry("main").setShaderModel(kShaderModel);
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getMaterialDefines());
+
+        mpGenerateCausticPointsPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpGenerateCausticPointsPass);
+
+    // Set variables
+    auto var = mpGenerateCausticPointsPass->getRootVar();
+    var["Constants"]["gCausticPointCount"] = m3dgCausticPointCount;
+    var["Constants"]["gGeometryInstanceID"] = geometryInstanceID;
+    var["Constants"]["gFrameCount"] = mFrameCount;
+    
+    // Execute
+    mpGenerateCausticPointsPass->execute(pRenderContext, uint3(m3dgCausticPointCount, 1, 1));
 }
 
 void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData)
