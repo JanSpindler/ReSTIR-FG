@@ -32,6 +32,8 @@
 #include "calc_gradient.h"
 #include "Gaussian3D.h"
 #include "FirstHitPhotonInfo.h"
+#include "Scene/SceneBuilder.h"
+#include <span>
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
@@ -40,6 +42,12 @@ static float3 GenRandomFloat3()
 {
     std::uniform_real_distribution<float> dis(0.0f, 1.0f);
     return float3(dis(gen), dis(gen), dis(gen));
+}
+
+static uint GenRandomUInt()
+{
+    std::uniform_int_distribution<uint> dis(0, std::numeric_limits<uint>::max());
+    return dis(gen);
 }
 
 static InteropBuffer CreateInteropBuffer(
@@ -100,7 +108,6 @@ const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/Dir
 const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
 const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
 const std::string kCalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
-const std::string kGenerateCausticPointsShader = "RenderPasses/ReSTIR_FG/Shader/GenerateCausticPoints.cs.slang";
 
 const std::string kShaderModel = "6_5";
 const uint kMaxPayloadBytes = 96u;
@@ -390,7 +397,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Init gaussians
-    generateCausticPoints(pRenderContext, renderData, m3dgCausticGeometryInstanceIDs[0]);
+    generateCausticPoints(pRenderContext, m3dgCausticGeometryInstanceIDs[0]);
 
     // RenderPasses
     traceTransmissiveDelta(pRenderContext, renderData);
@@ -1612,36 +1619,88 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
     }
 }
 
-void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const RenderData& renderData, const uint geometryInstanceID)
+void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint geometryInstanceID)
 {
     // Profile
     FALCOR_PROFILE(pRenderContext, "GenerateCausticPoints");
 
-    // Init shader
-    if (!mpGenerateCausticPointsPass)
+    // Get geometry instance info
+    // TODO: Cant retreive matrix but maybe not needed
+    const uint geometryId = mpScene->getGeometryInstance(geometryInstanceID).geometryID;
+
+    // Get mesh info
+    const MeshDesc& mesh = mpScene->getMesh(MeshID(geometryId));
+    const uint vertexOffset = mesh.vbOffset;
+    const uint indexOffset = mesh.ibOffset;
+    const uint triangleCount = mesh.getTriangleCount();
+    const bool bit16 = mesh.use16BitIndices();
+    const bool indexed = mesh.useVertexIndices();
+    if (!bit16 or !indexed)
     {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kGenerateCausticPointsShader).csEntry("main").setShaderModel(kShaderModel);
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getMaterialDefines());
-
-        mpGenerateCausticPointsPass = ComputePass::create(mpDevice, desc, defines, true);
+        throw RuntimeError("ReSTIR_FG: Only 16 bit indexed meshes are supported");
     }
-    FALCOR_ASSERT(mpGenerateCausticPointsPass);
 
-    // Set variables
-    auto var = mpGenerateCausticPointsPass->getRootVar();
-    var["Constants"]["gCausticPointCount"] = m3dgCausticPointCount;
-    var["Constants"]["gGeometryInstanceID"] = geometryInstanceID;
-    var["Constants"]["gFrameCount"] = mFrameCount;
-    
-    // Execute
-    mpGenerateCausticPointsPass->execute(pRenderContext, uint3(m3dgCausticPointCount, 1, 1));
+    // Get vertex position
+    ref<Vao> vao = mpScene->getMeshVao();
+    ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
+    ref<Buffer> ibo = vao->getIndexBuffer();
+    if (vao->getIndexBufferFormat() != ResourceFormat::R32Uint)
+    {
+        throw RuntimeError("ReSTIR_FG: Only uint32 index buffer format is supported");
+    }
+
+    // Copy vertex and index buffers to CPU
+    using IndexType = uint16_t; // TODO: Also handle 32 bit if needed
+
+    const size_t indexByteSize = ibo->getSize();
+    const size_t indexCount = indexByteSize / sizeof(IndexType);
+    ref<Buffer> iboCpu = Buffer::create(mpDevice, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+    pRenderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
+    pRenderContext->flush(true);
+    const std::span<IndexType> indexData(reinterpret_cast<IndexType*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
+
+    const uint32_t vertexCount = vbo->getElementCount();
+    ref<Buffer> vboCpu =
+        Buffer::createStructured(mpDevice, sizeof(PackedStaticVertexData), vertexCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+    pRenderContext->copyBufferRegion(vboCpu.get(), 0, vbo.get(), 0, sizeof(PackedStaticVertexData) * vertexCount);
+    pRenderContext->flush(true);
+    const std::span<PackedStaticVertexData> vertexData(
+        reinterpret_cast<PackedStaticVertexData*>(vboCpu->map(Buffer::MapType::Read)), vertexCount
+    );
+
+    // Generate caustic points
+    std::vector<float3> causticPoints(m3dgCausticPointCount);
+    for (size_t pointIdx = 0; pointIdx < m3dgCausticPointCount; ++pointIdx)
+    {
+        // Choose random triangle
+        const uint randomTriangle = GenRandomUInt() % triangleCount;
+
+        // Read indices
+        const uint32_t indexIndex0 = indexOffset + (randomTriangle * 3) + 0;
+        const uint32_t indexIndex1 = indexOffset + (randomTriangle * 3) + 1;
+        const uint32_t indexIndex2 = indexOffset + (randomTriangle * 3) + 2;
+        
+        const uint32_t index0 = indexData[indexIndex0];
+        const uint32_t index1 = indexData[indexIndex1];
+        const uint32_t index2 = indexData[indexIndex2];
+
+        // Read vertices
+        const float3 vertex0 = vertexData[vertexOffset + index0].position;
+        const float3 vertex1 = vertexData[vertexOffset + index1].position;
+        const float3 vertex2 = vertexData[vertexOffset + index2].position;
+
+        // Barycentric sampling
+        float3 bary = GenRandomFloat3();
+        bary /= bary.x + bary.y + bary.z;
+
+        // Calculate point
+        const float3 point = vertex0 * bary.x + vertex1 * bary.y + vertex2 * bary.z;
+        causticPoints[pointIdx] = point;
+    }
+
+    // Unmap index and vertex buffers
+    iboCpu->unmap();
+    vboCpu->unmap();
 }
 
 void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData)

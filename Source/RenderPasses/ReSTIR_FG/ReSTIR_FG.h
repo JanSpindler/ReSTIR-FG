@@ -138,7 +138,7 @@ private:
     void prepareRayTracingShaders(RenderContext* pRenderContext);
 
     //
-    void generateCausticPoints(RenderContext* pRenderContext, const RenderData& renderData, const uint geometryID);
+    void generateCausticPoints(RenderContext* pRenderContext, const uint geometryID);
 
     /** Trace Tranmissive and delta materials
     */
@@ -335,6 +335,7 @@ private:
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
     std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
     uint m3dgCausticPointCount = 1000;    // Number of caustic points
+    uint m3dgCausticClusterCount = 64;                    // Number of clusters used for the robust initialization
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
     float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
@@ -434,7 +435,6 @@ private:
     RayTraceProgramHelper mGeneratePhotonPass;
     RayTraceProgramHelper mCollectPhotonPass;
 
-    ref<ComputePass> mpGenerateCausticPointsPass;          // Generate mesh points for gaussian initialization
     ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
     ref<ComputePass> mpCalculateSoftmaxWeightsPass;     // Calculate the softmax weights for the 3D gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes
