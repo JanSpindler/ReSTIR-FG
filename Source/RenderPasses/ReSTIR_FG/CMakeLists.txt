@@ -32,13 +32,16 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/Printing.slang
     Shader/gpu-printing-ops.h
 	Shader/CalculateSoftmaxWeights.cs.slang
+    dkm/dkm.hpp
+    dkm/dkm_utils.hpp
+    dkm/dkm_parallel.hpp
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES
     CUDA_SEPARABLE_COMPILATION ON  
-    CXX_STANDARD 20  
+    CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
-    CUDA_STANDARD 20
+    CUDA_STANDARD 17
     CUDA_STANDARD_REQUIRED ON)
 
 target_copy_shaders(ReSTIR_FG RenderPasses/ReSTIR_FG)

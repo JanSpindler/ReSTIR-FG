@@ -34,6 +34,7 @@
 #include "FirstHitPhotonInfo.h"
 #include "Scene/SceneBuilder.h"
 #include <span>
+#include "dkm/dkm_parallel.hpp"
 
 static std::random_device rd;
 static std::mt19937 gen(rd());
@@ -1669,7 +1670,7 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
     );
 
     // Generate caustic points
-    std::vector<float3> causticPoints(m3dgCausticPointCount);
+    std::vector<std::array<float, 3>> causticPoints(m3dgCausticPointCount);
     for (size_t pointIdx = 0; pointIdx < m3dgCausticPointCount; ++pointIdx)
     {
         // Choose random triangle
@@ -1695,12 +1696,15 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
 
         // Calculate point
         const float3 point = vertex0 * bary.x + vertex1 * bary.y + vertex2 * bary.z;
-        causticPoints[pointIdx] = point;
+        causticPoints[pointIdx] = {point.x, point.y, point.z};
     }
 
     // Unmap index and vertex buffers
     iboCpu->unmap();
     vboCpu->unmap();
+
+    // Cluster
+    const auto [clusters, _] = dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(m3dgCausticClusterCount));
 }
 
 void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData)

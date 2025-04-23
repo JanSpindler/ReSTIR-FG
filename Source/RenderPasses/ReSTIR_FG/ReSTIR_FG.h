@@ -334,7 +334,7 @@ private:
     uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
     std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
-    uint m3dgCausticPointCount = 1000;    // Number of caustic points
+    uint m3dgCausticPointCount = 10000;    // Number of caustic points
     uint m3dgCausticClusterCount = 64;                    // Number of clusters used for the robust initialization
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
