@@ -173,6 +173,9 @@ private:
         std::string profileName,
         bool fg);
 
+    // Count caustic clusters
+    void countCausticClustersPass(RenderContext* pRenderContext);
+
     // Calculate the gradient using CUDA
     void calculateGaussianGradientCuda(RenderContext* pRenderContext);
 
@@ -439,6 +442,7 @@ private:
     RayTraceProgramHelper mGeneratePhotonPass;
     RayTraceProgramHelper mCollectPhotonPass;
 
+    ref<ComputePass> mpCountCausticClustersPass;        // Count caustic clusters
     ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
     ref<ComputePass> mpCalculateSoftmaxWeightsPass;     // Calculate the softmax weights for the 3D gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes

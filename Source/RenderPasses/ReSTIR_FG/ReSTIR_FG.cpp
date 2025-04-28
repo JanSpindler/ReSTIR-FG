@@ -109,6 +109,7 @@ const std::string kDirectAnalyticPassShader = "RenderPasses/ReSTIR_FG/Shader/Dir
 const std::string kCalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
 const std::string kOptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
 const std::string kCalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
+const std::string kCountCausticClustersShader = "RenderPasses/ReSTIR_FG/Shader/CountCausticClusters.cs.slang";
 
 const std::string kShaderModel = "6_5";
 const uint kMaxPayloadBytes = 96u;
@@ -468,8 +469,13 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         collectPhotons(pRenderContext, renderData);
     }
 
+    // Count closest caustic clusters for robust initialization
+    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
+    {
+        countCausticClustersPass(pRenderContext);
+    }
     // Calculate gaussian gradient and optimize
-    if (mUse3DGaussianPhotonGuiding)
+    else if (mUse3DGaussianPhotonGuiding)
     {
         calculateGaussianGradientCuda(pRenderContext);
         optimizeGaussiansPass(pRenderContext, renderData);
@@ -2173,10 +2179,6 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Clear first hit collection counts
     pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer.buffer->getUAV().get(), uint4(0));
-    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
-    {
-        pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
-    }
 
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
@@ -2355,6 +2357,47 @@ void ReSTIR_FG::collectPhotonsSplit(
         mCollectPhotonPass.pProgram.get(),
         mCollectPhotonPass.pVars,
         uint3(targetDim, 1));
+}
+
+void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
+{
+    // Profile
+    FALCOR_PROFILE(pRenderContext, "CountCausticClusters");
+
+    // Clear
+    pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
+
+    // Init shader
+    if (!mpCountCausticClustersPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(mpScene->getShaderModules());
+        desc.addShaderLibrary(kCountCausticClustersShader).csEntry("main").setShaderModel(kShaderModel);
+        desc.addTypeConformances(mpScene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(mpScene->getSceneDefines());
+        defines.add(mpSampleGenerator->getDefines());
+        defines.add(getMaterialDefines());
+
+        mpCountCausticClustersPass = ComputePass::create(mpDevice, desc, defines, true);
+    }
+    FALCOR_ASSERT(mpCountCausticClustersPass);
+
+    // Set variables
+    auto var = mpCountCausticClustersPass->getRootVar();
+    var["Constants"]["gTotalLightCount"] = m3dgAnalyticLightCount + m3dgGeometricLightCount;
+    var["Constants"]["gCausticClusterCount"] = m3dgCausticClusterCount;
+    var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
+
+    // Buffers
+    var["gCausticClusters"] = mp3dgCausticClustersBuffer;
+    var["gCausticClusterCounters"] = mp3dgCausticClusterCountsBuffer;
+    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
+    var["gFirstHitPhotonInfos"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
+
+    // Execute
+    mpCountCausticClustersPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
 }
 
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)

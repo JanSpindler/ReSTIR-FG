@@ -32,6 +32,7 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/Printing.slang
     Shader/gpu-printing-ops.h
 	Shader/CalculateSoftmaxWeights.cs.slang
+    Shader/CountCausticClusters.cs.slang
     dkm/dkm.hpp
     dkm/dkm_utils.hpp
     dkm/dkm_parallel.hpp
