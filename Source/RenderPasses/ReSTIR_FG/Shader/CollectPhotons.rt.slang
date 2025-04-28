@@ -271,9 +271,9 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
 
     // Add to first hit photon collection count
-#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+#if TRACK_FIRST_HIT_PHOTONS
     TrackPhotonCollection(instanceIndex, primIndex);
-#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+#endif // TRACK_FIRST_HIT_PHOTONS
 
     //
     uint counter = rayData.counter & 0xFFFFFF;  // Mask out the flags
@@ -327,9 +327,9 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     }
 
     // Add to first hit photon collection count
-#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+#if TRACK_FIRST_HIT_PHOTONS
     TrackPhotonCollection(instanceIdx, primIndex);
-#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+#endif // TRACK_FIRST_HIT_PHOTONS
 
     // Photon contribution
     uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;

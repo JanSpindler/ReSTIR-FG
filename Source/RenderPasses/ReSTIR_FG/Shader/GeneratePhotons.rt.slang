@@ -692,7 +692,7 @@ void rayGen()
 
         // Store first hit photon even when the first hit is not stored in the photon map
         // Because resulting photons along the path might be collected
-#ifdef USE_3D_GAUSSIAN_PHOTON_GUIDING
+#ifdef TRACK_FIRST_HIT_PHOTONS
         if (i == 0)
         {
             // Get first hit photon index

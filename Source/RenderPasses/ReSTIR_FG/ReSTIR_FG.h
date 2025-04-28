@@ -336,6 +336,7 @@ private:
     std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
     uint m3dgCausticPointCount = 10000;    // Number of caustic points
     uint m3dgCausticClusterCount = 64;                    // Number of clusters used for the robust initialization
+    std::vector<float3> m3dgCausticClusters; // Cluster centers for the caustic points
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
     float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
@@ -403,6 +404,9 @@ private:
     ref<Buffer> mp3dgOptimizationBuffer; // Buffer storing the optimization data for the 3D gaussians (Adam)
     InteropBuffer mp3dgSoftmaxBuffer;      // Buffer storing the softmax weights
     ref<Buffer> mp3dgSoftmaxBufferCPU;   // Buffer storing the softmax weights for the UI
+    ref<Buffer> mp3dgCausticClustersBuffer; // Buffer storing the caustic clusters
+    ref<Buffer> mp3dgCausticClustersBufferCPU;               // Buffer storing the caustic clusters for the UI
+    ref<Buffer> mp3dgCausticClusterCountsBuffer; // Buffer storing the number of caustic clusters for each light
 
     //
     // Render Passes/Programms

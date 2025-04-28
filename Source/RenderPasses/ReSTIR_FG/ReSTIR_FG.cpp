@@ -398,7 +398,30 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Init gaussians
-    generateCausticPoints(pRenderContext, m3dgCausticGeometryInstanceIDs[0]);
+    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
+    {
+        // Calculate caustic clusters
+        m3dgCausticClusters.clear();
+        for (const uint geometryInstanceID : m3dgCausticGeometryInstanceIDs)
+        {
+            generateCausticPoints(pRenderContext, geometryInstanceID);
+        }
+        FALCOR_ASSERT(m3dgCausticClusters.size() == m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size());
+
+        // Write to CPU buffer
+        std::span<float3> cpuCausticClusters(
+            reinterpret_cast<float3*>(mp3dgCausticClustersBufferCPU->map(Buffer::MapType::WriteDiscard)), m3dgCausticClusters.size()
+        );
+        std::copy(m3dgCausticClusters.begin(), m3dgCausticClusters.end(), cpuCausticClusters.begin());
+        mp3dgCausticClustersBufferCPU->unmap();
+
+        // Copy to GPU buffer
+        pRenderContext->copyBufferRegion(
+            mp3dgCausticClustersBuffer.get(), 0, mp3dgCausticClustersBufferCPU.get(), 0,
+            sizeof(float3) * m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size()
+        );
+        pRenderContext->uavBarrier(mp3dgCausticClustersBuffer.get());
+    }
 
     // RenderPasses
     traceTransmissiveDelta(pRenderContext, renderData);
@@ -1548,6 +1571,24 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mp3dgSoftmaxBuffer = CreateInteropBuffer(mpDevice, sizeof(float) * gaussianCount, Buffer::CpuAccess::None, softmaxWeights.data());
         mp3dgSoftmaxBufferCPU = Buffer::create(mpDevice, sizeof(float) * gaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
+
+    const size_t totalCausticClusterCount = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
+    if (!mp3dgCausticClustersBuffer)
+    {
+        mp3dgCausticClustersBuffer = Buffer::createStructured(
+            mpDevice, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+        );
+        mp3dgCausticClustersBufferCPU =
+            Buffer::createStructured(mpDevice, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+    }
+
+    if (!mp3dgCausticClusterCountsBuffer)
+    {
+        mp3dgCausticClusterCountsBuffer = Buffer::create(
+            mpDevice, sizeof(uint) * totalCausticClusterCount * lightCount,
+            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+        );
+    }
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1635,10 +1676,9 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
     const uint indexOffset = mesh.ibOffset;
     const uint triangleCount = mesh.getTriangleCount();
     const bool bit16 = mesh.use16BitIndices();
-    const bool indexed = mesh.useVertexIndices();
-    if (!bit16 or !indexed)
+    if (!mesh.useVertexIndices())
     {
-        throw RuntimeError("ReSTIR_FG: Only 16 bit indexed meshes are supported");
+        throw RuntimeError("ReSTIR_FG: Only indexed meshes are supported");
     }
 
     // Get vertex position
@@ -1651,14 +1691,12 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
     }
 
     // Copy vertex and index buffers to CPU
-    using IndexType = uint16_t; // TODO: Also handle 32 bit if needed
-
     const size_t indexByteSize = ibo->getSize();
-    const size_t indexCount = indexByteSize / sizeof(IndexType);
+    const size_t indexCount = indexByteSize / sizeof(uint32_t);
     ref<Buffer> iboCpu = Buffer::create(mpDevice, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     pRenderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
     pRenderContext->flush(true);
-    const std::span<IndexType> indexData(reinterpret_cast<IndexType*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
+    const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
 
     const uint32_t vertexCount = vbo->getElementCount();
     ref<Buffer> vboCpu =
@@ -1677,14 +1715,35 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
         const uint randomTriangle = GenRandomUInt() % triangleCount;
 
         // Read indices
-        const uint32_t indexIndex0 = indexOffset + (randomTriangle * 3) + 0;
-        const uint32_t indexIndex1 = indexOffset + (randomTriangle * 3) + 1;
-        const uint32_t indexIndex2 = indexOffset + (randomTriangle * 3) + 2;
-        
-        const uint32_t index0 = indexData[indexIndex0];
-        const uint32_t index1 = indexData[indexIndex1];
-        const uint32_t index2 = indexData[indexIndex2];
+        uint32_t index0 = 0, index1 = 0, index2 = 0;
+        if (bit16)
+        {
+            const uint firstIndexIndex = (indexOffset * 2) + (randomTriangle * 3);
+            const uint firstIndexIndex32 = std::lldiv(firstIndexIndex, 2).quot;
+            const uint32_t data1 = indexData[firstIndexIndex32 + 0];
+            const uint32_t data2 = indexData[firstIndexIndex32 + 1];
 
+            if (firstIndexIndex % 2 == 0)
+            {
+                index0 = data1 & 0xFFFF;
+                index1 = (data1 >> 16) & 0xFFFF;
+                index2 = data2 & 0xFFFF;
+            }
+            else
+            {
+                index0 = (data1 >> 16) & 0xFFFF;
+                index1 = data2 & 0xFFFF;
+                index2 = (data2 >> 16) & 0xFFFF;
+            }
+        }
+        else
+        {
+            const uint firstIndexIndex = indexOffset + (randomTriangle * 3);
+            index0 = indexData[firstIndexIndex + 0];
+            index1 = indexData[firstIndexIndex + 1];
+            index2 = indexData[firstIndexIndex + 2];
+        }
+        
         // Read vertices
         const float3 vertex0 = vertexData[vertexOffset + index0].position;
         const float3 vertex1 = vertexData[vertexOffset + index1].position;
@@ -1705,6 +1764,10 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
 
     // Cluster
     const auto [clusters, _] = dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(m3dgCausticClusterCount));
+    for (const std::array<float, 3>&cluster : clusters)
+    {
+        m3dgCausticClusters.push_back({cluster[0], cluster[1], cluster[2]});
+    }
 }
 
 void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const RenderData& renderData)
@@ -1923,8 +1986,13 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
 
     // Gaussian photon guiding defines
+    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding and
+        !(mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ?
+        "1" : "0");
     mGeneratePhotonPass.pProgram->addDefine(
-        "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
+        "TRACK_FIRST_HIT_PHOTONS",
+        mUse3DGaussianPhotonGuiding or (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ? "1" : "0"
+    );
 
     // Program vars
     if (!mGeneratePhotonPass.pVars)
@@ -2105,6 +2173,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Clear first hit collection counts
     pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer.buffer->getUAV().get(), uint4(0));
+    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
+    {
+        pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
+    }
 
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
@@ -2125,7 +2197,9 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Gaussian photon guiding defines
     mCollectPhotonPass.pProgram->addDefine(
-        "USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
+        "TRACK_FIRST_HIT_PHOTONS",
+        mUse3DGaussianPhotonGuiding or (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ? "1" : "0"
+    );
 
     // Program vars
     if (!mCollectPhotonPass.pVars)
