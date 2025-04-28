@@ -328,7 +328,7 @@ private:
     static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
     static constexpr float k3dgCs = 0.65f;
     float m3dgB = 1.0f; // Scaling factor applied to scene positions
-    uint m3dgGaussianCount = 32; // Number of 3D gaussians per light
+    uint m3dgGaussianCount = 16; // Number of 3D gaussians per light
     uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
     uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
     float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
@@ -338,7 +338,7 @@ private:
     bool m3dgCopyToCPU = false; // Copy info count to the CPU
     std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
     uint m3dgCausticPointCount = 10000;    // Number of caustic points
-    uint m3dgCausticClusterCount = 64;                    // Number of clusters used for the robust initialization
+    uint m3dgCausticClusterCount = 8;                    // Number of clusters used for the robust initialization
     std::vector<float3> m3dgCausticClusters; // Cluster centers for the caustic points
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
@@ -348,7 +348,6 @@ private:
     uint m3dgOptimStep = 0;                    // Current optimization step
 
     GaussianInitialization m3dgInitialization = GaussianInitialization::Robust; // Initialization method for the 3D gaussians
-    uint m3dgInitClusters = 32;                                                 // Number of clusters used for the robust initialization
 
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
@@ -410,6 +409,7 @@ private:
     ref<Buffer> mp3dgCausticClustersBuffer; // Buffer storing the caustic clusters
     ref<Buffer> mp3dgCausticClustersBufferCPU;               // Buffer storing the caustic clusters for the UI
     ref<Buffer> mp3dgCausticClusterCountsBuffer; // Buffer storing the number of caustic clusters for each light
+    ref<Buffer> mp3dgCausticClusterCountsBufferCPU;          // Buffer storing the number of caustic clusters for each light for the UI
 
     //
     // Render Passes/Programms

@@ -1594,6 +1594,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
             mpDevice, sizeof(uint) * totalCausticClusterCount * lightCount,
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
         );
+        mp3dgCausticClusterCountsBufferCPU = Buffer::create(
+            mpDevice, sizeof(uint) * totalCausticClusterCount * lightCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
+        );
     }
 }
 
@@ -2387,7 +2390,7 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
     // Set variables
     auto var = mpCountCausticClustersPass->getRootVar();
     var["Constants"]["gTotalLightCount"] = m3dgAnalyticLightCount + m3dgGeometricLightCount;
-    var["Constants"]["gCausticClusterCount"] = m3dgCausticClusterCount;
+    var["Constants"]["gCausticClusterCount"] = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
     var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Buffers
@@ -2398,6 +2401,12 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
 
     // Execute
     mpCountCausticClustersPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
+
+    // Barrier
+    pRenderContext->uavBarrier(mp3dgCausticClusterCountsBuffer.get());
+
+    // Copy the caustic cluster counts to a CPU buffer
+
 }
 
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)

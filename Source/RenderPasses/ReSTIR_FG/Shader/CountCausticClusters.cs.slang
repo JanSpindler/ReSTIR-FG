@@ -25,27 +25,23 @@ void main(uint3 index: SV_DispatchThreadID)
 
     // Get first hit photon info
     const float3 position = gFirstHitPhotonInfos[firstHitPhotonIdx].pos;
+    const uint lightIdx = gFirstHitPhotonInfos[firstHitPhotonIdx].lightIdx;
     const uint collectionCount = gFirstHitCollectionCounts[firstHitPhotonIdx];
 
-    // For each light, find the closest cluster
-    for (uint lightIdx = 0; lightIdx < gTotalLightCount; ++lightIdx)
+    // Find closest cluster
+    uint bestClusterIdx = 0;
+    float bestDistance = float ::maxValue;
+    for (uint clusterIdx = 0; clusterIdx < gCausticClusterCount; ++clusterIdx)
     {
-        // Find closest cluster
-        uint globalBestClusterIdx = 0;
-        float bestDistance = 1e10f;
-        for (uint clusterIdx = 0; clusterIdx < gCausticClusterCount; ++clusterIdx)
+        const float3 clusterPos = gCausticClusters[clusterIdx];
+        const float distance = length(clusterPos - position);
+        if (distance < bestDistance)
         {
-            const uint globalClusterIdx = lightIdx * gCausticClusterCount + clusterIdx;
-            const float3 clusterPos = gCausticClusters[globalClusterIdx];
-            const float distance = length(clusterPos - position);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                globalBestClusterIdx = globalClusterIdx;
-            }
+            bestDistance = distance;
+            bestClusterIdx = clusterIdx;
         }
-
-        // Increment counter of closest cluster
-        InterlockedAdd(gCausticClusterCounters[globalBestClusterIdx], collectionCount);
     }
+
+    // Increment counter of closest cluster
+    InterlockedAdd(gCausticClusterCounters[lightIdx * gCausticClusterCount + bestClusterIdx], collectionCount);
 }
