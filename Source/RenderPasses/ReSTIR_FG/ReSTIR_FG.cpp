@@ -2406,7 +2406,38 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
     pRenderContext->uavBarrier(mp3dgCausticClusterCountsBuffer.get());
 
     // Copy the caustic cluster counts to a CPU buffer
+    const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
+    const size_t clusterCount = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
+    pRenderContext->copyBufferRegion(
+        mp3dgCausticClusterCountsBufferCPU.get(), 0, mp3dgCausticClusterCountsBuffer.get(), 0, sizeof(uint) * clusterCount * lightCount
+    );
+    const std::span<uint> causticClusterCounts(
+        reinterpret_cast<uint*>(mp3dgCausticClusterCountsBufferCPU->map(Buffer::MapType::Read)), clusterCount * lightCount
+    );
 
+    // Sort
+    std::vector<std::vector<uint>> causticClusterIndicesSorted(lightCount);
+    for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
+    {
+        // Init indices
+        std::vector<uint>& lightIndices = causticClusterIndicesSorted[lightIdx];
+        lightIndices.resize(clusterCount);
+        for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
+        {
+            lightIndices[clusterIdx] = clusterIdx;
+        }
+
+        // Sort
+        std::sort(
+            lightIndices.begin(), lightIndices.end(),
+            [&](uint idx1, uint idx2)
+            {
+                const size_t baseIdx = lightIdx * clusterCount;
+                return causticClusterCounts[baseIdx + idx1] > causticClusterCounts[baseIdx + idx2];
+            }
+        );
+    }
+    __nop();
 }
 
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
