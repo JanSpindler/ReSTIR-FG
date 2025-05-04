@@ -473,6 +473,10 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust)
     {
         countCausticClustersPass(pRenderContext);
+        if (mFrameCount == 1)
+        {
+            calculateSoftmaxWeightsPass(pRenderContext);
+        }
     }
     // Calculate gaussian gradient and optimize
     else if (mUse3DGaussianPhotonGuiding)
@@ -2421,29 +2425,50 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
         reinterpret_cast<uint*>(mp3dgCausticClusterCountsBufferCPU->map(Buffer::MapType::Read)), clusterCount * lightCount
     );
 
-    // Sort
-    std::vector<std::vector<uint>> causticClusterIndicesSorted(lightCount);
+    // Sort and select gaussian
+    const float sceneSize = math::length(mpScene->getSceneBounds().extent());
+    const size_t gaussianCount = m3dgGaussianCount * lightCount;
+
+    std::vector<uint> clusterIndices(clusterCount);
+    std::vector<Gaussian3D> gaussians(gaussianCount);
+
     for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
     {
         // Init indices
-        std::vector<uint>& lightIndices = causticClusterIndicesSorted[lightIdx];
-        lightIndices.resize(clusterCount);
         for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
         {
-            lightIndices[clusterIdx] = clusterIdx;
+            clusterIndices[clusterIdx] = clusterIdx;
         }
 
         // Sort
         const size_t baseIdx = lightIdx * clusterCount;
         std::sort(
-            lightIndices.begin(), lightIndices.end(),
+            clusterIndices.begin(), clusterIndices.end(),
             [&](const uint idx1, const uint idx2)
             {
                 return causticClusterCounts[baseIdx + idx1] > causticClusterCounts[baseIdx + idx2];
             }
         );
+
+        // Update gaussians
+        for (size_t gaussianIdx = 0; gaussianIdx < m3dgGaussianCount; ++gaussianIdx)
+        {
+            Gaussian3D& gaussian = gaussians[lightIdx * m3dgGaussianCount + gaussianIdx];
+            gaussian.mean = gaussianIdx < clusterCount ? m3dgCausticClusters[clusterIndices[gaussianIdx]] : GenRandomFloat3();
+            gaussian.sigma = sceneSize / 20.0f;
+            gaussian.weight = 1.0f / m3dgGaussianCount;
+        }
     }
     mp3dgCausticClusterCountsBufferCPU->unmap();
+
+    // Copy gaussians to GPU
+    ref<Buffer> gaussianBufferCPU = Buffer::createStructured(
+        mpDevice, sizeof(Gaussian3D), gaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write, gaussians.data()
+    );
+    pRenderContext->copyBufferRegion(
+        mp3dgGaussianBuffer.buffer.get(), 0, gaussianBufferCPU.get(), 0, sizeof(Gaussian3D) * m3dgGaussianCount * lightCount
+    );
+    pRenderContext->uavBarrier(mp3dgGaussianBuffer.buffer.get());
 }
 
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
