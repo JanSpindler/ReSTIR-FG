@@ -2455,7 +2455,7 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
         {
             Gaussian3D& gaussian = gaussians[lightIdx * m3dgGaussianCount + gaussianIdx];
             gaussian.mean = gaussianIdx < clusterCount ? m3dgCausticClusters[clusterIndices[gaussianIdx]] : GenRandomFloat3();
-            gaussian.sigma = sceneSize / 20.0f;
+            gaussian.sigma = sceneSize / 30.0f;
             gaussian.weight = 1.0f / m3dgGaussianCount;
         }
     }

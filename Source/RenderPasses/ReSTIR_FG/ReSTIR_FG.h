@@ -342,7 +342,7 @@ private:
     std::vector<float3> m3dgCausticClusters; // Cluster centers for the caustic points
 
     GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
-    float m3dgLearningRate = 0.1f;            // Learning rate for the optimizer
+    float m3dgLearningRate = 0.01f;            // Learning rate for the optimizer
     float m3dgBeta1 = 0.9f;                    // Beta1 for the optimizer
     float m3dgBeta2 = 0.999f;                  // Beta2 for the optimizer
     uint m3dgOptimStep = 0;                    // Current optimization step

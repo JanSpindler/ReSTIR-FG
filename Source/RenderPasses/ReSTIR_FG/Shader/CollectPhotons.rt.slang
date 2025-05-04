@@ -234,6 +234,7 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     if (firstHitIdx < gMaxFirstHitPhotonCount)
     {
         InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+        //InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], instanceIdx == 0 ? 1u : 10u);
     }
 }
 
