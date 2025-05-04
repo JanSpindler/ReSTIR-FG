@@ -398,7 +398,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         mpRTXDI->beginFrame(pRenderContext, mScreenRes);
     }
 
-    // Init gaussians
+    // Generate caustic clusters for use in robust gaussian initialization
     if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
     {
         // Calculate caustic clusters
@@ -470,7 +470,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Count closest caustic clusters for robust initialization
-    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
+    if (mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust)
     {
         countCausticClustersPass(pRenderContext);
     }
@@ -1995,9 +1995,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
 
     // Gaussian photon guiding defines
-    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding and
-        !(mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ?
-        "1" : "0");
+    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefine(
         "TRACK_FIRST_HIT_PHOTONS",
         mUse3DGaussianPhotonGuiding or (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ? "1" : "0"
@@ -2052,7 +2050,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gCs"] = k3dgCs;
     var[nameBuf]["gB"] = m3dgB;
     var[nameBuf]["gGmmMinPdf"] = m3dgMinPdf;
-    var[nameBuf]["gBeta"] = m3dgBeta;
+    var[nameBuf]["gBeta"] = mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust ? 0.0f : m3dgBeta;
     var[nameBuf]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
 
     // Light samples constants
@@ -2367,9 +2365,6 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
     // Profile
     FALCOR_PROFILE(pRenderContext, "CountCausticClusters");
 
-    // Clear
-    pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
-
     // Init shader
     if (!mpCountCausticClustersPass)
     {
@@ -2386,6 +2381,9 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
         mpCountCausticClustersPass = ComputePass::create(mpDevice, desc, defines, true);
     }
     FALCOR_ASSERT(mpCountCausticClustersPass);
+
+    // Clear
+    pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
 
     // Set variables
     auto var = mpCountCausticClustersPass->getRootVar();
@@ -2411,6 +2409,14 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
     pRenderContext->copyBufferRegion(
         mp3dgCausticClusterCountsBufferCPU.get(), 0, mp3dgCausticClusterCountsBuffer.get(), 0, sizeof(uint) * clusterCount * lightCount
     );
+
+    // Weird logic
+    if (mFrameCount < 1)
+    {
+        return;
+    }
+
+    // Access caustic cluster counters on CPU
     const std::span<uint> causticClusterCounts(
         reinterpret_cast<uint*>(mp3dgCausticClusterCountsBufferCPU->map(Buffer::MapType::Read)), clusterCount * lightCount
     );
@@ -2428,16 +2434,16 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
         }
 
         // Sort
+        const size_t baseIdx = lightIdx * clusterCount;
         std::sort(
             lightIndices.begin(), lightIndices.end(),
-            [&](uint idx1, uint idx2)
+            [&](const uint idx1, const uint idx2)
             {
-                const size_t baseIdx = lightIdx * clusterCount;
                 return causticClusterCounts[baseIdx + idx1] > causticClusterCounts[baseIdx + idx2];
             }
         );
     }
-    __nop();
+    mp3dgCausticClusterCountsBufferCPU->unmap();
 }
 
 void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
