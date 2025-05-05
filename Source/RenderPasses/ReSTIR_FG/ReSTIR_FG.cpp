@@ -35,21 +35,7 @@
 #include "Scene/SceneBuilder.h"
 #include <span>
 #include "dkm/dkm_parallel.hpp"
-
-static std::random_device rd;
-static std::mt19937 gen(rd());
-
-static float3 GenRandomFloat3()
-{
-    std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-    return float3(dis(gen), dis(gen), dis(gen));
-}
-
-static uint GenRandomUInt()
-{
-    std::uniform_int_distribution<uint> dis(0, std::numeric_limits<uint>::max());
-    return dis(gen);
-}
+#include "RandomGenerator.h"
 
 static InteropBuffer CreateInteropBuffer(
     const ref<Device> pDevice,
@@ -504,16 +490,12 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust)
     {
         countCausticClustersPass(pRenderContext);
-        if (mFrameCount == 1)
-        {
-            calculateSoftmaxWeightsPass(pRenderContext);
-        }
     }
     // Calculate gaussian gradient and optimize
     else if (mUse3DGaussianPhotonGuiding)
     {
         calculateGaussianGradientCuda(pRenderContext);
-        optimizeGaussiansPass(pRenderContext, renderData);
+        optimizeGaussiansPass(pRenderContext);
         calculateSoftmaxWeightsPass(pRenderContext);
     }
 
@@ -1502,7 +1484,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         const float sigma = math::length(sceneExtent) / 10.0f;
         for (size_t gaussIdx = 0; gaussIdx < gaussianCount; ++gaussIdx)
         {
-            const float3 mean = mpScene->getSceneBounds().minPoint + GenRandomFloat3() * sceneExtent;
+            const float3 mean = mpScene->getSceneBounds().minPoint + RandomGenerator::Float3() * sceneExtent;
             gaussians[gaussIdx] = Gaussian3D(mean, sigma, 0.0f);
         }
 
@@ -1734,7 +1716,7 @@ void ReSTIR_FG::generateCausticPoints(
     for (size_t pointIdx = 0; pointIdx < m3dgCausticPointCount; ++pointIdx)
     {
         // Choose random triangle
-        const uint randomTriangle = GenRandomUInt() % triangleCount;
+        const uint randomTriangle = RandomGenerator::UInt() % triangleCount;
 
         // Read indices
         uint32_t index0 = 0, index1 = 0, index2 = 0;
@@ -1772,7 +1754,7 @@ void ReSTIR_FG::generateCausticPoints(
         const float3 vertex2 = vertexData[vertexOffset + index2].position;
 
         // Barycentric sampling
-        float3 bary = GenRandomFloat3();
+        float3 bary = RandomGenerator::Float3();
         bary /= bary.x + bary.y + bary.z;
 
         // Calculate point
@@ -2459,9 +2441,9 @@ void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
         for (size_t gaussianIdx = 0; gaussianIdx < m3dgGaussianCount; ++gaussianIdx)
         {
             Gaussian3D& gaussian = gaussians[lightIdx * m3dgGaussianCount + gaussianIdx];
-            gaussian.mean = gaussianIdx < clusterCount ? m3dgCausticClusters[clusterIndices[gaussianIdx]] : GenRandomFloat3();
+            gaussian.mean = gaussianIdx < clusterCount ? m3dgCausticClusters[clusterIndices[gaussianIdx]] : RandomGenerator::Float3();
             gaussian.sigma = sceneSize / 30.0f;
-            gaussian.weight = 1.0f / m3dgGaussianCount;
+            gaussian.weight = 1.0f;
         }
     }
     mp3dgCausticClusterCountsBufferCPU->unmap();
@@ -2533,7 +2515,7 @@ void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
 #endif
 }
 
-void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData)
+void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext)
 {
     // Profile
     FALCOR_PROFILE(pRenderContext, "OptimizeGaussians");

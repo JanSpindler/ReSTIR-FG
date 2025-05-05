@@ -185,7 +185,7 @@ private:
     void calculateGaussianGradientCuda(RenderContext* pRenderContext);
 
     // Optimize gaussians
-    void optimizeGaussiansPass(RenderContext* pRenderContext, const RenderData& renderData);
+    void optimizeGaussiansPass(RenderContext* pRenderContext);
 
     // Calculate softmax weights
     void calculateSoftmaxWeightsPass(RenderContext* pRenderContext);
