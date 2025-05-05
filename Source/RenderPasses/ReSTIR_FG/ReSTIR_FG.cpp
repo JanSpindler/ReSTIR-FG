@@ -401,13 +401,44 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Generate caustic clusters for use in robust gaussian initialization
     if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
     {
+        // Get vertex position
+        ref<Vao> vao = mpScene->getMeshVao();
+        ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
+        ref<Buffer> ibo = vao->getIndexBuffer();
+        if (vao->getIndexBufferFormat() != ResourceFormat::R32Uint)
+        {
+            throw RuntimeError("ReSTIR_FG: Only uint32 index buffer format is supported");
+        }
+
+        // Copy vertex and index buffers to CPU
+        const size_t indexByteSize = ibo->getSize();
+        const size_t indexCount = indexByteSize / sizeof(uint32_t);
+        ref<Buffer> iboCpu = Buffer::create(mpDevice, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+        pRenderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
+        pRenderContext->flush(true);
+        const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
+
+        const uint32_t vertexCount = vbo->getElementCount();
+        ref<Buffer> vboCpu = Buffer::createStructured(
+            mpDevice, sizeof(PackedStaticVertexData), vertexCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
+        );
+        pRenderContext->copyBufferRegion(vboCpu.get(), 0, vbo.get(), 0, sizeof(PackedStaticVertexData) * vertexCount);
+        pRenderContext->flush(true);
+        const std::span<PackedStaticVertexData> vertexData(
+            reinterpret_cast<PackedStaticVertexData*>(vboCpu->map(Buffer::MapType::Read)), vertexCount
+        );
+
         // Calculate caustic clusters
         m3dgCausticClusters.clear();
         for (const uint geometryInstanceID : m3dgCausticGeometryInstanceIDs)
         {
-            generateCausticPoints(pRenderContext, geometryInstanceID);
+            generateCausticPoints(pRenderContext, geometryInstanceID, vertexData, indexData);
         }
         FALCOR_ASSERT(m3dgCausticClusters.size() == m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size());
+
+        // Unmap buffers
+        vbo->unmap();
+        ibo->unmap();
 
         // Write to CPU buffer
         std::span<float3> cpuCausticClusters(
@@ -1674,7 +1705,11 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
     }
 }
 
-void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint geometryInstanceID)
+void ReSTIR_FG::generateCausticPoints(
+    RenderContext* pRenderContext,
+    const uint geometryInstanceID,
+    const std::span<PackedStaticVertexData>& vertexData,
+    const std::span<uint32_t>& indexData)
 {
     // Profile
     FALCOR_PROFILE(pRenderContext, "GenerateCausticPoints");
@@ -1693,32 +1728,6 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
     {
         throw RuntimeError("ReSTIR_FG: Only indexed meshes are supported");
     }
-
-    // Get vertex position
-    ref<Vao> vao = mpScene->getMeshVao();
-    ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
-    ref<Buffer> ibo = vao->getIndexBuffer();
-    if (vao->getIndexBufferFormat() != ResourceFormat::R32Uint)
-    {
-        throw RuntimeError("ReSTIR_FG: Only uint32 index buffer format is supported");
-    }
-
-    // Copy vertex and index buffers to CPU
-    const size_t indexByteSize = ibo->getSize();
-    const size_t indexCount = indexByteSize / sizeof(uint32_t);
-    ref<Buffer> iboCpu = Buffer::create(mpDevice, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    pRenderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
-    pRenderContext->flush(true);
-    const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
-
-    const uint32_t vertexCount = vbo->getElementCount();
-    ref<Buffer> vboCpu =
-        Buffer::createStructured(mpDevice, sizeof(PackedStaticVertexData), vertexCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    pRenderContext->copyBufferRegion(vboCpu.get(), 0, vbo.get(), 0, sizeof(PackedStaticVertexData) * vertexCount);
-    pRenderContext->flush(true);
-    const std::span<PackedStaticVertexData> vertexData(
-        reinterpret_cast<PackedStaticVertexData*>(vboCpu->map(Buffer::MapType::Read)), vertexCount
-    );
 
     // Generate caustic points
     std::vector<std::array<float, 3>> causticPoints(m3dgCausticPointCount);
@@ -1770,10 +1779,6 @@ void ReSTIR_FG::generateCausticPoints(RenderContext* pRenderContext, const uint 
         const float3 point = vertex0 * bary.x + vertex1 * bary.y + vertex2 * bary.z;
         causticPoints[pointIdx] = {point.x, point.y, point.z};
     }
-
-    // Unmap index and vertex buffers
-    iboCpu->unmap();
-    vboCpu->unmap();
 
     // Cluster
     const auto [clusters, _] = dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(m3dgCausticClusterCount));

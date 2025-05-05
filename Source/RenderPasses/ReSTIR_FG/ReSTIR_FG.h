@@ -138,7 +138,12 @@ private:
     void prepareRayTracingShaders(RenderContext* pRenderContext);
 
     //
-    void generateCausticPoints(RenderContext* pRenderContext, const uint geometryID);
+    void generateCausticPoints(
+        RenderContext* pRenderContext,
+        const uint geometryInstanceID,
+        const std::span<PackedStaticVertexData>& vertexData,
+        const std::span<uint32_t>& indexData
+    );
 
     /** Trace Tranmissive and delta materials
     */
