@@ -10,6 +10,8 @@ target_sources(ReSTIR_FG PRIVATE
     Gaussian3D.h
     FirstHitPhotonInfo.h
     falcor_cuda_math.h
+    GaussianPhotonGuiding.h
+    GaussianPhotonGuiding.cpp
 
     calc_gradient.cu
     calc_gradient.h
