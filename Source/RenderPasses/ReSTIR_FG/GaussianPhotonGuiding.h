@@ -21,17 +21,41 @@ public:
         Robust = 1u
     };
 
-    GaussianPhotonGuiding(ref<Device> device, const DefineList& defines) : m_Device(device), m_Defines(defines) {}
+    GaussianPhotonGuiding() = default;
+
+    GaussianPhotonGuiding(ref<Device> device, const DefineList& defines) : m_Device(device), m_Defines(defines)
+    {
+    }
 
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     void PrepareBuffers(const uint2 screenSize, RenderContext* renderContext, const uint2 maxPhotonCount);
     bool RenderUI(Gui::Widgets& widget);
+    void ResetSceneTextures();
+    void ResetPhotonFirstHitMap();
 
     void GenerateCausticClusters(RenderContext* renderContext);
+    void TrackActualFirstHitPhotonCount(RenderContext* renderContext);
     void CountCausticClustersPass(RenderContext* renderContext, const uint frameCount);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
+
+    constexpr bool IsActive() const { return m_Active; }
+    constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
+    constexpr uint GetGaussianCount() const { return m_GaussianCount; }
+    constexpr uint GetAnalyticLightCount() const { return m_AnalyticLightCount; }
+    constexpr uint GetGeometricLightCount() const { return m_GeometricLightCount; }
+    constexpr uint GetMaxFirstHitPhotonCount() const { return m_MaxFirstHitPhotonCount; }
+    constexpr float GetMinPdf() const { return m_MinPdf; }
+    constexpr float GetBeta() const { return m_Beta; }
+
+    ref<Buffer> GetGaussianBuffer() const { return m_GaussianBuf.buffer; }
+    ref<Buffer> GetPhotonFirstHitMapBuffer(const uint idx) const { return m_PhotonFirstHitMapBufs[idx]; }
+    ref<Buffer> GetFirstHitCollectionCountsBuffer() const { return m_FirstHitCollectionCountsBuf.buffer; }
+    ref<Buffer> GetFirstHitPhotonCountBuffer() const { return m_FirstHitPhotonCountBuf.buffer; }
+    ref<Buffer> GetLightFirstHitCountBuffer() const { return m_LightFirstHitCountsBuf; }
+    ref<Buffer> GetFirstHitPhotonInfoBuffer() const { return m_FirstHitPhotonInfoBuf.buffer; }
+    ref<Buffer> GetSoftmaxBuffer() const { return m_SoftmaxBuf.buffer; }
 
 private:
     // Constants
@@ -90,6 +114,7 @@ private:
     InteropBuffer m_GaussianBuf;
     ref<Texture> m_GaussianTex;
     InteropBuffer m_FirstHitPhotonCountBuf;
+    ref<Buffer> m_FirstHitPhotonCountBufCPU;
     InteropBuffer m_FirstHitPhotonInfoBuf;
     InteropBuffer m_FirstHitCollectionCountsBuf;
     std::array<ref<Buffer>, 2> m_PhotonFirstHitMapBufs;

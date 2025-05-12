@@ -41,8 +41,6 @@ cbuffer GaussianPhotonGuiding
     uint gGaussianCount;
     uint gAnalyticLightCount;
     uint gGeometricLightCount;
-    float gCs;
-    float gB;
     float gGmmMinPdf;
     float gBeta;
     uint gMaxFirstHitPhotonCount;

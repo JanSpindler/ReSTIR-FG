@@ -51,6 +51,9 @@ void GaussianPhotonGuiding::SetScene(RenderContext* pRenderContext, const ref<Sc
     // Store ref to scene
     m_Scene = pScene;
 
+    // Defines
+    m_Defines.add(m_Scene->getSceneDefines());
+
     // 3D gaussian photon guiding
     m_AnalyticLightCount = pScene->getLightCount();
     m_GeometricLightCount = pScene->getLightCollection(pRenderContext)->getMeshLights().size();
@@ -116,6 +119,7 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
     if (!m_FirstHitPhotonCountBuf.buffer)
     {
         m_FirstHitPhotonCountBuf = CreateInteropBuffer(m_Device, sizeof(uint));
+        m_FirstHitPhotonCountBufCPU = Buffer::create(m_Device, sizeof(uint), ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 
     if (!m_FirstHitPhotonInfoBuf.buffer)
@@ -266,6 +270,17 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
     return changed;
 }
 
+void GaussianPhotonGuiding::ResetSceneTextures()
+{
+    m_GaussianTex.reset();
+}
+
+void GaussianPhotonGuiding::ResetPhotonFirstHitMap()
+{
+    m_PhotonFirstHitMapBufs[0].reset();
+    m_PhotonFirstHitMapBufs[1].reset();
+}
+
 void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext)
 {
     // Get vertex position
@@ -319,6 +334,21 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
         m_CausticClusterBuf.get(), 0, m_CausticClusterBufCPU.get(), 0, sizeof(float3) * totalCausticClusterCount
     );
     renderContext->uavBarrier(m_CausticClusterBuf.get());
+}
+
+void GaussianPhotonGuiding::TrackActualFirstHitPhotonCount(RenderContext* renderContext)
+{
+    if (m_Active and m_CopyToCPU)
+    {
+        // Barrier
+        renderContext->uavBarrier(m_FirstHitPhotonCountBuf.buffer.get());
+
+        // Copy the first hit photon count to a CPU buffer
+        renderContext->copyBufferRegion(m_FirstHitPhotonCountBufCPU.get(), 0, m_FirstHitPhotonCountBuf.buffer.get(), 0, sizeof(uint));
+        void* data = m_FirstHitPhotonCountBufCPU->map(Buffer::MapType::Read);
+        std::memcpy(&m_ActualFirstHitPhotonCount, data, sizeof(uint));
+        m_FirstHitPhotonCountBufCPU->unmap();
+    }
 }
 
 void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderContext, const uint frameCount)

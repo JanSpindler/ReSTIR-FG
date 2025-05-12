@@ -37,50 +37,6 @@
 #include "dkm/dkm_parallel.hpp"
 #include "RandomGenerator.h"
 
-static InteropBuffer CreateInteropBuffer(
-    const ref<Device> pDevice,
-    const size_t size,
-    const Falcor::Buffer::CpuAccess cpuAccess = Falcor::Buffer::CpuAccess::None,
-    const void* data = nullptr)
-{
-    InteropBuffer interop;
-
-    // Create a new DX <-> CUDA shared buffer using the Falcor API to create, then find its CUDA pointer.
-    interop.buffer = Buffer::create(
-        pDevice,
-        size,
-        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess | Resource::BindFlags::Shared,
-        cpuAccess,
-        data);
-    interop.devicePtr = (CUdeviceptr)getSharedDevicePtr(interop.buffer->getSharedApiHandle(), (uint32_t)interop.buffer->getSize());
-    checkInvariant(interop.devicePtr != (CUdeviceptr)0, "Failed to create CUDA device ptr for buffer");
-
-    return interop;
-}
-
-template <typename T>
-static InteropBuffer CreateStructuredInteropBuffer(
-    const ref<Device> pDevice,
-    const size_t count,
-    const Falcor::Buffer::CpuAccess cpuAccess = Falcor::Buffer::CpuAccess::None,
-    const void* data = nullptr)
-{
-    InteropBuffer interop;
-
-    // Create a new DX <-> CUDA shared buffer using the Falcor API to create, then find its CUDA pointer.
-    interop.buffer = Buffer::createStructured(
-        pDevice,
-        sizeof(T),
-        count,
-        Resource::BindFlags::ShaderResource | Resource::BindFlags::UnorderedAccess | Resource::BindFlags::Shared,
-        cpuAccess,
-        data);
-    interop.devicePtr = (CUdeviceptr)getSharedDevicePtr(interop.buffer->getSharedApiHandle(), (uint32_t)interop.buffer->getSize());
-    checkInvariant(interop.devicePtr != (CUdeviceptr)0, "Failed to create CUDA device ptr for buffer");
-
-    return interop;
-}
-
 namespace
 {
 const std::string kTraceTransmissionDeltaShader = "RenderPasses/ReSTIR_FG/Shader/TraceTransmissionDelta.rt.slang";
@@ -193,11 +149,6 @@ const Gui::DropdownList kCausticCollectionModeList{
     {(uint)ReSTIR_FG::CausticCollectionMode::Temporal, "Temporal"},
     {(uint)ReSTIR_FG::CausticCollectionMode::Reservoir, "Reservoir"}
 };
-
-const Gui::DropdownList k3dgOptimizerList{
-    {static_cast<uint>(ReSTIR_FG::GaussianOptimizer::SGD), "SGD"},
-    {static_cast<uint>(ReSTIR_FG::GaussianOptimizer::Adam), "Adam"}
-};
 } // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -205,8 +156,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, ReSTIR_FG>();
 }
 
-ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
-    : RenderPass(pDevice)
+ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -222,6 +172,9 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
 
     // Create sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+
+    // Photon guiding
+    m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, DefineList(getMaterialDefines()).add(mpSampleGenerator->getDefines()));
 
     // Initializes the CUDA driver API.
     if (!initCuda())
@@ -385,60 +338,9 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Generate caustic clusters for use in robust gaussian initialization
-    if (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust)
+    if (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization())
     {
-        // Get vertex position
-        ref<Vao> vao = mpScene->getMeshVao();
-        ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
-        ref<Buffer> ibo = vao->getIndexBuffer();
-        if (vao->getIndexBufferFormat() != ResourceFormat::R32Uint)
-        {
-            throw RuntimeError("ReSTIR_FG: Only uint32 index buffer format is supported");
-        }
-
-        // Copy vertex and index buffers to CPU
-        const size_t indexByteSize = ibo->getSize();
-        const size_t indexCount = indexByteSize / sizeof(uint32_t);
-        ref<Buffer> iboCpu = Buffer::create(mpDevice, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-        pRenderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
-        pRenderContext->flush(true);
-        const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
-
-        const uint32_t vertexCount = vbo->getElementCount();
-        ref<Buffer> vboCpu = Buffer::createStructured(
-            mpDevice, sizeof(PackedStaticVertexData), vertexCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
-        );
-        pRenderContext->copyBufferRegion(vboCpu.get(), 0, vbo.get(), 0, sizeof(PackedStaticVertexData) * vertexCount);
-        pRenderContext->flush(true);
-        const std::span<PackedStaticVertexData> vertexData(
-            reinterpret_cast<PackedStaticVertexData*>(vboCpu->map(Buffer::MapType::Read)), vertexCount
-        );
-
-        // Calculate caustic clusters
-        m3dgCausticClusters.clear();
-        for (const uint geometryInstanceID : m3dgCausticGeometryInstanceIDs)
-        {
-            generateCausticPoints(pRenderContext, geometryInstanceID, vertexData, indexData);
-        }
-        FALCOR_ASSERT(m3dgCausticClusters.size() == m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size());
-
-        // Unmap buffers
-        vbo->unmap();
-        ibo->unmap();
-
-        // Write to CPU buffer
-        std::span<float3> cpuCausticClusters(
-            reinterpret_cast<float3*>(mp3dgCausticClustersBufferCPU->map(Buffer::MapType::WriteDiscard)), m3dgCausticClusters.size()
-        );
-        std::copy(m3dgCausticClusters.begin(), m3dgCausticClusters.end(), cpuCausticClusters.begin());
-        mp3dgCausticClustersBufferCPU->unmap();
-
-        // Copy to GPU buffer
-        pRenderContext->copyBufferRegion(
-            mp3dgCausticClustersBuffer.get(), 0, mp3dgCausticClustersBufferCPU.get(), 0,
-            sizeof(float3) * m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size()
-        );
-        pRenderContext->uavBarrier(mp3dgCausticClustersBuffer.get());
+        m_GaussianPhotonGuiding.GenerateCausticClusters(pRenderContext);
     }
 
     // RenderPasses
@@ -487,16 +389,16 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Count closest caustic clusters for robust initialization
-    if (mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust)
+    if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
     {
-        countCausticClustersPass(pRenderContext);
+        m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext, mFrameCount);
     }
     // Calculate gaussian gradient and optimize
-    else if (mUse3DGaussianPhotonGuiding)
+    else if (m_GaussianPhotonGuiding.IsActive())
     {
-        calculateGaussianGradientCuda(pRenderContext);
-        optimizeGaussiansPass(pRenderContext);
-        calculateSoftmaxWeightsPass(pRenderContext);
+        m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
+        m_GaussianPhotonGuiding.OptimizeGaussiansPass(pRenderContext);
+        m_GaussianPhotonGuiding.CalculateSoftmaxWeightsPass(pRenderContext);
     }
 
     // Final gather resampling
@@ -795,77 +697,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     // Photon Guiding
     if (mRenderMode != RenderMode::ReSTIRGI)
     {
-        if (auto group = widget.group("PhotonGuiding"))
-        {
-            changed |= group.checkbox("Use 3D Gaussian Photon Guiding", mUse3DGaussianPhotonGuiding);
-            group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
-
-            if (mUse3DGaussianPhotonGuiding)
-            {
-                changed |= group.checkbox("Copy Info to CPU", m3dgCopyToCPU);
-
-                const bool rebuildGaussianBuffer = group.var("Gaussians per Light", m3dgGaussianCount);
-                m3dgGaussianCount = math::max<uint>(m3dgGaussianCount, 1);
-                changed |= rebuildGaussianBuffer;
-                if (rebuildGaussianBuffer)
-                {
-                    mp3dgGaussianBuffer.buffer.reset();
-                    mp3dgGradientBuffer.buffer.reset();
-                    mp3dgOptimizationBuffer.reset();
-                    mp3dgLightFirstHitCountBuffer.reset();
-                    mp3dgSoftmaxBuffer.buffer.reset();
-                }
-
-                if (group.button("ReInit Gaussians"))
-                {
-                    mp3dgGaussianBuffer.buffer.reset();
-                    mp3dgOptimizationBuffer.reset();
-                    mp3dgSoftmaxBuffer.buffer.reset();
-                    changed = true;
-                }
-
-                changed |= group.var("Minimum GMM PDF", m3dgMinPdf, 0.0f, 1.0f);
-
-                changed |= group.var("Beta (MIS)", m3dgBeta, 0.0f, 1.0f);
-
-                const bool rebuildFirstPhoton = group.var("Max First Hit Photons", m3dgMaxFirstHitPhotonCount);
-                if (m3dgMaxFirstHitPhotonCount > 0)
-                {
-                    changed |= rebuildFirstPhoton;
-                    if (rebuildFirstPhoton)
-                    {
-                        mp3dgFirstHitPhotonInfoBuffer.buffer.reset();
-                        mp3dgFirstHitCollectionCountsBuffer.buffer.reset();
-                    }
-                }
-
-                if (m3dgCopyToCPU)
-                {
-                    group.text(
-                        "First Hit Photons: " + std::to_string(m3dgActualFirstHitPhotonCount) +
-                        " / " + std::to_string(m3dgMaxFirstHitPhotonCount) +
-                        " (" + std::to_string(static_cast<float>(m3dgActualFirstHitPhotonCount) / static_cast<float>(m3dgMaxFirstHitPhotonCount)) +
-                        ")");
-                }
-
-                // Optimizer
-                const bool changedOptimizer = group.dropdown("Optimizer", k3dgOptimizerList, reinterpret_cast<uint&>(m3dgOptimizer));
-                if (changedOptimizer)
-                {
-                    mp3dgOptimizationBuffer.reset();
-                }
-                changed |= changedOptimizer;
-
-                group.text("Optimizer step: " + std::to_string(m3dgOptimStep));
-                changed |= group.var("Learning Rate", m3dgLearningRate, 0.0f, 1.0f);
-
-                if (m3dgOptimizer == GaussianOptimizer::Adam)
-                {
-                    changed |= group.var("Adam Beta1", m3dgBeta1, 0.0f, 1.0f);
-                    changed |= group.var("Adam Beta2", m3dgBeta2, 0.0f, 1.0f);
-                }
-            }
-        }
+        changed |= m_GaussianPhotonGuiding.RenderUI(widget);
     }
 
     // ReSTIR GI
@@ -1053,34 +885,7 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     }
 
     // 3D gaussian photon guiding
-    m3dgB = k3dgCb / sceneExtend;
-    m3dgAnalyticLightCount = mpScene->getLightCount();
-    m3dgGeometricLightCount = mpScene->getLightCollection(pRenderContext)->getMeshLights().size();
-
-    // Gaussian initialization
-    m3dgCausticGeometryInstanceIDs.clear();
-    for (size_t geomInstanceIdx = 0; geomInstanceIdx < mpScene->getGeometryInstanceCount(); ++geomInstanceIdx)
-    {
-        const uint materialId = mpScene->getGeometryInstance(geomInstanceIdx).materialID;
-        const ref<Material> material = mpScene->getMaterial(MaterialID(materialId));
-        const ref<BasicMaterial> basicMaterial = material->toBasicMaterial();
-
-        //occlusion(R), roughness(G), metallic(B)
-        const float4 specularParams = basicMaterial->getSpecularParams();
-        const float roughness = specularParams.g;
-        const float metallic = specularParams.b;
-        const bool deltaSpecular = material->getHeader().isDeltaSpecular();
-
-        // Check if caustic caster
-        if ((metallic > 0.0f) || (roughness < 0.2f) || deltaSpecular)
-        {
-            const uint geometryId = mpScene->getGeometryInstance(geomInstanceIdx).geometryID;
-            if (mpScene->getGeometryType(GlobalGeometryID(geometryId)) == GeometryType::TriangleMesh)
-            {
-                m3dgCausticGeometryInstanceIDs.push_back(geomInstanceIdx);
-            }
-        }
-    }
+    m_GaussianPhotonGuiding.SetScene(pRenderContext, pScene);
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1209,7 +1014,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mpSampleGenState.reset();
         mResetTex = false;
 
-        mp3dgGaussianTexture.reset();
+        m_GaussianPhotonGuiding.ResetSceneTextures();
     }
 
     if (!mpSampleGenState && mStoreSampleGenState)
@@ -1237,8 +1042,8 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         {
             mpPhotonAABB[i].reset();
             mpPhotonData[i].reset();
-            mp3dgPhotonFirstHitMapBuffer[i].reset();
         }
+        m_GaussianPhotonGuiding.ResetPhotonFirstHitMap();
     }
 
     // Per pixel Buffers/Textures
@@ -1471,150 +1276,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
-    const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
-    const size_t gaussianCount = lightCount * m3dgGaussianCount;
-    if (!mp3dgGaussianBuffer.buffer)
-    {
-        // Init gaussians
-        std::vector<Gaussian3D> gaussians(gaussianCount);
-
-        // Init N random gaussians in the scene
-        // TODO: Robust initialization from paper
-        const float3 sceneExtent = mpScene->getSceneBounds().extent();
-        const float sigma = math::length(sceneExtent) / 10.0f;
-        for (size_t gaussIdx = 0; gaussIdx < gaussianCount; ++gaussIdx)
-        {
-            const float3 mean = mpScene->getSceneBounds().minPoint + RandomGenerator::Float3() * sceneExtent;
-            gaussians[gaussIdx] = Gaussian3D(mean, sigma, 0.0f);
-        }
-
-        // Create buffer
-        mp3dgGaussianBuffer = CreateStructuredInteropBuffer<Gaussian3D>(mpDevice, gaussianCount, Buffer::CpuAccess::None, gaussians.data());
-
-        mp3dgGaussianBufferCPU = Buffer::createStructured(
-            mpDevice,
-            sizeof(Gaussian3D),
-            gaussianCount,
-            ResourceBindFlags::None,
-            Buffer::CpuAccess::Read);
-
-        // Reset optimization
-        m3dgOptimStep = 0;
-    }
-
-    if (!mp3dgGaussianTexture)
-    {
-        mp3dgGaussianTexture = Texture::create2D(
-            mpDevice,
-            mScreenRes.x,
-            mScreenRes.y,
-            ResourceFormat::RGBA32Float,
-            1,
-            1,
-            nullptr,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-        pRenderContext->clearUAV(mp3dgGaussianTexture->getUAV().get(), float4(0.0f));
-    }
-
-    if (!mp3dgFirstHitPhotonCount.buffer)
-    {
-        mp3dgFirstHitPhotonCount = createInteropBuffer(mpDevice, sizeof(uint));
-
-        mp3dgFirstHitPhotonCountCPU = Buffer::create(
-            mpDevice,
-            sizeof(uint),
-            ResourceBindFlags::None,
-            Buffer::CpuAccess::Read);
-    }
-
-    if (!mp3dgFirstHitPhotonInfoBuffer.buffer)
-    {
-        mp3dgFirstHitPhotonInfoBuffer = CreateStructuredInteropBuffer<FirstHitPhotonInfo>(mpDevice, m3dgMaxFirstHitPhotonCount);
-    }
-
-    if (!mp3dgFirstHitCollectionCountsBuffer.buffer)
-    {
-        mp3dgFirstHitCollectionCountsBuffer = createInteropBuffer(mpDevice, sizeof(uint) * m3dgMaxFirstHitPhotonCount);
-
-        mp3dgFirstHitCollectionCountsBufferCPU = Buffer::create(
-            mpDevice,
-            sizeof(uint) * m3dgMaxFirstHitPhotonCount,
-            ResourceBindFlags::None,
-            Buffer::CpuAccess::Read);
-    }
-
-    for (size_t idx = 0; idx < 2; ++idx)
-    {
-        if (!mp3dgPhotonFirstHitMapBuffer[idx])
-        {
-            mp3dgPhotonFirstHitMapBuffer[idx] = Buffer::create(
-                mpDevice,
-                sizeof(uint) * mNumMaxPhotons[idx],
-                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-        }
-    }
-
-    if (!mp3dgLightFirstHitCountBuffer)
-    {
-        mp3dgLightFirstHitCountBuffer = Buffer::create(
-            mpDevice,
-            sizeof(uint) * lightCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-    }
-
-    if (!mp3dgGradientBuffer.buffer)
-    {
-        mp3dgGradientBuffer = CreateStructuredInteropBuffer<Gaussian3D>(mpDevice, gaussianCount);
-        mp3dgGradientBufferCPU = Buffer::createStructured(
-            mpDevice,
-            sizeof(Gaussian3D),
-            gaussianCount,
-            ResourceBindFlags::None,
-            Buffer::CpuAccess::Read);
-    }
-
-    if (!mp3dgOptimizationBuffer)
-    {
-        const std::vector<Gaussian3DMoments> gaussianMoments(gaussianCount, Gaussian3DMoments());
-        mp3dgOptimizationBuffer = Buffer::createStructured(
-            mpDevice,
-            sizeof(Gaussian3DMoments),
-            gaussianCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None,
-            gaussianMoments.data());
-
-        // Reset optimization
-        m3dgOptimStep = 0;
-    }
-
-    if (!mp3dgSoftmaxBuffer.buffer)
-    {
-        const std::vector<float> softmaxWeights(gaussianCount, 1.0f / static_cast<float>(m3dgGaussianCount));
-        mp3dgSoftmaxBuffer = CreateInteropBuffer(mpDevice, sizeof(float) * gaussianCount, Buffer::CpuAccess::None, softmaxWeights.data());
-        mp3dgSoftmaxBufferCPU = Buffer::create(mpDevice, sizeof(float) * gaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    }
-
-    const size_t totalCausticClusterCount = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
-    if (!mp3dgCausticClustersBuffer)
-    {
-        mp3dgCausticClustersBuffer = Buffer::createStructured(
-            mpDevice, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        mp3dgCausticClustersBufferCPU =
-            Buffer::createStructured(mpDevice, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
-    }
-
-    if (!mp3dgCausticClusterCountsBuffer)
-    {
-        mp3dgCausticClusterCountsBuffer = Buffer::create(
-            mpDevice, sizeof(uint) * totalCausticClusterCount * lightCount,
-            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        mp3dgCausticClusterCountsBufferCPU = Buffer::create(
-            mpDevice, sizeof(uint) * totalCausticClusterCount * lightCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
-        );
-    }
+    m_GaussianPhotonGuiding.PrepareBuffers(mScreenRes, pRenderContext, mNumMaxPhotons);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1684,89 +1346,6 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
         }
 
         mReSTIRGISamplePass.pProgram = RtProgram::create(mpDevice, desc, mpScene->getSceneDefines());
-    }
-}
-
-void ReSTIR_FG::generateCausticPoints(
-    RenderContext* pRenderContext,
-    const uint geometryInstanceID,
-    const std::span<PackedStaticVertexData>& vertexData,
-    const std::span<uint32_t>& indexData)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "GenerateCausticPoints");
-
-    // Get geometry instance info
-    // TODO: Cant retreive matrix but maybe not needed
-    const uint geometryId = mpScene->getGeometryInstance(geometryInstanceID).geometryID;
-
-    // Get mesh info
-    const MeshDesc& mesh = mpScene->getMesh(MeshID(geometryId));
-    const uint vertexOffset = mesh.vbOffset;
-    const uint indexOffset = mesh.ibOffset;
-    const uint triangleCount = mesh.getTriangleCount();
-    const bool bit16 = mesh.use16BitIndices();
-    if (!mesh.useVertexIndices())
-    {
-        throw RuntimeError("ReSTIR_FG: Only indexed meshes are supported");
-    }
-
-    // Generate caustic points
-    std::vector<std::array<float, 3>> causticPoints(m3dgCausticPointCount);
-    for (size_t pointIdx = 0; pointIdx < m3dgCausticPointCount; ++pointIdx)
-    {
-        // Choose random triangle
-        const uint randomTriangle = RandomGenerator::UInt() % triangleCount;
-
-        // Read indices
-        uint32_t index0 = 0, index1 = 0, index2 = 0;
-        if (bit16)
-        {
-            const uint firstIndexIndex = (indexOffset * 2) + (randomTriangle * 3);
-            const uint firstIndexIndex32 = std::lldiv(firstIndexIndex, 2).quot;
-            const uint32_t data1 = indexData[firstIndexIndex32 + 0];
-            const uint32_t data2 = indexData[firstIndexIndex32 + 1];
-
-            if (firstIndexIndex % 2 == 0)
-            {
-                index0 = data1 & 0xFFFF;
-                index1 = (data1 >> 16) & 0xFFFF;
-                index2 = data2 & 0xFFFF;
-            }
-            else
-            {
-                index0 = (data1 >> 16) & 0xFFFF;
-                index1 = data2 & 0xFFFF;
-                index2 = (data2 >> 16) & 0xFFFF;
-            }
-        }
-        else
-        {
-            const uint firstIndexIndex = indexOffset + (randomTriangle * 3);
-            index0 = indexData[firstIndexIndex + 0];
-            index1 = indexData[firstIndexIndex + 1];
-            index2 = indexData[firstIndexIndex + 2];
-        }
-        
-        // Read vertices
-        const float3 vertex0 = vertexData[vertexOffset + index0].position;
-        const float3 vertex1 = vertexData[vertexOffset + index1].position;
-        const float3 vertex2 = vertexData[vertexOffset + index2].position;
-
-        // Barycentric sampling
-        float3 bary = RandomGenerator::Float3();
-        bary /= bary.x + bary.y + bary.z;
-
-        // Calculate point
-        const float3 point = vertex0 * bary.x + vertex1 * bary.y + vertex2 * bary.z;
-        causticPoints[pointIdx] = {point.x, point.y, point.z};
-    }
-
-    // Cluster
-    const auto [clusters, _] = dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(m3dgCausticClusterCount));
-    for (const std::array<float, 3>&cluster : clusters)
-    {
-        m3dgCausticClusters.push_back({cluster[0], cluster[1], cluster[2]});
     }
 }
 
@@ -1946,10 +1525,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
 
         // Clear first hit photon counter
-        pRenderContext->clearUAV(mp3dgFirstHitPhotonCount.buffer->getUAV().get(), uint4(0));
+        pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitPhotonCountBuffer()->getUAV().get(), uint4(0));
 
         // Clear light first hit buffer
-        pRenderContext->clearUAV(mp3dgLightFirstHitCountBuffer->getUAV().get(), uint4(0));
+        pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetLightFirstHitCountBuffer()->getUAV().get(), uint4(0));
     }
 
     // Get dimensions of ray dispatch.
@@ -1986,10 +1565,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
 
     // Gaussian photon guiding defines
-    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", mUse3DGaussianPhotonGuiding ? "1" : "0");
+    mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", m_GaussianPhotonGuiding.IsActive() ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefine(
         "TRACK_FIRST_HIT_PHOTONS",
-        mUse3DGaussianPhotonGuiding or (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ? "1" : "0"
+        m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
     );
 
     // Program vars
@@ -2035,14 +1614,13 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
 
     // 3D gaussian photon guiding constants
     nameBuf = "GaussianPhotonGuiding";
-    var[nameBuf]["gGaussianCount"] = m3dgGaussianCount;
-    var[nameBuf]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
-    var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
-    var[nameBuf]["gCs"] = k3dgCs;
-    var[nameBuf]["gB"] = m3dgB;
-    var[nameBuf]["gGmmMinPdf"] = m3dgMinPdf;
-    var[nameBuf]["gBeta"] = mFrameCount <= 1 and m3dgInitialization == GaussianInitialization::Robust ? 0.0f : m3dgBeta;
-    var[nameBuf]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
+    var[nameBuf]["gGaussianCount"] = m_GaussianPhotonGuiding.GetGaussianCount();
+    var[nameBuf]["gAnalyticLightCount"] = m_GaussianPhotonGuiding.GetAnalyticLightCount();
+    var[nameBuf]["gGeometricLightCount"] = m_GaussianPhotonGuiding.GetGeometricLightCount();
+    var[nameBuf]["gGmmMinPdf"] = m_GaussianPhotonGuiding.GetMinPdf();
+    var[nameBuf]["gBeta"] =
+        mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization() ? 0.0f : m_GaussianPhotonGuiding.GetBeta();
+    var[nameBuf]["gMaxFirstHitPhotonCount"] = m_GaussianPhotonGuiding.GetMaxFirstHitPhotonCount();
 
     // Light samples constants
     if (mpEmissiveLightSampler)
@@ -2060,15 +1638,15 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
 
     // 3D gaussian photon guiding buffers
-    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
-    var["gFirstHitPhotonCounter"] = mp3dgFirstHitPhotonCount.buffer;
-    var["gFirstHitPhotonInfo"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
+    var["gGaussians"] = m_GaussianPhotonGuiding.GetGaussianBuffer();
+    var["gFirstHitPhotonCounter"] = m_GaussianPhotonGuiding.GetFirstHitPhotonCountBuffer();
+    var["gFirstHitPhotonInfo"] = m_GaussianPhotonGuiding.GetFirstHitPhotonInfoBuffer();
     for (uint32_t idx = 0; idx < 2; ++idx)
     {
-        var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
+        var["gPhotonFirstHitMap"][idx] = m_GaussianPhotonGuiding.GetPhotonFirstHitMapBuffer(idx);
     }
-    var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
-    var["gSoftmaxWeights"] = mp3dgSoftmaxBuffer.buffer;
+    var["gLightFirstHitCounts"] = m_GaussianPhotonGuiding.GetLightFirstHitCountBuffer();
+    var["gSoftmaxWeights"] = m_GaussianPhotonGuiding.GetSoftmaxBuffer();
 
     // Trace the photons
     if (traceScene)
@@ -2088,17 +1666,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     pRenderContext->uavBarrier(mpPhotonData[1].get());
 
     // First hit photon count
-    if (mUse3DGaussianPhotonGuiding && m3dgCopyToCPU)
-    {
-        // Barrier
-        pRenderContext->uavBarrier(mp3dgFirstHitPhotonCount.buffer.get());
-
-        // Copy the first hit photon count to a CPU buffer
-        pRenderContext->copyBufferRegion(mp3dgFirstHitPhotonCountCPU.get(), 0, mp3dgFirstHitPhotonCount.buffer.get(), 0, sizeof(uint));
-        void* data = mp3dgFirstHitPhotonCountCPU->map(Buffer::MapType::Read);
-        std::memcpy(&m3dgActualFirstHitPhotonCount, data, sizeof(uint));
-        mp3dgFirstHitPhotonCountCPU->unmap();
-    }
+    m_GaussianPhotonGuiding.TrackActualFirstHitPhotonCount(pRenderContext);
 
     // Global and caustic photon counts
     if (!mMixedLights || mMixedLights && secondPass)
@@ -2170,7 +1738,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
     // Clear first hit collection counts
-    pRenderContext->clearUAV(mp3dgFirstHitCollectionCountsBuffer.buffer->getUAV().get(), uint4(0));
+    pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer()->getUAV().get(), uint4(0));
 
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
@@ -2192,7 +1760,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     // Gaussian photon guiding defines
     mCollectPhotonPass.pProgram->addDefine(
         "TRACK_FIRST_HIT_PHOTONS",
-        mUse3DGaussianPhotonGuiding or (mFrameCount == 0 and m3dgInitialization == GaussianInitialization::Robust) ? "1" : "0"
+        m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
     );
 
     // Program vars
@@ -2250,10 +1818,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     // 3D gaussian photon guiding
     for (uint32_t idx = 0; idx < 2; ++idx)
     {
-        var["gPhotonFirstHitMap"][idx] = mp3dgPhotonFirstHitMapBuffer[idx];
+        var["gPhotonFirstHitMap"][idx] = m_GaussianPhotonGuiding.GetPhotonFirstHitMapBuffer(idx);
     }
-    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
-    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
+    var["gFirstHitCollectionCounts"] = m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer();
+    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_GaussianPhotonGuiding.GetMaxFirstHitPhotonCount();
 
     // Bind reservoir and light buffer depending on the boost buffer
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
@@ -2349,275 +1917,6 @@ void ReSTIR_FG::collectPhotonsSplit(
         mCollectPhotonPass.pProgram.get(),
         mCollectPhotonPass.pVars,
         uint3(targetDim, 1));
-}
-
-void ReSTIR_FG::countCausticClustersPass(RenderContext* pRenderContext)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "CountCausticClusters");
-
-    // Init shader
-    if (!mpCountCausticClustersPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kCountCausticClustersShader).csEntry("main").setShaderModel(kShaderModel);
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getMaterialDefines());
-
-        mpCountCausticClustersPass = ComputePass::create(mpDevice, desc, defines, true);
-    }
-    FALCOR_ASSERT(mpCountCausticClustersPass);
-
-    // Clear
-    pRenderContext->clearUAV(mp3dgCausticClusterCountsBuffer->getUAV().get(), uint4(0));
-
-    // Set variables
-    auto var = mpCountCausticClustersPass->getRootVar();
-    var["Constants"]["gTotalLightCount"] = m3dgAnalyticLightCount + m3dgGeometricLightCount;
-    var["Constants"]["gCausticClusterCount"] = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
-    var["Constants"]["gMaxFirstHitPhotonCount"] = m3dgMaxFirstHitPhotonCount;
-
-    // Buffers
-    var["gCausticClusters"] = mp3dgCausticClustersBuffer;
-    var["gCausticClusterCounters"] = mp3dgCausticClusterCountsBuffer;
-    var["gFirstHitCollectionCounts"] = mp3dgFirstHitCollectionCountsBuffer.buffer;
-    var["gFirstHitPhotonInfos"] = mp3dgFirstHitPhotonInfoBuffer.buffer;
-
-    // Execute
-    mpCountCausticClustersPass->execute(pRenderContext, uint3(m3dgMaxFirstHitPhotonCount, 1, 1));
-
-    // Barrier
-    pRenderContext->uavBarrier(mp3dgCausticClusterCountsBuffer.get());
-
-    // Copy the caustic cluster counts to a CPU buffer
-    const size_t lightCount = m3dgAnalyticLightCount + m3dgGeometricLightCount;
-    const size_t clusterCount = m3dgCausticClusterCount * m3dgCausticGeometryInstanceIDs.size();
-    pRenderContext->copyBufferRegion(
-        mp3dgCausticClusterCountsBufferCPU.get(), 0, mp3dgCausticClusterCountsBuffer.get(), 0, sizeof(uint) * clusterCount * lightCount
-    );
-
-    // Weird logic
-    if (mFrameCount < 1)
-    {
-        return;
-    }
-
-    // Access caustic cluster counters on CPU
-    const std::span<uint> causticClusterCounts(
-        reinterpret_cast<uint*>(mp3dgCausticClusterCountsBufferCPU->map(Buffer::MapType::Read)), clusterCount * lightCount
-    );
-
-    // Sort and select gaussian
-    const float sceneSize = math::length(mpScene->getSceneBounds().extent());
-    const size_t gaussianCount = m3dgGaussianCount * lightCount;
-
-    std::vector<uint> clusterIndices(clusterCount);
-    std::vector<Gaussian3D> gaussians(gaussianCount);
-
-    for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
-    {
-        // Init indices
-        for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
-        {
-            clusterIndices[clusterIdx] = clusterIdx;
-        }
-
-        // Sort
-        const size_t baseIdx = lightIdx * clusterCount;
-        std::sort(
-            clusterIndices.begin(), clusterIndices.end(),
-            [&](const uint idx1, const uint idx2)
-            {
-                return causticClusterCounts[baseIdx + idx1] > causticClusterCounts[baseIdx + idx2];
-            }
-        );
-
-        // Update gaussians
-        for (size_t gaussianIdx = 0; gaussianIdx < m3dgGaussianCount; ++gaussianIdx)
-        {
-            Gaussian3D& gaussian = gaussians[lightIdx * m3dgGaussianCount + gaussianIdx];
-            gaussian.mean = gaussianIdx < clusterCount ? m3dgCausticClusters[clusterIndices[gaussianIdx]] : RandomGenerator::Float3();
-            gaussian.sigma = sceneSize / 30.0f;
-            gaussian.weight = 1.0f;
-        }
-    }
-    mp3dgCausticClusterCountsBufferCPU->unmap();
-
-    // Copy gaussians to GPU
-    ref<Buffer> gaussianBufferCPU = Buffer::createStructured(
-        mpDevice, sizeof(Gaussian3D), gaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write, gaussians.data()
-    );
-    pRenderContext->copyBufferRegion(
-        mp3dgGaussianBuffer.buffer.get(), 0, gaussianBufferCPU.get(), 0, sizeof(Gaussian3D) * m3dgGaussianCount * lightCount
-    );
-    pRenderContext->uavBarrier(mp3dgGaussianBuffer.buffer.get());
-}
-
-void ReSTIR_FG::calculateGaussianGradientCuda(RenderContext* pRenderContext)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "CalculateGaussianGradients");
-
-    // Clear buffers
-    pRenderContext->clearUAV(mp3dgGradientBuffer.buffer->getUAV().get(), float4(0.0f));
-
-    // Ensure all previous GPU operations are completed
-    pRenderContext->flush(true);
-
-    // Calculate gradients
-    CalculateGaussianGradient(
-        m3dgGaussianCount,
-        m3dgMaxFirstHitPhotonCount,
-        reinterpret_cast<const Gaussian3D*>(mp3dgGaussianBuffer.devicePtr),
-        reinterpret_cast<const uint*>(mp3dgFirstHitCollectionCountsBuffer.devicePtr),
-        reinterpret_cast<const FirstHitPhotonInfo*>(mp3dgFirstHitPhotonInfoBuffer.devicePtr),
-        reinterpret_cast<const uint*>(mp3dgFirstHitPhotonCount.devicePtr),
-        reinterpret_cast<const float*>(mp3dgSoftmaxBuffer.devicePtr),
-        reinterpret_cast<Gaussian3D*>(mp3dgGradientBuffer.devicePtr));
-
-    // Ensure CUDA kernel has completed before proceeding
-    syncCudaDevice();
-
-#if 0
-    // Copy gaussian buffer to CPU
-    pRenderContext->uavBarrier(mp3dgGaussianBuffer.buffer.get());
-    const size_t gaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
-    pRenderContext->copyBufferRegion(
-        mp3dgGaussianBufferCPU.get(),
-        0,
-        mp3dgGaussianBuffer.buffer.get(),
-        0,
-        sizeof(Gaussian3D) * gaussianCount);
-    std::vector<Gaussian3D> gaussians(gaussianCount);
-    void* data = mp3dgGaussianBufferCPU->map(Buffer::MapType::Read);
-    std::memcpy(gaussians.data(), data, sizeof(Gaussian3D) * gaussianCount);
-    mp3dgGaussianBufferCPU->unmap();
-
-    // Copy the gradient buffer to the CPU
-    pRenderContext->uavBarrier(mp3dgGradientBuffer.buffer.get());
-    pRenderContext->copyBufferRegion(
-        mp3dgGradientBufferCPU.get(),
-        0,
-        mp3dgGradientBuffer.buffer.get(),
-        0,
-        sizeof(Gaussian3D) * gaussianCount);
-    std::vector<Gaussian3D> gradients(gaussianCount);
-    data = mp3dgGradientBufferCPU->map(Buffer::MapType::Read);
-    std::memcpy(gradients.data(), data, sizeof(Gaussian3D) * gaussianCount);
-    mp3dgGradientBufferCPU->unmap();
-
-    __nop();
-#endif
-}
-
-void ReSTIR_FG::optimizeGaussiansPass(RenderContext* pRenderContext)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "OptimizeGaussians");
-
-    // Increase optimizer step
-    ++m3dgOptimStep;
-
-    // Init shader
-    if (!mpOptimizeGaussiansPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kOptimizeGaussiansShader).csEntry("main").setShaderModel(kShaderModel);
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getMaterialDefines());
-        defines.add("OPTIM_SGD", "0");
-        defines.add("OPTIM_ADAM", "0");
-
-
-        mpOptimizeGaussiansPass = ComputePass::create(mpDevice, desc, defines, true);
-    }
-    FALCOR_ASSERT(mpOptimizeGaussiansPass);
-
-    // Set variables
-    const uint totalGaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
-    auto var = mpOptimizeGaussiansPass->getRootVar();
-    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
-    var["gGradients"] = mp3dgGradientBuffer.buffer;
-    var["gLightFirstHitCounts"] = mp3dgLightFirstHitCountBuffer;
-    var["gGaussianMoments"] = mp3dgOptimizationBuffer;
-    var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
-    var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
-    var["Constants"]["gLearningRate"] = m3dgLearningRate;
-    var["Constants"]["gBeta1"] = m3dgBeta1;
-    var["Constants"]["gBeta2"] = m3dgBeta2;
-    var["Constants"]["gOptimStep"] = static_cast<float>(m3dgOptimStep);
-
-    // More defines
-    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m3dgOptimizer == GaussianOptimizer::SGD ? "1" : "0");
-    mpOptimizeGaussiansPass->getProgram()->addDefine("OPTIM_ADAM", m3dgOptimizer == GaussianOptimizer::Adam ? "1" : "0");
-
-    // Execute
-    mpOptimizeGaussiansPass->execute(pRenderContext, uint3(totalGaussianCount, 1, 1));
-}
-
-void ReSTIR_FG::calculateSoftmaxWeightsPass(RenderContext* pRenderContext)
-{
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "CalculateSoftmaxWeights");
-
-    // Init shader
-    if (!mpCalculateSoftmaxWeightsPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kCalculateSoftmaxWeightsShader).csEntry("main").setShaderModel(kShaderModel);
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getMaterialDefines());
-
-        mpCalculateSoftmaxWeightsPass = ComputePass::create(mpDevice, desc, defines, true);
-    }
-    FALCOR_ASSERT(mpCalculateSoftmaxWeightsPass);
-
-    // Set variables
-    auto var = mpCalculateSoftmaxWeightsPass->getRootVar();
-    var["Constants"]["gGaussianCount"] = m3dgGaussianCount;
-    var["Constants"]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
-    var["Constants"]["gGeometricLightCount"] = m3dgGeometricLightCount;
-
-    // Buffers
-    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
-    var["gSoftmaxWeights"] = mp3dgSoftmaxBuffer.buffer;
-
-    // Execute
-    mpCalculateSoftmaxWeightsPass->execute(pRenderContext, uint3(m3dgAnalyticLightCount + m3dgGeometricLightCount, 1, 1));
-
-#if 0
-    // Copy softmax buffer to CPU
-    const uint gaussianCount = m3dgGaussianCount * (m3dgAnalyticLightCount + m3dgGeometricLightCount);
-    pRenderContext->uavBarrier(mp3dgSoftmaxBuffer.buffer.get());
-    pRenderContext->copyBufferRegion(
-        mp3dgSoftmaxBufferCPU.get(),
-        0,
-        mp3dgSoftmaxBuffer.buffer.get(),
-        0,
-        sizeof(float) * gaussianCount);
-
-    std::vector<float> softmaxWeights(gaussianCount);
-    void* data = mp3dgSoftmaxBufferCPU->map(Buffer::MapType::Read);
-    std::memcpy(softmaxWeights.data(), data, sizeof(float) * gaussianCount);
-    mp3dgSoftmaxBufferCPU->unmap();
-
-    __nop();
-#endif
 }
 
 void ReSTIR_FG::resamplingPass(RenderContext* pRenderContext, const RenderData& renderData)
@@ -2914,12 +2213,10 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
 
     // 3D gaussian photon guiding constants
     const std::string nameBuf = "GaussianPhotonGuiding";
-    var[nameBuf]["gGaussianCount"] = m3dgGaussianCount;
-    var[nameBuf]["gAnalyticLightCount"] = m3dgAnalyticLightCount;
-    var[nameBuf]["gGeometricLightCount"] = m3dgGeometricLightCount;
-    var[nameBuf]["gCs"] = k3dgCs;
-    var[nameBuf]["gB"] = m3dgB;
-    var["gGaussians"] = mp3dgGaussianBuffer.buffer;
+    var[nameBuf]["gGaussianCount"] = m_GaussianPhotonGuiding.GetGaussianCount();
+    var[nameBuf]["gAnalyticLightCount"] = m_GaussianPhotonGuiding.GetAnalyticLightCount();
+    var[nameBuf]["gGeometricLightCount"] = m_GaussianPhotonGuiding.GetGeometricLightCount();
+    var["gGaussians"] = m_GaussianPhotonGuiding.GetGaussianBuffer();
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)

@@ -26,19 +26,16 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #pragma once
+
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
-
-// Light samplers
 #include "Rendering/Lights/LightBVHSampler.h"
 #include "Rendering/Lights/EmissivePowerSampler.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
-
 #include "Rendering/RTXDI/RTXDI.h"
-
 #include "Rendering/AccelerationStructure/CustomAccelerationStructure.h"
-
 #include <Utils/CudaUtils.h>
+#include "GaussianPhotonGuiding.h"
 
 using namespace Falcor;
 
@@ -97,18 +94,6 @@ public:
         Reservoir = 3u
     };
 
-    enum class GaussianOptimizer : uint
-    {
-        SGD = 0u,
-        Adam = 1u
-    };
-
-    enum class GaussianInitialization : uint
-    {
-        Random = 0u,
-        Robust = 1u
-    };
-
 private:
     /** Parse incoming properties
     */
@@ -136,14 +121,6 @@ private:
     /** Initializes all the ray tracing shaders
     */
     void prepareRayTracingShaders(RenderContext* pRenderContext);
-
-    //
-    void generateCausticPoints(
-        RenderContext* pRenderContext,
-        const uint geometryInstanceID,
-        const std::span<PackedStaticVertexData>& vertexData,
-        const std::span<uint32_t>& indexData
-    );
 
     /** Trace Tranmissive and delta materials
     */
@@ -177,18 +154,6 @@ private:
         ShaderVar& var,
         std::string profileName,
         bool fg);
-
-    // Count caustic clusters
-    void countCausticClustersPass(RenderContext* pRenderContext);
-
-    // Calculate the gradient using CUDA
-    void calculateGaussianGradientCuda(RenderContext* pRenderContext);
-
-    // Optimize gaussians
-    void optimizeGaussiansPass(RenderContext* pRenderContext);
-
-    // Calculate softmax weights
-    void calculateSoftmaxWeightsPass(RenderContext* pRenderContext);
 
     /** Resampling pass, which resamples the generated sampled based on the resampling mode
     */
@@ -328,32 +293,6 @@ private:
     float2 mSPPMAlpha = float2(2.f / 3.f);
     uint mSPPMFramesCameraStill = 0;
 
-    // 3D gaussian photon guiding
-    bool mUse3DGaussianPhotonGuiding = false;
-    static constexpr float k3dgCb = 20.0f; // TODO: Make parameters
-    static constexpr float k3dgCs = 0.65f;
-    float m3dgB = 1.0f; // Scaling factor applied to scene positions
-    uint m3dgGaussianCount = 16; // Number of 3D gaussians per light
-    uint m3dgAnalyticLightCount = 0; // Number of analytic lights in the scene
-    uint m3dgGeometricLightCount = 0; // Number of geometric lights in the scene
-    float m3dgMinPdf = 0.0f; // Minimum pdf value for the 3D gaussian before photon flux is set to 0
-    float m3dgBeta = 0.8f; // MIS weight for 3D gaussian sampling and uniform sampling
-    uint m3dgMaxFirstHitPhotonCount = 100000; // Maximum number of first hit photons
-    uint m3dgActualFirstHitPhotonCount = 0;   // Actual number of first hit photons
-    bool m3dgCopyToCPU = false; // Copy info count to the CPU
-    std::vector<uint> m3dgCausticGeometryInstanceIDs;     // Mesh IDs of the caustic meshes
-    uint m3dgCausticPointCount = 10000;    // Number of caustic points
-    uint m3dgCausticClusterCount = 8;                    // Number of clusters used for the robust initialization
-    std::vector<float3> m3dgCausticClusters; // Cluster centers for the caustic points
-
-    GaussianOptimizer m3dgOptimizer = GaussianOptimizer::Adam; // Optimizer used for optimizing the 3D gaussians
-    float m3dgLearningRate = 0.01f;            // Learning rate for the optimizer
-    float m3dgBeta1 = 0.9f;                    // Beta1 for the optimizer
-    float m3dgBeta2 = 0.999f;                  // Beta2 for the optimizer
-    uint m3dgOptimStep = 0;                    // Current optimization step
-
-    GaussianInitialization m3dgInitialization = GaussianInitialization::Robust; // Initialization method for the 3D gaussians
-
     // ReSTIR GI
     uint mGIMaxBounces = 10;              // Max Bounces for GI
     bool mGIAlphaTest = true;               // Alpha Test
@@ -365,6 +304,9 @@ private:
     EmissiveLightSamplerType mGIEmissiveType = EmissiveLightSamplerType::LightBVH;
     std::unique_ptr<EmissiveLightSampler> mpGIEmissiveLightSampler; // Light Sampler
     LightBVHSampler::Options mGILightBVHOptions;
+
+    // Gaussian photon guiding
+    GaussianPhotonGuiding m_GaussianPhotonGuiding;
 
     //
     // Buffer and Textures
@@ -395,26 +337,6 @@ private:
     ref<Texture> mpViewDirRayDistDI;   // View dir tex (RTXDI or DirectAnalytical)
     ref<Texture> mpViewDirDIPrev;      // Previous View dir for direct surfaces
     ref<Texture> mpThpDI;              // Throughput (RTXDI or DirectAnalytical)
-
-    InteropBuffer mp3dgGaussianBuffer; // Buffer for 3D gaussians
-    ref<Buffer> mp3dgGaussianBufferCPU;
-    ref<Texture> mp3dgGaussianTexture; // Texture for 3D gaussians
-    InteropBuffer mp3dgFirstHitPhotonCount; // Buffer for an atomic counter counting the number of first hit photons
-    ref<Buffer> mp3dgFirstHitPhotonCountCPU; // For showing in UI
-    InteropBuffer mp3dgFirstHitPhotonInfoBuffer; // Buffer storing the first photon information
-    InteropBuffer mp3dgFirstHitCollectionCountsBuffer; // Buffer storing the number of photons collected for each first hit
-    ref<Buffer> mp3dgFirstHitCollectionCountsBufferCPU; // For showing in UI
-    ref<Buffer> mp3dgPhotonFirstHitMapBuffer[2]; // Buffer storing the mapping for each photon to its first hit index
-    ref<Buffer> mp3dgLightFirstHitCountBuffer;   // Counts the first hit photons for each light
-    InteropBuffer mp3dgGradientBuffer; // Buffer for accumulating the gradients of the 3D gaussians
-    ref<Buffer> mp3dgGradientBufferCPU; 
-    ref<Buffer> mp3dgOptimizationBuffer; // Buffer storing the optimization data for the 3D gaussians (Adam)
-    InteropBuffer mp3dgSoftmaxBuffer;      // Buffer storing the softmax weights
-    ref<Buffer> mp3dgSoftmaxBufferCPU;   // Buffer storing the softmax weights for the UI
-    ref<Buffer> mp3dgCausticClustersBuffer; // Buffer storing the caustic clusters
-    ref<Buffer> mp3dgCausticClustersBufferCPU;               // Buffer storing the caustic clusters for the UI
-    ref<Buffer> mp3dgCausticClusterCountsBuffer; // Buffer storing the number of caustic clusters for each light
-    ref<Buffer> mp3dgCausticClusterCountsBufferCPU;          // Buffer storing the number of caustic clusters for each light for the UI
 
     //
     // Render Passes/Programms
@@ -447,9 +369,6 @@ private:
     RayTraceProgramHelper mGeneratePhotonPass;
     RayTraceProgramHelper mCollectPhotonPass;
 
-    ref<ComputePass> mpCountCausticClustersPass;        // Count caustic clusters
-    ref<ComputePass> mpOptimizeGaussiansPass;           // Optimize gaussians
-    ref<ComputePass> mpCalculateSoftmaxWeightsPass;     // Calculate the softmax weights for the 3D gaussians
     ref<ComputePass> mpResamplingPass;                  // Resampling Pass for all resampling modes
     ref<ComputePass> mpCausticResamplingPass;           // Resampling Pass for Caustics
     ref<ComputePass> mpFinalShadingPass;                // Final Shading Pass

@@ -85,8 +85,6 @@ cbuffer GaussianPhotonGuiding
     uint gGaussianCount;
     uint gAnalyticLightCount;
     uint gGeometricLightCount;
-    float gCs;
-    float gB;
 };
 RWStructuredBuffer<Gaussian3D> gGaussians;
 
