@@ -21,14 +21,14 @@ public:
         Robust = 1u
     };
 
-    GaussianPhotonGuiding(ref<Device> device) : m_Device(device) {}
+    GaussianPhotonGuiding(ref<Device> device, const DefineList& defines) : m_Device(device), m_Defines(defines) {}
 
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     void PrepareBuffers(const uint2 screenSize, RenderContext* renderContext, const uint2 maxPhotonCount);
     bool RenderUI(Gui::Widgets& widget);
 
     void GenerateCausticClusters(RenderContext* renderContext);
-    void CountCausticClustersPass(RenderContext* renderContext);
+    void CountCausticClustersPass(RenderContext* renderContext, const uint frameCount);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
@@ -50,6 +50,7 @@ private:
 
     //
     ref<Device> m_Device;
+    DefineList m_Defines;
 
     // General
     bool m_Active = false;
@@ -97,7 +98,9 @@ private:
     ref<Buffer> m_OptimizationBuf;
     InteropBuffer m_SoftmaxBuf;
     ref<Buffer> m_CausticClusterBuf;
+    ref<Buffer> m_CausticClusterBufCPU;
     ref<Buffer> m_CausticClusterCountsBuf;
+    ref<Buffer> m_CausticClusterCountsBufCPU;
 
     // Passes
     ref<ComputePass> m_CountCausticClustersPass;
@@ -109,4 +112,11 @@ private:
     constexpr uint GetTotalGaussianCount() const { return GetTotalLightCount() * m_GaussianCount; }
     constexpr float GetSceneSize() const { return math::length(m_Scene->getSceneBounds().extent()); }
     constexpr uint GetTotalCausticClusterCount() const { return m_CausticClusterCount * m_CausticGeometryInstanceIDs.size(); }
+
+    void GenerateCausticPoints(
+        RenderContext* pRenderContext,
+        const uint geometryInstanceID,
+        const std::span<PackedStaticVertexData>& vertexData,
+        const std::span<uint32_t>& indexData
+    );
 };
