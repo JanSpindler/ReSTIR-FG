@@ -36,6 +36,7 @@
 #include <span>
 #include "dkm/dkm_parallel.hpp"
 #include "RandomGenerator.h"
+#include <Rendering/Lights/LightBVHBuilder.h>
 
 namespace
 {
@@ -886,6 +887,10 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
 
     // 3D gaussian photon guiding
     m_GaussianPhotonGuiding.SetScene(pRenderContext, pScene);
+
+    // Build geometric light tree
+    LightBVH lightBhv(mpDevice, pScene->getLightCollection(pRenderContext));
+    LightBVHBuilder(LightBVHBuilder::Options()).build(pRenderContext, lightBhv);
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)

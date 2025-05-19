@@ -13,9 +13,13 @@ target_sources(ReSTIR_FG PRIVATE
     RandomGenerator.h
     GaussianPhotonGuiding.h
     GaussianPhotonGuiding.cpp
-
+    
     calc_gradient.cu
     calc_gradient.h
+
+    dkm/dkm.hpp
+    dkm/dkm_utils.hpp
+    dkm/dkm_parallel.hpp
 
     Shader/CausticResamplingPass.cs.slang
 	Shader/CollectPhotons.rt.slang
@@ -36,9 +40,6 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/gpu-printing-ops.h
 	Shader/CalculateSoftmaxWeights.cs.slang
     Shader/CountCausticClusters.cs.slang
-    dkm/dkm.hpp
-    dkm/dkm_utils.hpp
-    dkm/dkm_parallel.hpp
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES
