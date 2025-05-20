@@ -157,7 +157,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, ReSTIR_FG>();
 }
 
-ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) :
+    RenderPass(pDevice), m_AdaptiveLightSampler(pDevice)
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -176,6 +177,9 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(
 
     // Photon guiding
     m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, DefineList(getMaterialDefines()).add(mpSampleGenerator->getDefines()));
+
+    // Light sampling
+    m_AdaptiveLightSampler = AdaptiveLightSampler(mpDevice);
 
     // Initializes the CUDA driver API.
     if (!initCuda())
@@ -888,9 +892,8 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
     // 3D gaussian photon guiding
     m_GaussianPhotonGuiding.SetScene(pRenderContext, pScene);
 
-    // Build geometric light tree
-    LightBVH lightBhv(mpDevice, pScene->getLightCollection(pRenderContext));
-    LightBVHBuilder(LightBVHBuilder::Options()).build(pRenderContext, lightBhv);
+    // Adaptive light sampling
+    m_AdaptiveLightSampler.SetScene(pRenderContext, pScene);
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1282,6 +1285,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
 
     // 3D gaussian photon guiding
     m_GaussianPhotonGuiding.PrepareBuffers(mScreenRes, pRenderContext, mNumMaxPhotons);
+
+    // Adaptive light sampling
+    m_AdaptiveLightSampler.PrepareBuffers(pRenderContext);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()

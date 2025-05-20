@@ -36,6 +36,7 @@
 #include "Rendering/AccelerationStructure/CustomAccelerationStructure.h"
 #include <Utils/CudaUtils.h>
 #include "GaussianPhotonGuiding.h"
+#include "AdaptiveLightSampler.h"
 
 using namespace Falcor;
 
@@ -307,6 +308,9 @@ private:
 
     // Gaussian photon guiding
     GaussianPhotonGuiding m_GaussianPhotonGuiding;
+
+    // Adaptive light sampler
+    AdaptiveLightSampler m_AdaptiveLightSampler;
 
     //
     // Buffer and Textures

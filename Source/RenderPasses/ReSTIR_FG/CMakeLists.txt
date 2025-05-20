@@ -13,7 +13,9 @@ target_sources(ReSTIR_FG PRIVATE
     RandomGenerator.h
     GaussianPhotonGuiding.h
     GaussianPhotonGuiding.cpp
-    
+    AdaptiveLightSampler.h
+    AdaptiveLightSampler.cpp
+
     calc_gradient.cu
     calc_gradient.h
 
