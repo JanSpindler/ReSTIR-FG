@@ -1,6 +1,6 @@
 #include "AdaptiveLightSampler.h"
 
-struct Cluster
+struct LightCluster
 {
     uint nodeIdx;
     float mean;
@@ -26,16 +26,24 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
 {
     if (!m_ClusterBuffer)
     {
+        const LightCluster rootCluster{.nodeIdx = 0, .mean = 0.0f, .variance = 0.0f};
+        const std::vector<LightCluster> clusters(m_MaxCutSize, rootCluster);
         m_ClusterBuffer = Buffer::createStructured(
-            m_Device, sizeof(Cluster), m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
+            m_Device, sizeof(LightCluster), m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, clusters.data()
         );
     }
 }
 
-void AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
+bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 {
+    bool changed = false;
+
     if (auto group = widget.group("Adaptive Light Sampler"))
     {
+        // Active
+        changed |= group.checkbox("Adaptive Light Sampler", m_Active);
+
         // TODO: Rebuild if builder params changed?
         if (group.group("Light BVH Builder"))
         {
@@ -46,4 +54,6 @@ void AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
             m_LightBvh.renderUI(widget);
         }
     }
+
+    return changed;
 }

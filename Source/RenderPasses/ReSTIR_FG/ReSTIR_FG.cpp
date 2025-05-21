@@ -706,7 +706,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     }
 
     // Adaptive light sampling
-    m_AdaptiveLightSampler.RenderUI(widget);
+    changed |= m_AdaptiveLightSampler.RenderUI(widget);
 
     // ReSTIR GI
     if (mRenderMode == RenderMode::ReSTIRGI)
