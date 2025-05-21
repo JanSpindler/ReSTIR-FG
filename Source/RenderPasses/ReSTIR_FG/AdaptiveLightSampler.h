@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Falcor.h>
-#include <Rendering/Lights/LightBVH.h>
+#include <Rendering/Lights/LightBVHBuilder.h>
 #include <Utils/Math/ScalarTypes.h>
 
 using namespace Falcor;
@@ -17,6 +17,7 @@ public:
 
 private:
     ref<Device> m_Device;
+    LightBVHBuilder m_LightBvhBuilder;
     LightBVH m_LightBvh;
 
     ref<Buffer> m_ClusterBuffer;

@@ -1,5 +1,4 @@
 #include "AdaptiveLightSampler.h"
-#include <Rendering/Lights/LightBVHBuilder.h>
 
 struct Cluster
 {
@@ -8,12 +7,14 @@ struct Cluster
     float variance;
 };
 
-AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device) : m_Device(device), m_LightBvh(device, {}) {}
+AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
+    : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
+{}
 
 void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     m_LightBvh = LightBVH(m_Device, pScene->getLightCollection(pRenderContext));
-    LightBVHBuilder(LightBVHBuilder::Options()).build(pRenderContext, m_LightBvh);
+    m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
     FALCOR_ASSERT(m_LightBvh.isValid());
 }
 
@@ -29,5 +30,16 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
 
 void AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 {
-    m_LightBvh.renderUI(widget);
+    if (auto group = widget.group("Adaptive Light Sampler"))
+    {
+        // TODO: Rebuild if builder params changed?
+        if (group.group("Light BVH Builder"))
+        {
+            m_LightBvhBuilder.renderUI(widget);
+        }
+        if (group.group("Light BVH"))
+        {
+            m_LightBvh.renderUI(widget);
+        }
+    }
 }

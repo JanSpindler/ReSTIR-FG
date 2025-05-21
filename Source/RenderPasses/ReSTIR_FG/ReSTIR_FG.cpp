@@ -705,6 +705,9 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         changed |= m_GaussianPhotonGuiding.RenderUI(widget);
     }
 
+    // Adaptive light sampling
+    m_AdaptiveLightSampler.RenderUI(widget);
+
     // ReSTIR GI
     if (mRenderMode == RenderMode::ReSTIRGI)
     {
