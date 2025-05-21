@@ -13,9 +13,13 @@ AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
 
 void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
-    m_LightBvh = LightBVH(m_Device, pScene->getLightCollection(pRenderContext));
-    m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
-    FALCOR_ASSERT(m_LightBvh.isValid());
+    const auto lightCollection = pScene->getLightCollection(pRenderContext);
+    if (lightCollection->getTotalLightCount() > 0)
+    {
+        m_LightBvh = LightBVH(m_Device, lightCollection);
+        m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
+        FALCOR_ASSERT(m_LightBvh.isValid());
+    }
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
