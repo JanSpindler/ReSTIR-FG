@@ -1,4 +1,5 @@
 #include "AdaptiveLightSampler.h"
+#include <span>
 
 struct LightCluster
 {
@@ -24,14 +25,30 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
 {
-    if (!m_ClusterBuffer)
+    if (!m_ClusterBuf)
     {
         const LightCluster rootCluster{.nodeIdx = 0, .mean = 0.0f, .variance = 0.0f};
         const std::vector<LightCluster> clusters(m_MaxCutSize, rootCluster);
-        m_ClusterBuffer = Buffer::createStructured(
+        m_ClusterBuf = Buffer::createStructured(
             m_Device, sizeof(LightCluster), m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, clusters.data()
         );
+        m_ClusterBufCPU =
+            Buffer::createStructured(m_Device, sizeof(LightCluster), m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+    }
+
+    if (!m_ClusterCdfBuf)
+    {
+        std::vector<float> clusterCDF(m_MaxCutSize);
+        for (size_t i = 0; i < m_MaxCutSize; ++i)
+        {
+            clusterCDF[i] = static_cast<float>(i + 1) / static_cast<float>(m_MaxCutSize);
+        }
+        m_ClusterCdfBuf = Buffer::create(
+            m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, clusterCDF.data()
+        );
+        m_ClusterCdfBuf = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 }
 
@@ -56,4 +73,9 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
     }
 
     return changed;
+}
+
+void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
+{
+    // TODO
 }

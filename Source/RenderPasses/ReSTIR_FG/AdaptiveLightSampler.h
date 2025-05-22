@@ -15,13 +15,19 @@ public:
     void PrepareBuffers(RenderContext* renderContext);
     bool RenderUI(Gui::Widgets& widget);
 
+    void Run(RenderContext* pRenderContext);
+
     constexpr bool IsActive() const { return m_Active; }
 
 private:
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;
     LightBVH m_LightBvh;
-    ref<Buffer> m_ClusterBuffer;
+
+    ref<Buffer> m_ClusterBuf;
+    ref<Buffer> m_ClusterBufCPU;
+    ref<Buffer> m_ClusterCdfBuf;
+    ref<Buffer> m_ClusterCdfBufCPU;
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;
