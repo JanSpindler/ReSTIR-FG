@@ -38,10 +38,9 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/TraceTransmissionDelta.rt.slang
     Shader/GaussianHelper.slang
     Shader/OptimizeGaussians.cs.slang
-	Shader/Printing.slang
-    Shader/gpu-printing-ops.h
 	Shader/CalculateSoftmaxWeights.cs.slang
     Shader/CountCausticClusters.cs.slang
+    Shader/AdaptiveLightSamplerHelper.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

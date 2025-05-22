@@ -16,6 +16,8 @@ import Rendering.Lights.EmissiveLightSamplerHelpers;
 import FinalGatherData;
 import Hash;
 import GaussianHelper;
+import Rendering.Lights.LightBVH;
+import AdaptiveLightSamplerHelper;
 
 cbuffer PerFrame
 {
@@ -66,6 +68,11 @@ RWStructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfo;
 RWBuffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gLightFirstHitCounts;
 Buffer<float> gSoftmaxWeights;
+
+// Adaptive light sampler
+LightBVH gLightBVH;
+StructuredBuffer<LightCluster> gLightClusters;
+Buffer<float> gLightClusterCdf;
 
 enum class GenerationFlags // : uint32_t
 {

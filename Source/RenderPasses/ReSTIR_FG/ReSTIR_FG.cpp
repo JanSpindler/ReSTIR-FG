@@ -1585,6 +1585,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
     );
 
+    // Adaptive light sampler defines
+    mGeneratePhotonPass.pProgram->addDefine("ADAPTIVE_LIGHT_SAMPLER", m_AdaptiveLightSampler.IsActive() ? "1" : "0");
+
     // Program vars
     if (!mGeneratePhotonPass.pVars)
     {
@@ -1661,6 +1664,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     }
     var["gLightFirstHitCounts"] = m_GaussianPhotonGuiding.GetLightFirstHitCountBuffer();
     var["gSoftmaxWeights"] = m_GaussianPhotonGuiding.GetSoftmaxBuffer();
+
+    // Adaptive light sampler buffers
+    m_AdaptiveLightSampler.SetGeneratePhotonsVars(var);
 
     // Trace the photons
     if (traceScene)

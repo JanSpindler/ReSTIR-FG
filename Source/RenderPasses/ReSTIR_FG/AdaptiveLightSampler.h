@@ -19,6 +19,8 @@ public:
 
     constexpr bool IsActive() const { return m_Active; }
 
+    void SetGeneratePhotonsVars(const ShaderVar& var) const;
+
 private:
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;

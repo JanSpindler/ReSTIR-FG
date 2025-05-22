@@ -48,7 +48,7 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
             m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, clusterCDF.data()
         );
-        m_ClusterCdfBuf = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+        m_ClusterCdfBufCPU = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 }
 
@@ -78,4 +78,16 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
     // TODO
+}
+
+void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
+{
+    if (!m_Active)
+    {
+        return;
+    }
+
+    m_LightBvh.setShaderData(var["gLightBVH"]);
+    var["gLightClusters"] = m_ClusterBuf;
+    var["gLightClusterCdf"] = m_ClusterCdfBuf;
 }
