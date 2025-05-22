@@ -286,6 +286,13 @@ uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator s
     return nodeIdx;
 }
 
+uint SampleTriangleIdxFromLeafNode(const uint leafNodeIdx, inout SampleGenerator sg)
+{
+    const LeafNode node = gLightBVH.getLeafNode(leafNodeIdx);
+    const uint idx = min((uint)(sampleNext1D(sg) * node.triangleCount), node.triangleCount - 1); // Safety precaution in case u == 1.0 (it shouldn't be).
+    return gLightBVH.getNodeTriangleIndex(node, idx);
+}
+
 // -----------------------------------------------------------------------
 
 #if USE_EMISSIVE_LIGHT  // Function is only valid if the emissive sampler is set
