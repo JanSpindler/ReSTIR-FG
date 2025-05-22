@@ -260,6 +260,32 @@ uint SampleLightClusterIdx(inout SampleGenerator sg)
     return clusterIdx;
 }
 
+uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator sg)
+{
+    // Get cluster
+    const LightCluster cluster = gLightClusters[clusterIdx];
+
+    // If cluster is leaf node return it
+    if (gLightBVH.isLeaf(cluster.nodeIdx))
+    {
+        return cluster.nodeIdx;
+    }
+
+    // Traverse cluster subtree using importance sampling analog to stochastic lightcuts
+    uint nodeIdx = cluster.nodeIdx;
+    while (!gLightBVH.isLeaf(nodeIdx)) // TODO: Maybe some safety mechanism to prevent infinite loop
+    {
+        const InternalNode node = gLightBVH.getInternalNode(nodeIdx);
+
+        const float leftImportance = 1.0f;
+        const float rightImportance = 1.0f;
+        const float totalImportance = leftImportance + rightImportance;
+
+        nodeIdx = sampleNext1D(sg) < leftImportance / totalImportance ? nodeIdx + 1 : node.rightChildIdx;
+    }
+    return nodeIdx;
+}
+
 // -----------------------------------------------------------------------
 
 #if USE_EMISSIVE_LIGHT  // Function is only valid if the emissive sampler is set
