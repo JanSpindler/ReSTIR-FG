@@ -39,10 +39,10 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
 
     if (!m_ClusterCdfBuf)
     {
-        std::vector<float> clusterCDF(m_MaxCutSize);
-        for (size_t i = 0; i < m_MaxCutSize; ++i)
+        std::vector<float> clusterCDF(m_MaxCutSize, 0.0f);
+        for (size_t i = 0; i < m_ClusterCount; ++i)
         {
-            clusterCDF[i] = static_cast<float>(i + 1) / static_cast<float>(m_MaxCutSize);
+            clusterCDF[i] = static_cast<float>(i + 1) / static_cast<float>(m_ClusterCount);
         }
         m_ClusterCdfBuf = Buffer::create(
             m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
@@ -90,4 +90,5 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
     m_LightBvh.setShaderData(var["gLightBVH"]);
     var["gLightClusters"] = m_ClusterBuf;
     var["gLightClusterCdf"] = m_ClusterCdfBuf;
+    var["AdaptiveLightSampler"]["gLightClusterCount"] = m_ClusterCount;
 }

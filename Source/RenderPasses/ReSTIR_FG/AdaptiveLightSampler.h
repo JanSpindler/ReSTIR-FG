@@ -33,4 +33,5 @@ private:
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;
+    uint m_ClusterCount = 1;
 };

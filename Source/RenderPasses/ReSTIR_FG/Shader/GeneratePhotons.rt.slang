@@ -55,6 +55,11 @@ cbuffer Light
 }
 #endif
 
+cbuffer AdaptiveLightSampler
+{
+    uint gLightClusterCount;
+};
+
 //
 RWStructuredBuffer<AABB> gPhotonAABB[2];
 RWStructuredBuffer<PhotonDataPacked> gPackedPhotonData[2];
@@ -234,6 +239,25 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
 
     // Return
     return gmmPos;
+}
+
+// -----------------------------------------------------------------------
+
+// ------------------- Adaptive Light Sampler ----------------------------
+
+uint SampleLightClusterIdx(inout SampleGenerator sg)
+{
+    const float r = sampleNext1D(sg);
+    uint clusterIdx = 0;
+    for (uint i = 0; i < gLightClusterCount; ++i)
+    {
+        if (r <= gLightClusterCdf[i])
+        {
+            clusterIdx = i;
+            break;
+        }
+    }
+    return clusterIdx;
 }
 
 // -----------------------------------------------------------------------
