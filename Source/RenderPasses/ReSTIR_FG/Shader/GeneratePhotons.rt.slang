@@ -245,7 +245,7 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
 
 // ------------------- Adaptive Light Sampler ----------------------------
 
-uint SampleLightClusterIdx(inout SampleGenerator sg)
+uint SampleLightClusterIdx(inout SampleGenerator sg, inout float pdf)
 {
     const float r = sampleNext1D(sg);
     uint clusterIdx = 0;
@@ -254,13 +254,14 @@ uint SampleLightClusterIdx(inout SampleGenerator sg)
         if (r <= gLightClusterCdf[i])
         {
             clusterIdx = i;
+            pdf *= gLightClusterCdf[i] - (i > 0 ? gLightClusterCdf[i - 1] : 0.0f);
             break;
         }
     }
     return clusterIdx;
 }
 
-uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator sg)
+uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator sg, inout float pdf)
 {
     // Get cluster
     const LightCluster cluster = gLightClusters[clusterIdx];
@@ -281,16 +282,40 @@ uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator s
         const float rightImportance = 1.0f;
         const float totalImportance = leftImportance + rightImportance;
 
-        nodeIdx = sampleNext1D(sg) < leftImportance / totalImportance ? nodeIdx + 1 : node.rightChildIdx;
+        if (sampleNext1D(sg) < leftImportance / totalImportance)
+        {
+            pdf *= leftImportance / totalImportance;
+            nodeIdx += 1;
+        }
+        else
+        {
+            pdf *= rightImportance / totalImportance;
+            nodeIdx = node.rightChildIdx;
+        }
     }
     return nodeIdx;
 }
 
-uint SampleTriangleIdxFromLeafNode(const uint leafNodeIdx, inout SampleGenerator sg)
+uint SampleTriangleIdxFromLeafNode(const uint leafNodeIdx, inout SampleGenerator sg, inout float pdf)
 {
     const LeafNode node = gLightBVH.getLeafNode(leafNodeIdx);
     const uint idx = min((uint)(sampleNext1D(sg) * node.triangleCount), node.triangleCount - 1); // Safety precaution in case u == 1.0 (it shouldn't be).
+    pdf /= (float)node.triangleCount;
     return gLightBVH.getNodeTriangleIndex(node, idx);
+}
+
+uint SampleTriangleIdxFromLightBVH(inout SampleGenerator sg, out float pdf)
+{
+    // Sample cluster
+    pdf = 1.0f;
+    const uint clusterIdx = SampleLightClusterIdx(sg, pdf);
+
+    // Sample leaf node from cluster
+    const uint leafNodeIdx = SampleLeafNodeIdxFromCluster(clusterIdx, sg, pdf);
+
+    // Sample triangle index from leaf node
+    const uint triangleIdx = SampleTriangleIdxFromLeafNode(leafNodeIdx, sg, pdf);
+    return triangleIdx;
 }
 
 // -----------------------------------------------------------------------
@@ -308,14 +333,17 @@ bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample 
         return false;
     }
 
+    uint triangleIndex = 0;
+    float triangleSelectionPdf = 1.0f;
+#if ADAPTIVE_LIGHT_SAMPLER
+    // Sample triangle index from light BVH using adaptive light sampler
+    triangleIndex = SampleTriangleIdxFromLightBVH(sg, triangleSelectionPdf);
+#else
     // Randomly pick a triangle out of the global list with uniform probability
     const uint triangleCount = gScene.lightCollection.triangleCount;
 
     // Safety precaution as the result of the multiplication may be rounded to triangleCount even if uLight < 1.0 when triangleCount is large.
-    uint triangleIndex = min((uint)(sampleNext1D(sg) * triangleCount), triangleCount - 1);
-
-    // Get light index from triangle index
-    lightIdx = gScene.lightCollection.getLightIdx(triangleIndex);
+    triangleIndex = min((uint)(sampleNext1D(sg) * triangleCount), triangleCount - 1);
 
     // Get the triangle index from the alias table
     const uint2 packed = gEmissiveSampler._emissivePower.triangleAliasTable[triangleIndex];
@@ -327,7 +355,11 @@ bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample 
     triangleIndex = (sampleNext1D(sg) >= threshold) ? selectAbove : selectBelow;
 
     // Store pdf value of sampled triangle
-    const float triangleSelectionPdf = gScene.lightCollection.fluxData[triangleIndex].flux * gEmissiveSampler._emissivePower.invWeightsSum;
+    triangleSelectionPdf = gScene.lightCollection.fluxData[triangleIndex].flux * gEmissiveSampler._emissivePower.invWeightsSum;
+#endif // ADAPTIVE_LIGHT_SAMPLER
+
+    // Get light index from triangle index
+    lightIdx = gScene.lightCollection.getLightIdx(triangleIndex);
 
     // Get the triangle
     const EmissiveTriangle tri = gScene.lightCollection.getTriangle(triangleIndex);
