@@ -232,6 +232,17 @@ public:
         return SLANG_OK;
     }
 
+    // Manually added this so it compiles
+    virtual gfx::Result createMeshPipelineState(
+        gfx::IDevice* device,
+        slang::IComponentType* program,
+        void* pipelineDesc,
+        void** outPipelineState
+    )
+    {
+        throw RuntimeError("Mesh pipelines are not supported.");
+    }
+
     // This method will be called by the gfx layer right before creating a ray tracing state object.
     virtual gfx::Result beforeCreateRayTracingState(gfx::IDevice* device, slang::IComponentType* program)
     {

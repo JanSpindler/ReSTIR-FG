@@ -6,6 +6,7 @@ struct LightCluster
     uint nodeIdx;
     float mean;
     float variance;
+    uint sampleCount;
 };
 
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
