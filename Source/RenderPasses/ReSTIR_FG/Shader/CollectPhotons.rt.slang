@@ -1,5 +1,6 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
+#include "nvapi/nvHLSLExtns.h"
 
 import Scene.Raytracing;
 import Scene.Intersection;
