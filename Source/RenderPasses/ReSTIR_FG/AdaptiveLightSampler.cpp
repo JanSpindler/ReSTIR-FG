@@ -1,14 +1,6 @@
 #include "AdaptiveLightSampler.h"
 #include <span>
 
-struct LightCluster
-{
-    uint nodeIdx;
-    float mean;
-    float variance;
-    uint sampleCount;
-};
-
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
     : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
 {}
@@ -26,16 +18,14 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext)
 {
-    if (!m_ClusterBuf)
+    if (!m_ClusterNodeIdxBuf)
     {
-        const LightCluster rootCluster{.nodeIdx = 0, .mean = 0.0f, .variance = 0.0f};
-        const std::vector<LightCluster> clusters(m_MaxCutSize, rootCluster);
-        m_ClusterBuf = Buffer::createStructured(
-            m_Device, sizeof(LightCluster), m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None, clusters.data()
+        const std::vector<uint> clusterNodeIndices(m_MaxCutSize, 0);
+        m_ClusterNodeIdxBuf = Buffer::create(
+            m_Device, m_MaxCutSize * sizeof(uint), ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, clusterNodeIndices.data()
         );
-        m_ClusterBufCPU =
-            Buffer::createStructured(m_Device, sizeof(LightCluster), m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+        m_ClusterNodeIdxBufCPU = Buffer::create(m_Device, m_MaxCutSize * sizeof(uint), ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 
     if (!m_ClusterCdfBuf)
@@ -89,7 +79,7 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
     }
 
     m_LightBvh.setShaderData(var["gLightBVH"]);
-    var["gLightClusters"] = m_ClusterBuf;
+    var["gLightClusterNodeIndices"] = m_ClusterNodeIdxBuf;
     var["gLightClusterCdf"] = m_ClusterCdfBuf;
     var["AdaptiveLightSampler"]["gLightClusterCount"] = m_ClusterCount;
 }

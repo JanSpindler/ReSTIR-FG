@@ -26,8 +26,8 @@ private:
     LightBVHBuilder m_LightBvhBuilder;
     LightBVH m_LightBvh;
 
-    ref<Buffer> m_ClusterBuf;
-    ref<Buffer> m_ClusterBufCPU;
+    ref<Buffer> m_ClusterNodeIdxBuf;
+    ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
     ref<Buffer> m_ClusterCdfBufCPU;
 

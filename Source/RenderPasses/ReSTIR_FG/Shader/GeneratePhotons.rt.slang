@@ -76,7 +76,7 @@ Buffer<float> gSoftmaxWeights;
 
 // Adaptive light sampler
 LightBVH gLightBVH;
-StructuredBuffer<LightCluster> gLightClusters;
+Buffer<uint> gLightClusterNodeIndices;
 Buffer<float> gLightClusterCdf;
 
 enum class GenerationFlags // : uint32_t
@@ -263,17 +263,10 @@ uint SampleLightClusterIdx(inout SampleGenerator sg, inout float pdf)
 
 uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator sg, inout float pdf)
 {
-    // Get cluster
-    const LightCluster cluster = gLightClusters[clusterIdx];
-
-    // If cluster is leaf node return it
-    if (gLightBVH.isLeaf(cluster.nodeIdx))
-    {
-        return cluster.nodeIdx;
-    }
+    // Get cluster node
+    uint nodeIdx = gLightClusterNodeIndices[clusterIdx];
 
     // Traverse cluster subtree using importance sampling analog to stochastic lightcuts
-    uint nodeIdx = cluster.nodeIdx;
     while (!gLightBVH.isLeaf(nodeIdx)) // TODO: Maybe some safety mechanism to prevent infinite loop
     {
         const InternalNode node = gLightBVH.getInternalNode(nodeIdx);
