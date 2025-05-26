@@ -88,7 +88,7 @@ struct RadianceInfo
     uint leafNodeIdx; // If 0xFFFFFFFF, invalid.
     float radiance;
 };
-RWStructuredBuffer<RadianceInfo> gRadianceInfo;
+RWStructuredBuffer<RadianceInfo> gRadianceInfo[2];
 
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
@@ -771,8 +771,8 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
     // Store radiance info for adaptive light sampler
 #if ADAPTIVE_LIGHT_SAMPLER
     const uint linearIdx = launchIndex.y * launchDim.x + launchIndex.x;
-    gRadianceInfo[linearIdx].leafNodeIdx = 0;                  // TODO: Select correct leaf node idx
-    gRadianceInfo[linearIdx].radiance = Li; // TODO: How to collect with both fg and caustic
+    gRadianceInfo[0][linearIdx].leafNodeIdx = 0;    // TODO: Select correct leaf node idx
+    gRadianceInfo[0][linearIdx].radiance = Li;      // TODO: How to collect with both fg and caustic
 #endif
 }
 

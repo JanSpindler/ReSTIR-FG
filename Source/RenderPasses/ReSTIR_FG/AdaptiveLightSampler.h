@@ -32,8 +32,8 @@ private:
     ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
     ref<Buffer> m_ClusterCdfBufCPU;
-    ref<Buffer> m_RadianceInfoBuf;
-    ref<Buffer> m_RadianceInfoBufCPU;
+    ref<Buffer> m_RadianceInfoBuf[2];
+    ref<Buffer> m_RadianceInfoBufCPU[2];
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;

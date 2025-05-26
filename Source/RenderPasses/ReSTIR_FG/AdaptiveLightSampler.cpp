@@ -48,15 +48,18 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
         m_ClusterCdfBufCPU = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 
-    if (!m_RadianceInfoBuf)
+    for (uint idx = 0; idx < 2; ++idx)
     {
-        m_RadianceInfoBuf = Buffer::createStructured(
-            m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y,
-            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        m_RadianceInfoBufCPU = Buffer::createStructured(
-            m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y, ResourceBindFlags::None, Buffer::CpuAccess::Read
-        );
+        if (!m_RadianceInfoBuf[idx])
+        {
+            m_RadianceInfoBuf[idx] = Buffer::createStructured(
+                m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y,
+                ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+            );
+            m_RadianceInfoBufCPU[idx] = Buffer::createStructured(
+                m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y, ResourceBindFlags::None, Buffer::CpuAccess::Read
+            );
+        }
     }
 }
 
@@ -98,10 +101,12 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 {
-    var["gRadianceInfo"] = m_RadianceInfoBuf;
+    var["gRadianceInfo"][0ull] = m_RadianceInfoBuf[0];
+    var["gRadianceInfo"][1ull] = m_RadianceInfoBuf[1];
 }
 
 void AdaptiveLightSampler::ClearRadianceInfoBuf(RenderContext* pRenderContext) const
 {
-    pRenderContext->clearUAV(m_RadianceInfoBuf->getUAV().get(), uint4(0xFFFFFFFF));
+    pRenderContext->clearUAV(m_RadianceInfoBuf[0]->getUAV().get(), uint4(0xFFFFFFFF));
+    pRenderContext->clearUAV(m_RadianceInfoBuf[1]->getUAV().get(), uint4(0xFFFFFFFF));
 }
