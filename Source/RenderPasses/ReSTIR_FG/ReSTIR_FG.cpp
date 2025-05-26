@@ -1764,7 +1764,8 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer()->getUAV().get(), uint4(0));
     if (m_AdaptiveLightSampler.IsActive())
     {
-        m_AdaptiveLightSampler.ClearRadianceInfoBuf(pRenderContext);
+        m_AdaptiveLightSampler.ClearClusterStatBuf(pRenderContext);
+        m_AdaptiveLightSampler.ClearLeafRadianceBuf(pRenderContext);
     }
 
     // Defines

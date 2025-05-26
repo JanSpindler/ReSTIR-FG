@@ -21,8 +21,9 @@ public:
 
     void SetGeneratePhotonsVars(const ShaderVar& var) const;
     void SetCollectPhotonsVars(const ShaderVar& var) const;
-    void ClearRadianceInfoBuf(RenderContext* pRenderContext) const;
-
+    void ClearClusterStatBuf(RenderContext* pRenderContext) const;
+    void ClearLeafRadianceBuf(RenderContext* pRenderContext) const;
+    
 private:
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;
@@ -32,8 +33,10 @@ private:
     ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
     ref<Buffer> m_ClusterCdfBufCPU;
-    ref<Buffer> m_RadianceInfoBuf[2];
-    ref<Buffer> m_RadianceInfoBufCPU[2];
+    ref<Buffer> m_ClusterStatsBuf;
+    ref<Buffer> m_ClusterStatsBufCPU;
+    ref<Buffer> m_LeafRadianceBuf;
+    ref<Buffer> m_LeafRadianceBufCPU;
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;

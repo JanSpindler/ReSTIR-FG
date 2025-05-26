@@ -83,12 +83,14 @@ Buffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gFirstHitCollectionCounts;
 
 // Adaptive light sampler
-struct RadianceInfo
+struct ClusterStats
 {
-    uint leafNodeIdx; // If 0xFFFFFFFF, invalid.
-    float radiance;
+    uint count;
+    float s1;
+    float s2;
 };
-RWStructuredBuffer<RadianceInfo> gRadianceInfo[2];
+RWBuffer<float> gLeafRadiance;
+RWStructuredBuffer<ClusterStats> gClusterStats;
 
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
@@ -427,7 +429,10 @@ float3 stochPhotonContribution(
         float radius = instanceIndex == 0 ? gPhotonRadius.x : gPhotonRadius.y;
         float radiusWeight = 1.0 / (radius * radius);
         if (NdotL > kMinCosTheta)
-            radiance += max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+        {
+            const float3 photonContribution = max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+            radiance += photonContribution;
+        }
     }
 
     // Weight output radiance with number of photons for this pixel.
@@ -767,13 +772,6 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
 #endif //USE_REDUCED_RESERVOIR_FORMAT
 
     gFGSampleData[index2Dto1D(launchIndex, launchDim.x)] = fgData;
-
-    // Store radiance info for adaptive light sampler
-#if ADAPTIVE_LIGHT_SAMPLER
-    const uint linearIdx = launchIndex.y * launchDim.x + launchIndex.x;
-    gRadianceInfo[0][linearIdx].leafNodeIdx = 0;    // TODO: Select correct leaf node idx
-    gRadianceInfo[0][linearIdx].radiance = Li;      // TODO: How to collect with both fg and caustic
-#endif
 }
 
 [shader("raygeneration")]

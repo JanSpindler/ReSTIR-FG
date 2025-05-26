@@ -1,10 +1,11 @@
 #include "AdaptiveLightSampler.h"
 #include <span>
 
-struct RadianceInfo
+struct ClusterStats
 {
-    uint leafNodeIdx; // If 0xFFFFFFFF, invalid.
-    float radiance;
+    uint count;
+    float s1;
+    float s2;
 };
 
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
@@ -13,6 +14,7 @@ AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
 
 void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
+    // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
     if (lightCollection->getTotalLightCount() > 0)
     {
@@ -20,6 +22,12 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
         m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
         FALCOR_ASSERT(m_LightBvh.isValid());
     }
+
+    // Reset buffers
+    m_ClusterNodeIdxBuf.reset();
+    m_ClusterCdfBuf.reset();
+    m_ClusterStatsBuf.reset();
+    m_LeafRadianceBuf.reset();
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
@@ -48,18 +56,22 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
         m_ClusterCdfBufCPU = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 
-    for (uint idx = 0; idx < 2; ++idx)
+    if (!m_ClusterStatsBuf)
     {
-        if (!m_RadianceInfoBuf[idx])
-        {
-            m_RadianceInfoBuf[idx] = Buffer::createStructured(
-                m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y,
-                ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-            );
-            m_RadianceInfoBufCPU[idx] = Buffer::createStructured(
-                m_Device, sizeof(RadianceInfo), screenSize.x * screenSize.y, ResourceBindFlags::None, Buffer::CpuAccess::Read
-            );
-        }
+        m_ClusterStatsBuf = Buffer::createStructured(
+            m_Device, sizeof(ClusterStats), m_MaxCutSize, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+        );
+        m_ClusterStatsBufCPU =
+            Buffer::createStructured(m_Device, sizeof(ClusterStats), m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+    }
+
+    if (!m_LeafRadianceBuf)
+    {
+        // Allocate memory for all nodes even when only using leaf nodes because of simpler indexing
+        const size_t nodeCount = m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount;
+        m_LeafRadianceBuf =
+            Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+        m_LeafRadianceBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 }
 
@@ -101,12 +113,16 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 {
-    var["gRadianceInfo"][0ull] = m_RadianceInfoBuf[0];
-    var["gRadianceInfo"][1ull] = m_RadianceInfoBuf[1];
+    var["gClusterStats"] = m_ClusterStatsBuf;
+    var["gLeafRadiance"] = m_LeafRadianceBuf;
 }
 
-void AdaptiveLightSampler::ClearRadianceInfoBuf(RenderContext* pRenderContext) const
+void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
 {
-    pRenderContext->clearUAV(m_RadianceInfoBuf[0]->getUAV().get(), uint4(0xFFFFFFFF));
-    pRenderContext->clearUAV(m_RadianceInfoBuf[1]->getUAV().get(), uint4(0xFFFFFFFF));
+    pRenderContext->clearUAV(m_ClusterStatsBuf->getUAV().get(), float4(0.0f));
+}
+
+void AdaptiveLightSampler::ClearLeafRadianceBuf(RenderContext* pRenderContext) const
+{
+    pRenderContext->clearUAV(m_LeafRadianceBuf->getUAV().get(), float4(0.0f));
 }
