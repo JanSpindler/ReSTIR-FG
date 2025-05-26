@@ -244,7 +244,6 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     if (firstHitIdx < gMaxFirstHitPhotonCount)
     {
         InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
-        //InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], instanceIdx == 0 ? 1u : 10u);
     }
 }
 
@@ -280,11 +279,6 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     {
         IgnoreHit();
     }
-
-    // Add to first hit photon collection count
-#if TRACK_FIRST_HIT_PHOTONS
-    TrackPhotonCollection(instanceIndex, primIndex);
-#endif // TRACK_FIRST_HIT_PHOTONS
 
     //
     uint counter = rayData.counter & 0xFFFFFF;  // Mask out the flags
@@ -337,11 +331,6 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
         IgnoreHit();
     }
 
-    // Add to first hit photon collection count
-#if TRACK_FIRST_HIT_PHOTONS
-    TrackPhotonCollection(instanceIdx, primIndex);
-#endif // TRACK_FIRST_HIT_PHOTONS
-
     // Photon contribution
     uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
     let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
@@ -351,7 +340,13 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     float radiusWeight = 1.0 / (attribs.radiusSq);
     if (NdotL > kMinCosTheta)
     {
+        // Update radiance
         rayData.radiance += max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+
+        // Add to first hit photon collection count
+#if TRACK_FIRST_HIT_PHOTONS
+        TrackPhotonCollection(instanceIdx, primIndex);
+#endif // TRACK_FIRST_HIT_PHOTONS
     }
 
     // Exit
@@ -430,8 +425,14 @@ float3 stochPhotonContribution(
         float radiusWeight = 1.0 / (radius * radius);
         if (NdotL > kMinCosTheta)
         {
+            // Accumulate radiance
             const float3 photonContribution = max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
             radiance += photonContribution;
+
+            // Add to first hit photon collection count
+#if TRACK_FIRST_HIT_PHOTONS
+            TrackPhotonCollection(instanceIndex, photonIndex);
+#endif // TRACK_FIRST_HIT_PHOTONS
         }
     }
 
