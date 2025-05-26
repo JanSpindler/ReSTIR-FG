@@ -40,7 +40,6 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/OptimizeGaussians.cs.slang
 	Shader/CalculateSoftmaxWeights.cs.slang
     Shader/CountCausticClusters.cs.slang
-    Shader/AdaptiveLightSamplerHelper.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

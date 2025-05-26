@@ -1290,7 +1290,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     m_GaussianPhotonGuiding.PrepareBuffers(mScreenRes, pRenderContext, mNumMaxPhotons);
 
     // Adaptive light sampling
-    m_AdaptiveLightSampler.PrepareBuffers(pRenderContext);
+    m_AdaptiveLightSampler.PrepareBuffers(pRenderContext, mScreenRes);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1666,7 +1666,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var["gSoftmaxWeights"] = m_GaussianPhotonGuiding.GetSoftmaxBuffer();
 
     // Adaptive light sampler buffers
-    m_AdaptiveLightSampler.SetGeneratePhotonsVars(var);
+    if (m_AdaptiveLightSampler.IsActive())
+    {
+        m_AdaptiveLightSampler.SetGeneratePhotonsVars(var);
+    }
 
     // Trace the photons
     if (traceScene)
@@ -1759,6 +1762,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Clear first hit collection counts
     pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer()->getUAV().get(), uint4(0));
+    if (m_AdaptiveLightSampler.IsActive())
+    {
+        m_AdaptiveLightSampler.ClearRadianceInfoBuf(pRenderContext);
+    }
 
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
@@ -1782,6 +1789,9 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
         "TRACK_FIRST_HIT_PHOTONS",
         m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
     );
+
+    // Adaptive light sampler defines
+    mCollectPhotonPass.pProgram->addDefine("ADAPTIVE_LIGHT_SAMPLER", m_AdaptiveLightSampler.IsActive() ? "1" : "0");
 
     // Program vars
     if (!mCollectPhotonPass.pVars)
@@ -1842,6 +1852,12 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
     var["gFirstHitCollectionCounts"] = m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer();
     var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_GaussianPhotonGuiding.GetMaxFirstHitPhotonCount();
+
+    // Adaptive light sampler
+    if (m_AdaptiveLightSampler.IsActive())
+    {
+        m_AdaptiveLightSampler.SetCollectPhotonsVars(var);
+    }
 
     // Bind reservoir and light buffer depending on the boost buffer
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];

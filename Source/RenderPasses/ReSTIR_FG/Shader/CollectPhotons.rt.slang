@@ -1,6 +1,5 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-#include "nvapi/nvHLSLExtns.h"
 
 import Scene.Raytracing;
 import Scene.Intersection;
@@ -82,6 +81,14 @@ Texture2D<float4> gCausticPrev;
 // 3D gaussian photon guiding
 Buffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gFirstHitCollectionCounts;
+
+// Adaptive light sampler
+struct RadianceInfo
+{
+    uint leafNodeIdx; // If 0xFFFFFFFF, invalid.
+    float radiance;
+};
+RWStructuredBuffer<RadianceInfo> gRadianceInfo;
 
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
@@ -730,7 +737,7 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
     Reservoir r = Reservoir(gReservoir[launchIndex]);
     r.M = 1; // Set M to the right value
 
-    float Li = luminance(fgRadiance);
+    const float Li = luminance(fgRadiance);
     r.targetFunc *= Li; // Add the missing parts of the targetFunc (Li)
 
     // Create the final gather sample
@@ -760,6 +767,13 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
 #endif //USE_REDUCED_RESERVOIR_FORMAT
 
     gFGSampleData[index2Dto1D(launchIndex, launchDim.x)] = fgData;
+
+    // Store radiance info for adaptive light sampler
+#if ADAPTIVE_LIGHT_SAMPLER
+    const uint linearIdx = launchIndex.y * launchDim.x + launchIndex.x;
+    gRadianceInfo[linearIdx].leafNodeIdx = 0;                  // TODO: Select correct leaf node idx
+    gRadianceInfo[linearIdx].radiance = Li; // TODO: How to collect with both fg and caustic
+#endif
 }
 
 [shader("raygeneration")]
@@ -781,14 +795,14 @@ void rayGen()
     rayData.packedHitInfo = packedHit;
 #endif // !USE_STOCHASTIC_COLLECT
     HitInfo hit = HitInfo(packedHit);
-    bool valid = hit.isValid(); // Check if the ray is valid
+    const bool valid = hit.isValid(); // Check if the ray is valid
 
     // Get vertex data for the world position
     TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
     if (gCollectCaustic)
     {
-        float4 viewTmp =gView[launchIndex];
+        float4 viewTmp = gView[launchIndex];
         float3 view = -viewTmp.xyz;
         bool collectDirect = viewTmp.w > 0.1;
 

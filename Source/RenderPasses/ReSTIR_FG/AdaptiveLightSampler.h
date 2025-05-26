@@ -12,7 +12,7 @@ public:
     AdaptiveLightSampler(ref<Device> device);
 
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
-    void PrepareBuffers(RenderContext* renderContext);
+    void PrepareBuffers(RenderContext* renderContext, const uint2 screenSize);
     bool RenderUI(Gui::Widgets& widget);
 
     void Run(RenderContext* pRenderContext);
@@ -20,6 +20,8 @@ public:
     constexpr bool IsActive() const { return m_Active; }
 
     void SetGeneratePhotonsVars(const ShaderVar& var) const;
+    void SetCollectPhotonsVars(const ShaderVar& var) const;
+    void ClearRadianceInfoBuf(RenderContext* pRenderContext) const;
 
 private:
     ref<Device> m_Device;
@@ -30,6 +32,8 @@ private:
     ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
     ref<Buffer> m_ClusterCdfBufCPU;
+    ref<Buffer> m_RadianceInfoBuf;
+    ref<Buffer> m_RadianceInfoBufCPU;
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;

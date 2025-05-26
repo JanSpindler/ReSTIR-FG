@@ -17,7 +17,6 @@ import FinalGatherData;
 import Hash;
 import GaussianHelper;
 import Rendering.Lights.LightBVH;
-import AdaptiveLightSamplerHelper;
 
 cbuffer PerFrame
 {
