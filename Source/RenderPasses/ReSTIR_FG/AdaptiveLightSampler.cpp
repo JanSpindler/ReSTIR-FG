@@ -16,9 +16,9 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
 {
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
+    m_LightBvh = LightBVH(m_Device, lightCollection);
     if (lightCollection->getTotalLightCount() > 0)
     {
-        m_LightBvh = LightBVH(m_Device, lightCollection);
         m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
         FALCOR_ASSERT(m_LightBvh.isValid());
     }
@@ -68,7 +68,7 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
     if (!m_LeafRadianceBuf)
     {
         // Allocate memory for all nodes even when only using leaf nodes because of simpler indexing
-        const size_t nodeCount = m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount;
+        const size_t nodeCount = std::max<size_t>(1, m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount);
         m_LeafRadianceBuf =
             Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         m_LeafRadianceBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
