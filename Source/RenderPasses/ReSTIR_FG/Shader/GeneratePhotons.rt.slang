@@ -77,6 +77,7 @@ Buffer<float> gSoftmaxWeights;
 LightBVH gLightBVH;
 Buffer<uint> gLightClusterNodeIndices;
 Buffer<float> gLightClusterCdf;
+RWBuffer<uint> gPhotonLeafMap[2];
 
 enum class GenerationFlags // : uint32_t
 {
@@ -296,27 +297,27 @@ uint SampleTriangleIdxFromLeafNode(const uint leafNodeIdx, inout SampleGenerator
     return gLightBVH.getNodeTriangleIndex(node, idx);
 }
 
-uint SampleTriangleIdxFromLightBVH(inout SampleGenerator sg, out float pdf)
+uint SampleTriangleIdxFromLightBVH(inout SampleGenerator sg, out float pdf, out uint leafNodeIdx)
 {
     // Sample cluster
     pdf = 1.0f;
     const uint clusterIdx = SampleLightClusterIdx(sg, pdf);
 
     // Sample leaf node from cluster
-    const uint leafNodeIdx = SampleLeafNodeIdxFromCluster(clusterIdx, sg, pdf);
+    leafNodeIdx = SampleLeafNodeIdxFromCluster(clusterIdx, sg, pdf);
 
     // Sample triangle index from leaf node
-    const uint triangleIdx = SampleTriangleIdxFromLeafNode(leafNodeIdx, sg, pdf);
-    return triangleIdx;
+    return SampleTriangleIdxFromLeafNode(leafNodeIdx, sg, pdf);
 }
 
 // -----------------------------------------------------------------------
 
 #if USE_EMISSIVE_LIGHT  // Function is only valid if the emissive sampler is set
-bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample pls, out uint lightIdx)
+bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample pls, out uint lightIdx, out uint leafNodeIdx)
 {
     // Init
     pls = {};
+    leafNodeIdx = 0xFFFFFFFF;
 
     // Return if not emissive light is present
     if (gScene.lightCollection.isEmpty())
@@ -329,7 +330,7 @@ bool createLightSampleGeometric(inout SampleGenerator sg, out PhotonLightSample 
     float triangleSelectionPdf = 1.0f;
 #if ADAPTIVE_LIGHT_SAMPLER
     // Sample triangle index from light BVH using adaptive light sampler
-    triangleIndex = SampleTriangleIdxFromLightBVH(sg, triangleSelectionPdf);
+    triangleIndex = SampleTriangleIdxFromLightBVH(sg, triangleSelectionPdf, leafNodeIdx);
 #else
     // Randomly pick a triangle out of the global list with uniform probability
     const uint triangleCount = gScene.lightCollection.triangleCount;
@@ -637,11 +638,12 @@ bool GeneratePhotonGeometric(
     inout SampleGenerator lightSg,
     inout PhotonLightSample pls,
     out uint lightIdx,
+    out uint leafNodeIdx,
     inout float firstHitSamplingPdf,
     inout RayDesc ray)
 {
     // Sample emissive light
-    if (!createLightSampleGeometric(lightSg, pls, lightIdx))
+    if (!createLightSampleGeometric(lightSg, pls, lightIdx, leafNodeIdx))
     {
         return false;
     }
@@ -703,6 +705,7 @@ void rayGen()
     PhotonLightSample pls;
     uint lightIdx = 0;
     float firstHitSamplingPdf = 0.0f;
+    uint leafNodeIdx = 0xFFFFFFFF;
 
 #if USE_EMISSIVE_LIGHT
     if (gFlags & (uint)GenerationFlags::AnalyticLight)
@@ -716,7 +719,7 @@ void rayGen()
 #if USE_EMISSIVE_LIGHT  
     else
     {
-        if (!GeneratePhotonGeometric(lightSg, pls, lightIdx, firstHitSamplingPdf, ray))
+        if (!GeneratePhotonGeometric(lightSg, pls, lightIdx, leafNodeIdx, firstHitSamplingPdf, ray))
         {
             return;
         }
@@ -839,19 +842,27 @@ void rayGen()
                 // Only store photon if the buffer space allows it
                 if (photonIndex <= kPhotonBufferSize[photonType])
                 {
-                    // Store photon
+                    // Store photon AABB
                     AABB photonAABB = AABB(photonPos - gPhotonRadius[photonType], photonPos + gPhotonRadius[photonType]);
                     gPhotonAABB[photonType][photonIndex] = photonAABB;
+
+                    // Store photon data
                     PhotonData pd = PhotonData();
                     pd.flux = photon.flux;
                     pd.dir = -photon.dir;
                     pd.packedNormal = rayData.packedNormal;
                     pd.isFirstHit = i == 0;
-                
                     gPackedPhotonData[photonType][photonIndex] = pd.pack();
 
                     // Store mapping from photon index to first hit index
+#if TRACK_FIRST_HIT_PHOTONS
                     gPhotonFirstHitMap[photonType][photonIndex] = firstHitIndex;
+#endif
+
+                    // Store mapping to leaf node of light tree for adaptive light sampler
+#if ADAPTIVE_LIGHT_SAMPLER
+                    gPhotonLeafMap[photonType][photonIndex] = leafNodeIdx;
+#endif
                 }
             }
         }

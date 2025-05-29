@@ -19,17 +19,16 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
     m_LightBvh = LightBVH(m_Device, lightCollection);
-    if (lightCollection->getTotalLightCount() > 0)
+    if (lightCollection->getTotalLightCount() == 0)
     {
         return;
     }
     m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
     FALCOR_ASSERT(m_LightBvh.isValid());
 
-    // Node cluster map
+    // Init vector size
     m_ClusterNodeMap.resize(m_MaxCutSize);
     m_ClusterStats.resize(m_MaxCutSize);
-    UpdateNodeClusterMap(pRenderContext);
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
@@ -81,6 +80,7 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
         m_NodeClusterMapBuf =
             Buffer::create(m_Device, sizeof(uint) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         m_NodeClusterMapBufCPU = Buffer::create(m_Device, sizeof(uint) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+        UpdateNodeClusterMap(pRenderContext); // Assumes SetScene was already executed
     }
 
     for (size_t idx = 0; idx < 2; ++idx)
@@ -131,6 +131,8 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
     m_LightBvh.setShaderData(var["gLightBVH"]);
     var["gLightClusterNodeIndices"] = m_ClusterNodeIdxBuf;
     var["gLightClusterCdf"] = m_ClusterCdfBuf;
+    var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
+    var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
     var["AdaptiveLightSampler"]["gLightClusterCount"] = m_ClusterCount;
 }
 
