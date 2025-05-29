@@ -26,8 +26,7 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
     FALCOR_ASSERT(m_LightBvh.isValid());
 
-    // Init vector size
-    m_ClusterNodeMap.resize(m_MaxCutSize);
+    // Init vector
     m_ClusterStats.resize(m_MaxCutSize);
 }
 
@@ -140,6 +139,9 @@ void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 {
     var["gClusterStats"] = m_ClusterStatsBuf;
     var["gLeafRadiance"] = m_LeafRadianceBuf;
+    var["gNodeClusterMap"] = m_NodeClusterMapBuf;
+    var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
+    var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
 }
 
 void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
@@ -168,14 +170,14 @@ void AdaptiveLightSampler::UpdateNodeClusterMap(RenderContext* pRenderContext)
     m_LightBvh.traverseBVH(setInvalid, setInvalid, 0);
 
     // For each cluster set the corresponding reference of the children
-    for (const uint clusterNodeIdx : m_ClusterNodeMap)
+    for (size_t clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
     {
         const LightBVH::NodeFunction setClusterMap = [&](const LightBVH::NodeLocation& nodeLoc)
         {
-            nodeClusterMap[nodeLoc.nodeIndex] = clusterNodeIdx;
+            nodeClusterMap[nodeLoc.nodeIndex] = clusterIdx;
             return true;
         };
-        m_LightBvh.traverseBVH(setClusterMap, setClusterMap, clusterNodeIdx);
+        m_LightBvh.traverseBVH(setClusterMap, setClusterMap, clusterIdx);
     }
 
     // Copy to gpu buffer

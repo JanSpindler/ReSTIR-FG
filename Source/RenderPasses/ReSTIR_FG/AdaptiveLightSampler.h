@@ -52,7 +52,6 @@ private:
     uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
 
-    std::vector<uint> m_ClusterNodeMap;
     std::vector<ClusterStats> m_ClusterStats;
 
     size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }

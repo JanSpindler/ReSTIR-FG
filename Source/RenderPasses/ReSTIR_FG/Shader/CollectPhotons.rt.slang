@@ -91,6 +91,8 @@ struct ClusterStats
 };
 RWBuffer<float> gLeafRadiance;
 RWStructuredBuffer<ClusterStats> gClusterStats;
+Buffer<uint> gPhotonLeafMap[2];
+Buffer<uint> gNodeClusterMap;
 
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
@@ -433,6 +435,17 @@ float3 stochPhotonContribution(
 #if TRACK_FIRST_HIT_PHOTONS
             TrackPhotonCollection(instanceIndex, photonIndex);
 #endif // TRACK_FIRST_HIT_PHOTONS
+
+#if ADAPTIVE_LIGHT_SAMPLER
+            const uint leafNodeIdx = gPhotonLeafMap[instanceIndex][photonIndex];
+            if (leafNodeIdx != 0xFFFFFFFF)
+            {
+                const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
+                if (clusterIdx != 0xFFFFFFFF)
+                {
+                }
+            }
+#endif
         }
     }
 
