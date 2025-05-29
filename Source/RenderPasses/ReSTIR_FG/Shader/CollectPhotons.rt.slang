@@ -1,5 +1,6 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
+#include "nvapi/nvHLSLExtns.h"
 
 import Scene.Raytracing;
 import Scene.Intersection;
@@ -89,7 +90,7 @@ struct ClusterStats
     float s1;
     float s2;
 };
-RWBuffer<float> gLeafRadiance;
+RWByteAddressBuffer gLeafRadiance;
 RWStructuredBuffer<ClusterStats> gClusterStats;
 Buffer<uint> gPhotonLeafMap[2];
 Buffer<uint> gNodeClusterMap;
@@ -443,6 +444,8 @@ float3 stochPhotonContribution(
                 const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
                 if (clusterIdx != 0xFFFFFFFF)
                 {
+                    const float lum = luminance(photonContribution);
+                    NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
                 }
             }
 #endif
