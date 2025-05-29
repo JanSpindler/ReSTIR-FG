@@ -1290,7 +1290,7 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
     m_GaussianPhotonGuiding.PrepareBuffers(mScreenRes, pRenderContext, mNumMaxPhotons);
 
     // Adaptive light sampling
-    m_AdaptiveLightSampler.PrepareBuffers(pRenderContext, mScreenRes);
+    m_AdaptiveLightSampler.PrepareBuffers(pRenderContext, mScreenRes, mNumMaxPhotons);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()

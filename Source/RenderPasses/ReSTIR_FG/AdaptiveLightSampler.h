@@ -12,7 +12,7 @@ public:
     AdaptiveLightSampler(ref<Device> device);
 
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
-    void PrepareBuffers(RenderContext* renderContext, const uint2 screenSize);
+    void PrepareBuffers(RenderContext* renderContext, const uint2 screenSize, const uint2 photonCounts);
     bool RenderUI(Gui::Widgets& widget);
 
     void Run(RenderContext* pRenderContext);
@@ -25,6 +25,13 @@ public:
     void ClearLeafRadianceBuf(RenderContext* pRenderContext) const;
     
 private:
+    struct ClusterStats
+    {
+        uint count;
+        float s1;
+        float s2;
+    };
+
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;
     LightBVH m_LightBvh;
@@ -37,8 +44,18 @@ private:
     ref<Buffer> m_ClusterStatsBufCPU;
     ref<Buffer> m_LeafRadianceBuf;
     ref<Buffer> m_LeafRadianceBufCPU;
+    ref<Buffer> m_NodeClusterMapBuf;
+    ref<Buffer> m_NodeClusterMapBufCPU;
+    ref<Buffer> m_PhotonLeafMapBuf[2]; // One for global photons one for caustic photons
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
+
+    std::vector<uint> m_ClusterNodeMap;
+    std::vector<ClusterStats> m_ClusterStats;
+
+    size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }
+
+    void UpdateNodeClusterMap(RenderContext* pRenderContext);
 };

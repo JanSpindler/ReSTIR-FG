@@ -1,36 +1,38 @@
 #include "AdaptiveLightSampler.h"
 #include <span>
 
-struct ClusterStats
-{
-    uint count;
-    float s1;
-    float s2;
-};
-
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
     : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
 {}
 
 void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
-    // Build tree
-    const auto lightCollection = pScene->getLightCollection(pRenderContext);
-    m_LightBvh = LightBVH(m_Device, lightCollection);
-    if (lightCollection->getTotalLightCount() > 0)
-    {
-        m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
-        FALCOR_ASSERT(m_LightBvh.isValid());
-    }
-
     // Reset buffers
     m_ClusterNodeIdxBuf.reset();
     m_ClusterCdfBuf.reset();
     m_ClusterStatsBuf.reset();
     m_LeafRadianceBuf.reset();
+    m_NodeClusterMapBuf.reset();
+    m_PhotonLeafMapBuf[0].reset();
+    m_PhotonLeafMapBuf[1].reset();
+
+    // Build tree
+    const auto lightCollection = pScene->getLightCollection(pRenderContext);
+    m_LightBvh = LightBVH(m_Device, lightCollection);
+    if (lightCollection->getTotalLightCount() > 0)
+    {
+        return;
+    }
+    m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
+    FALCOR_ASSERT(m_LightBvh.isValid());
+
+    // Node cluster map
+    m_ClusterNodeMap.resize(m_MaxCutSize);
+    m_ClusterStats.resize(m_MaxCutSize);
+    UpdateNodeClusterMap(pRenderContext);
 }
 
-void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
+void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
 {
     if (!m_ClusterNodeIdxBuf)
     {
@@ -65,13 +67,30 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
             Buffer::createStructured(m_Device, sizeof(ClusterStats), m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 
+    const size_t nodeCount = std::max<size_t>(1, GetTotalNodeCount());
     if (!m_LeafRadianceBuf)
     {
         // Allocate memory for all nodes even when only using leaf nodes because of simpler indexing
-        const size_t nodeCount = std::max<size_t>(1, m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount);
         m_LeafRadianceBuf =
             Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         m_LeafRadianceBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+    }
+
+    if (!m_NodeClusterMapBuf)
+    {
+        m_NodeClusterMapBuf =
+            Buffer::create(m_Device, sizeof(uint) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+        m_NodeClusterMapBufCPU = Buffer::create(m_Device, sizeof(uint) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+    }
+
+    for (size_t idx = 0; idx < 2; ++idx)
+    {
+        if (!m_PhotonLeafMapBuf[idx])
+        {
+            m_PhotonLeafMapBuf[idx] = Buffer::create(
+                m_Device, sizeof(uint) * photonCounts[idx], ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
+            );
+        }
     }
 }
 
@@ -100,7 +119,11 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
-    // TODO
+    // If clustering changed, update leaf cluster map
+    if (false)
+    {
+        UpdateNodeClusterMap(pRenderContext);
+    }
 }
 
 void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
@@ -125,4 +148,37 @@ void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) co
 void AdaptiveLightSampler::ClearLeafRadianceBuf(RenderContext* pRenderContext) const
 {
     pRenderContext->clearUAV(m_LeafRadianceBuf->getUAV().get(), float4(0.0f));
+}
+
+void AdaptiveLightSampler::UpdateNodeClusterMap(RenderContext* pRenderContext)
+{
+    // Map cpu buffer
+    std::span<uint> nodeClusterMap(
+        reinterpret_cast<uint*>(m_NodeClusterMapBufCPU->map(Buffer::MapType::WriteDiscard)), GetTotalNodeCount()
+    );
+
+    // Set all indices to default invalid (0xFFFFFFFF)
+    const LightBVH::NodeFunction setInvalid = [&](const LightBVH::NodeLocation& nodeLoc)
+    {
+        nodeClusterMap[nodeLoc.nodeIndex] = std::numeric_limits<uint>::max();
+        return true;
+    };
+    m_LightBvh.traverseBVH(setInvalid, setInvalid, 0);
+
+    // For each cluster set the corresponding reference of the children
+    for (const uint clusterNodeIdx : m_ClusterNodeMap)
+    {
+        const LightBVH::NodeFunction setClusterMap = [&](const LightBVH::NodeLocation& nodeLoc)
+        {
+            nodeClusterMap[nodeLoc.nodeIndex] = clusterNodeIdx;
+            return true;
+        };
+        m_LightBvh.traverseBVH(setClusterMap, setClusterMap, clusterNodeIdx);
+    }
+
+    // Copy to gpu buffer
+    pRenderContext->copyBufferRegion(m_NodeClusterMapBuf.get(), 0, m_NodeClusterMapBufCPU.get(), 0, nodeClusterMap.size_bytes());
+
+    // Unmap cpu buffer
+    m_NodeClusterMapBufCPU->unmap();
 }
