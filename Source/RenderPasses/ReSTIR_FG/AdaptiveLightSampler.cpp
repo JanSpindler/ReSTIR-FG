@@ -163,6 +163,7 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
     var["gLightClusterCdf"] = m_ClusterCdfBuf;
     var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
     var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
+    var["gNodeImportance"] = m_NodeImportanceBuf;
     var["AdaptiveLightSampler"]["gLightClusterCount"] = m_ClusterCount;
 }
 

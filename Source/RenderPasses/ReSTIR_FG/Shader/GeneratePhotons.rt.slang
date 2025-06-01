@@ -78,6 +78,7 @@ LightBVH gLightBVH;
 Buffer<uint> gLightClusterNodeIndices;
 Buffer<float> gLightClusterCdf;
 RWBuffer<uint> gPhotonLeafMap[2];
+Buffer<float> gNodeImportance;
 
 enum class GenerationFlags // : uint32_t
 {
@@ -272,8 +273,8 @@ uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator s
         const InternalNode node = gLightBVH.getInternalNode(nodeIdx);
 
         static const float EPSILON = 1e-3f; // Ensures unbiasedness through full support
-        const float leftImportance = 1.0f + EPSILON;
-        const float rightImportance = 1.0f + EPSILON;
+        const float leftImportance = gNodeImportance[nodeIdx + 1] + EPSILON;
+        const float rightImportance = gNodeImportance[node.rightChildIdx] + EPSILON;
         const float totalImportance = leftImportance + rightImportance;
 
         if (sampleNext1D(sg) < leftImportance / totalImportance)
