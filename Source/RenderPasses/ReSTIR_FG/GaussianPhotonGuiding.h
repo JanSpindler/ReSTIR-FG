@@ -100,7 +100,7 @@ private:
     // Initialization
     Initialization m_Initialization = Initialization::Robust;
     uint m_CausticClusterCount = 8;
-    uint m_GenCausticPointCount = 10000;
+    uint m_GenCausticPointCount = 1000;
     std::vector<float3> m_CausticClusters;
 
     // Optimization

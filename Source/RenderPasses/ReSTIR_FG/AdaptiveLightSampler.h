@@ -3,6 +3,7 @@
 #include <Falcor.h>
 #include <Rendering/Lights/LightBVHBuilder.h>
 #include <Utils/Math/ScalarTypes.h>
+#include <span>
 
 using namespace Falcor;
 
@@ -25,6 +26,14 @@ public:
     void ClearLeafRadianceBuf(RenderContext* pRenderContext) const;
     
 private:
+    class LightTree : public LightBVH
+    {
+    public:
+        LightTree(ref<Device> pDevice, const ref<const LightCollection>& pLightCollection) : LightBVH(pDevice, pLightCollection) {}
+
+        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float> & nodeImportance);
+    };
+
     struct ClusterStats
     {
         uint count;
@@ -34,7 +43,7 @@ private:
 
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;
-    LightBVH m_LightBvh;
+    LightTree m_LightBvh;
 
     ref<Buffer> m_ClusterNodeIdxBuf;
     ref<Buffer> m_ClusterNodeIdxBufCPU;
@@ -47,6 +56,8 @@ private:
     ref<Buffer> m_NodeClusterMapBuf;
     ref<Buffer> m_NodeClusterMapBufCPU;
     ref<Buffer> m_PhotonLeafMapBuf[2]; // One for global photons one for caustic photons
+    ref<Buffer> m_NodeImportanceBuf;
+    ref<Buffer> m_NodeImportanceBufCPU;
 
     bool m_Active = false;
     uint m_MaxCutSize = 32;

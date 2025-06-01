@@ -394,7 +394,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Collect information for adaptive light sampler
-    if (m_AdaptiveLightSampler.IsActive())
+    if (m_AdaptiveLightSampler.IsActive() and mFrameCount > 0)
     {
         m_AdaptiveLightSampler.Run(pRenderContext);
     }

@@ -1,5 +1,4 @@
 #include "AdaptiveLightSampler.h"
-#include <span>
 
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
     : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
@@ -15,15 +14,16 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     m_NodeClusterMapBuf.reset();
     m_PhotonLeafMapBuf[0].reset();
     m_PhotonLeafMapBuf[1].reset();
+    m_NodeImportanceBuf.reset();
 
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
-    m_LightBvh = LightBVH(m_Device, lightCollection);
+    m_LightBvh = LightTree(m_Device, lightCollection);
     if (lightCollection->getTotalLightCount() == 0)
     {
         return;
     }
-    m_LightBvhBuilder.build(pRenderContext, m_LightBvh);
+    m_LightBvhBuilder.build(pRenderContext, reinterpret_cast<LightBVH&>(m_LightBvh));
     FALCOR_ASSERT(m_LightBvh.isValid());
 
     // Init vector
@@ -91,6 +91,16 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
             );
         }
     }
+
+    if (!m_NodeImportanceBuf)
+    {
+        const std::vector<float> nodeImportance(nodeCount, 1.0f);
+        m_NodeImportanceBuf = Buffer::create(
+            m_Device, sizeof(float) * nodeCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nodeImportance.data()
+        );
+        m_NodeImportanceBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+    }
 }
 
 bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
@@ -118,10 +128,26 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
-    // Read radiance from leaf nodes
+    //
+    const size_t nodeCount = GetTotalNodeCount();
+
+    // Read radiance from leaf nodes to CPU
     pRenderContext->uavBarrier(m_LeafRadianceBuf.get());
     pRenderContext->copyBufferRegion(m_LeafRadianceBufCPU.get(), 0, m_LeafRadianceBuf.get(), 0, m_LeafRadianceBuf->getSize());
-    std::span<float> leafRadiance(reinterpret_cast<float*>(m_LeafRadianceBufCPU->map(Buffer::MapType::Read)), GetTotalNodeCount());
+    const std::span<float> leafRadiance(reinterpret_cast<float*>(m_LeafRadianceBufCPU->map(Buffer::MapType::Read)), nodeCount);
+
+    // Update node importance on CPU
+    std::span<float> nodeImportance(reinterpret_cast<float*>(m_NodeImportanceBufCPU->map(Buffer::MapType::WriteDiscard)), nodeCount);
+    m_LightBvh.UpdateNodeImportance(leafRadiance, nodeImportance);
+
+    // Copy node importance to GPU
+    pRenderContext->copyBufferRegion(m_NodeImportanceBuf.get(), 0, m_NodeClusterMapBufCPU.get(), 0, m_NodeImportanceBufCPU->getSize());
+
+    // Unmap buffers for importance update
+    m_NodeImportanceBufCPU->unmap();
+    m_LeafRadianceBufCPU->unmap();
+
+    // Clustering
 
     // If clustering changed, update leaf cluster map
     if (false)
@@ -190,4 +216,56 @@ void AdaptiveLightSampler::UpdateNodeClusterMap(RenderContext* pRenderContext)
 
     // Unmap cpu buffer
     m_NodeClusterMapBufCPU->unmap();
+}
+
+void AdaptiveLightSampler::LightTree::UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float>& nodeImportance)
+{
+    if (mNodes.empty())
+    {
+        return;
+    }
+
+    FALCOR_ASSERT(leafRadiance.size() == mNodes.size());
+    FALCOR_ASSERT(nodeImportance.size() == mNodes.size());
+
+    // Recursive lambda for post-order traversal.
+    // Captures 'this' to access mNodes, and spans by reference.
+    // The 'auto& self' parameter is a common pattern for recursive lambdas.
+    auto calculateImportanceRecursive =
+        [&](auto& self, uint32_t nodeIndex) -> float
+    {
+        FALCOR_ASSERT(nodeIndex < mNodes.size());
+        const PackedNode& currentNode = mNodes[nodeIndex];
+
+        if (currentNode.isLeaf())
+        {
+            // For leaf nodes, importance is its radiance.
+            // leafRadiance and nodeImportance are indexed by nodeIndex.
+            FALCOR_ASSERT(nodeIndex < leafRadiance.size());
+            FALCOR_ASSERT(nodeIndex < nodeImportance.size());
+            nodeImportance[nodeIndex] = leafRadiance[nodeIndex];
+            return nodeImportance[nodeIndex];
+        }
+        else
+        {
+            // Internal node. Calculate importance as the sum of children's importances.
+            // Left child is always at nodeIndex + 1.
+            uint32_t leftChildIndex = nodeIndex + 1;
+            FALCOR_ASSERT(leftChildIndex < mNodes.size()); // Should hold for a valid BVH
+            float leftImportance = self(self, leftChildIndex);
+
+            // Right child offset is relative to current node's index.
+            uint32_t rightChildIndex = currentNode.getInternalNode().rightChildIdx;
+            FALCOR_ASSERT(rightChildIndex < mNodes.size()); // Should hold for a valid BVH
+            float rightImportance = self(self, rightChildIndex);
+
+            FALCOR_ASSERT(nodeIndex < nodeImportance.size());
+            nodeImportance[nodeIndex] = leftImportance + rightImportance;
+            return nodeImportance[nodeIndex];
+        }
+    };
+
+    // Start recursion from the root node (index 0).
+    // If mNodes is not empty, node 0 must exist.
+    calculateImportanceRecursive(calculateImportanceRecursive, 0);
 }
