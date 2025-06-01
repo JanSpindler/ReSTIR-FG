@@ -90,8 +90,9 @@ struct ClusterStats
     float s1;
     float s2;
 };
+RWBuffer<uint> gClusterSampleCount;
+RWByteAddressBuffer gClusterRadianceSq;
 RWByteAddressBuffer gLeafRadiance;
-RWStructuredBuffer<ClusterStats> gClusterStats;
 Buffer<uint> gPhotonLeafMap[2];
 Buffer<uint> gNodeClusterMap;
 
@@ -446,6 +447,9 @@ float3 stochPhotonContribution(
                 {
                     const float lum = luminance(photonContribution);
                     NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
+
+                    InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
+                    NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
                 }
             }
 #endif

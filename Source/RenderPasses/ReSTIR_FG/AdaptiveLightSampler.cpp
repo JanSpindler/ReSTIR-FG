@@ -1,4 +1,5 @@
 #include "AdaptiveLightSampler.h"
+#include <execution>
 
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
     : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
@@ -9,7 +10,8 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     // Reset buffers
     m_ClusterNodeIdxBuf.reset();
     m_ClusterCdfBuf.reset();
-    m_ClusterStatsBuf.reset();
+    m_ClusterSampleCountBuf.reset();
+    m_ClusterRadianceSqBuf.reset();
     m_LeafRadianceBuf.reset();
     m_NodeClusterMapBuf.reset();
     m_PhotonLeafMapBuf[0].reset();
@@ -27,7 +29,10 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     FALCOR_ASSERT(m_LightBvh.isValid());
 
     // Init vector
-    m_ClusterStats.resize(m_MaxCutSize);
+    m_ClusterNodeIndices.resize(m_MaxCutSize);
+    m_ClusterSampleCount.resize(m_MaxCutSize);
+    m_ClusterRadiance.reserve(m_MaxCutSize);
+    m_ClusterRadianceSq.resize(m_MaxCutSize);
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
@@ -56,13 +61,19 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
         m_ClusterCdfBufCPU = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 
-    if (!m_ClusterStatsBuf)
+    if (!m_ClusterSampleCountBuf)
     {
-        m_ClusterStatsBuf = Buffer::createStructured(
-            m_Device, sizeof(ClusterStats), m_MaxCutSize, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        m_ClusterStatsBufCPU =
-            Buffer::createStructured(m_Device, sizeof(ClusterStats), m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+        m_ClusterSampleCountBuf =
+            Buffer::create(m_Device, sizeof(uint) * m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+        m_ClusterSampleCountBufCPU =
+            Buffer::create(m_Device, sizeof(uint) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+    }
+
+    if (!m_ClusterRadianceSqBuf)
+    {
+        m_ClusterRadianceSqBuf = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize);
+        m_ClusterRadianceSqBufCPU =
+            Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 
     const size_t nodeCount = std::max<size_t>(1, GetTotalNodeCount());
@@ -138,19 +149,39 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 
     // Update node importance on CPU
     std::span<float> nodeImportance(reinterpret_cast<float*>(m_NodeImportanceBufCPU->map(Buffer::MapType::WriteDiscard)), nodeCount);
-    m_LightBvh.UpdateNodeImportance(leafRadiance, nodeImportance);
+    std::for_each(
+        std::execution::par_unseq, m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.begin() + m_ClusterCount,
+        [&](const uint clusterNodeIdx) { m_LightBvh.UpdateNodeImportance(leafRadiance, nodeImportance, clusterNodeIdx); }
+    );
 
     // Copy node importance to GPU
     pRenderContext->copyBufferRegion(m_NodeImportanceBuf.get(), 0, m_NodeClusterMapBufCPU.get(), 0, m_NodeImportanceBufCPU->getSize());
 
-    // Unmap buffers for importance update
+    // Read cluster stats from gpu
+    pRenderContext->uavBarrier(m_ClusterSampleCountBuf.get());
+    pRenderContext->copyBufferRegion(
+        m_ClusterSampleCountBufCPU.get(), 0, m_ClusterSampleCountBuf.get(), 0, m_ClusterSampleCountBuf->getSize()
+    );
+    const std::span<uint> clusterSampleCounts(reinterpret_cast<uint*>(m_ClusterSampleCountBufCPU->map(Buffer::MapType::Read)), m_ClusterCount);
+    pRenderContext->uavBarrier(m_ClusterRadianceSqBuf.get());
+    pRenderContext->copyBufferRegion(
+        m_ClusterRadianceSqBufCPU.get(), 0, m_ClusterRadianceSqBuf.get(), 0, m_ClusterRadianceSqBuf->getSize()
+    );
+    const std::span<float> clusterRadianceSq(
+        reinterpret_cast<float*>(m_ClusterRadianceSqBufCPU->map(Buffer::MapType::Read)), m_ClusterCount
+    );
+
+    // Clustering
+    const bool changeClustering = false;
+
+    // Unmap buffers
+    m_ClusterRadianceSqBufCPU->unmap();
+    m_ClusterSampleCountBufCPU->unmap();
     m_NodeImportanceBufCPU->unmap();
     m_LeafRadianceBufCPU->unmap();
 
-    // Clustering
-
     // If clustering changed, update leaf cluster map
-    if (false)
+    if (changeClustering)
     {
         UpdateNodeClusterMap(pRenderContext);
     }
@@ -169,7 +200,8 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 {
-    var["gClusterStats"] = m_ClusterStatsBuf;
+    var["gClusterSampleCount"] = m_ClusterSampleCountBuf;
+    var["gClusterRadianceSq"] = m_ClusterRadianceSqBuf;
     var["gLeafRadiance"] = m_LeafRadianceBuf;
     var["gNodeClusterMap"] = m_NodeClusterMapBuf;
     var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
@@ -178,7 +210,8 @@ void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
 {
-    pRenderContext->clearUAV(m_ClusterStatsBuf->getUAV().get(), float4(0.0f));
+    pRenderContext->clearUAV(m_ClusterSampleCountBuf->getUAV().get(), uint4(0));
+    pRenderContext->clearUAV(m_ClusterRadianceSqBuf->getUAV().get(), float4(0.0f));
 }
 
 void AdaptiveLightSampler::ClearLeafRadianceBuf(RenderContext* pRenderContext) const
@@ -219,7 +252,8 @@ void AdaptiveLightSampler::UpdateNodeClusterMap(RenderContext* pRenderContext)
     m_NodeClusterMapBufCPU->unmap();
 }
 
-void AdaptiveLightSampler::LightTree::UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float>& nodeImportance)
+void AdaptiveLightSampler::LightTree::UpdateNodeImportance(
+    const std::span<float>& leafRadiance, std::span<float>& nodeImportance, const uint nodeIdx)
 {
     if (mNodes.empty())
     {
@@ -268,5 +302,5 @@ void AdaptiveLightSampler::LightTree::UpdateNodeImportance(const std::span<float
 
     // Start recursion from the root node (index 0).
     // If mNodes is not empty, node 0 must exist.
-    calculateImportanceRecursive(calculateImportanceRecursive, 0);
+    calculateImportanceRecursive(calculateImportanceRecursive, nodeIdx);
 }

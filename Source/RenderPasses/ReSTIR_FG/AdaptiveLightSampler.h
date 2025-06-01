@@ -31,14 +31,7 @@ private:
     public:
         LightTree(ref<Device> pDevice, const ref<const LightCollection>& pLightCollection) : LightBVH(pDevice, pLightCollection) {}
 
-        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float> & nodeImportance);
-    };
-
-    struct ClusterStats
-    {
-        uint count;
-        float s1;
-        float s2;
+        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float> & nodeImportance, const uint nodeIdx);
     };
 
     ref<Device> m_Device;
@@ -49,8 +42,10 @@ private:
     ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
     ref<Buffer> m_ClusterCdfBufCPU;
-    ref<Buffer> m_ClusterStatsBuf;
-    ref<Buffer> m_ClusterStatsBufCPU;
+    ref<Buffer> m_ClusterSampleCountBuf;
+    ref<Buffer> m_ClusterSampleCountBufCPU;
+    ref<Buffer> m_ClusterRadianceSqBuf;
+    ref<Buffer> m_ClusterRadianceSqBufCPU;
     ref<Buffer> m_LeafRadianceBuf;
     ref<Buffer> m_LeafRadianceBufCPU;
     ref<Buffer> m_NodeClusterMapBuf;
@@ -63,7 +58,10 @@ private:
     uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
 
-    std::vector<ClusterStats> m_ClusterStats;
+    std::vector<uint> m_ClusterNodeIndices;
+    std::vector<uint> m_ClusterSampleCount;
+    std::vector<float> m_ClusterRadiance;
+    std::vector<float> m_ClusterRadianceSq;
 
     size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }
 
