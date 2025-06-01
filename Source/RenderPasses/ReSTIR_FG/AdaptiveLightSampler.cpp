@@ -118,6 +118,11 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
+    // Read radiance from leaf nodes
+    pRenderContext->uavBarrier(m_LeafRadianceBuf.get());
+    pRenderContext->copyBufferRegion(m_LeafRadianceBufCPU.get(), 0, m_LeafRadianceBuf.get(), 0, m_LeafRadianceBuf->getSize());
+    std::span<float> leafRadiance(reinterpret_cast<float*>(m_LeafRadianceBufCPU->map(Buffer::MapType::Read)), GetTotalNodeCount());
+
     // If clustering changed, update leaf cluster map
     if (false)
     {

@@ -393,6 +393,12 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         collectPhotons(pRenderContext, renderData);
     }
 
+    // Collect information for adaptive light sampler
+    if (m_AdaptiveLightSampler.IsActive())
+    {
+        m_AdaptiveLightSampler.Run(pRenderContext);
+    }
+
     // Count closest caustic clusters for robust initialization
     if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
     {
