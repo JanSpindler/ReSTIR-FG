@@ -62,6 +62,8 @@ private:
     std::vector<uint> m_ClusterSampleCount;
     std::vector<float> m_ClusterRadiance;
     std::vector<float> m_ClusterRadianceSq;
+    std::vector<float> m_ClusterQ;
+    std::vector<float> m_ClusterVariance;
 
     size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }
 

@@ -33,6 +33,8 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     m_ClusterSampleCount.resize(m_MaxCutSize);
     m_ClusterRadiance.reserve(m_MaxCutSize);
     m_ClusterRadianceSq.resize(m_MaxCutSize);
+    m_ClusterQ.resize(m_MaxCutSize);
+    m_ClusterVariance.resize(m_MaxCutSize);
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
@@ -173,6 +175,24 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 
     // Clustering
     const bool changeClustering = false;
+    float varianceSum = 0.0f;
+    for (uint clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
+    {
+        const float countF = static_cast<float>(math::max(1u, clusterSampleCounts[clusterIdx]));
+        const float mean = nodeImportance[m_ClusterNodeIndices[clusterIdx]] / countF;
+        const float expectedSquare = clusterRadianceSq[clusterIdx] / countF;
+        const float variance = expectedSquare - (mean * mean);
+        varianceSum += variance;
+        m_ClusterVariance[clusterIdx] = variance;
+    }
+    for (uint clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
+    {
+        const float countF = static_cast<float>(math::max(1u, clusterSampleCounts[clusterIdx]));
+        const float variance = m_ClusterVariance[clusterIdx];
+        const float term1 = 1.0f / (static_cast<float>(m_ClusterCount) * math::exp(-variance));
+        const float term2 = variance / varianceSum;
+        const float term3 = 1.0f - (1.0f / countF);
+    }
 
     // Unmap buffers
     m_ClusterRadianceSqBufCPU->unmap();
