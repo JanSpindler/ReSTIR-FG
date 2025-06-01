@@ -6,11 +6,13 @@
 class RandomGenerator
 {
 public:
-    static Falcor::float3 Float3()
+    static float Float()
     {
         std::uniform_real_distribution<float> dis(0.0f, 1.0f);
-        return Falcor::float3(dis(m_Gen), dis(m_Gen), dis(m_Gen));
+        return dis(m_Gen);
     }
+
+    static Falcor::float3 Float3() { return Falcor::float3(Float(), Float(), Float()); }
 
     static Falcor::uint UInt()
     {

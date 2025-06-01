@@ -1,5 +1,6 @@
 #include "AdaptiveLightSampler.h"
 #include <execution>
+#include "RandomGenerator.h"
 
 AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
     : m_Device(device), m_LightBvh(device, {}), m_LightBvhBuilder(LightBVHBuilder::Options())
@@ -174,8 +175,8 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
     );
 
     // Clustering
-    const bool changeClustering = false;
-    float varianceSum = 0.0f;
+    float varianceSum = 1e-6f;
+    uint newClusterCount = m_ClusterCount;
     for (uint clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
     {
         const float countF = static_cast<float>(math::max(1u, clusterSampleCounts[clusterIdx]));
@@ -192,6 +193,11 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
         const float term1 = 1.0f / (static_cast<float>(m_ClusterCount) * math::exp(-variance));
         const float term2 = variance / varianceSum;
         const float term3 = 1.0f - (1.0f / countF);
+        const float splitProb = term1 * term2 * term3;
+        if (newClusterCount < m_MaxCutSize and RandomGenerator::Float() < splitProb)
+        {
+            ++newClusterCount;
+        }
     }
 
     // Unmap buffers
@@ -201,7 +207,7 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
     m_LeafRadianceBufCPU->unmap();
 
     // If clustering changed, update leaf cluster map
-    if (changeClustering)
+    if (newClusterCount != m_ClusterCount)
     {
         UpdateNodeClusterMap(pRenderContext);
     }
