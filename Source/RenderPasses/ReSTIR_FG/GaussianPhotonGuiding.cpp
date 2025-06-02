@@ -4,6 +4,7 @@
 #include "FirstHitPhotonInfo.h"
 #include "calc_gradient.h"
 #include "dkm/dkm_parallel.hpp"
+#include <execution>
 
 static InteropBuffer CreateInteropBuffer(
     const ref<Device> pDevice,
@@ -283,6 +284,10 @@ void GaussianPhotonGuiding::ResetPhotonFirstHitMap()
 
 void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext)
 {
+    // Profile
+    logInfo("Generating caustic cluster");
+    FALCOR_PROFILE(renderContext, "GenerateCausticPoints");
+
     // Get vertex position
     ref<Vao> vao = m_Scene->getMeshVao();
     ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
@@ -310,13 +315,16 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
     );
 
     // Calculate caustic clusters
-    m_CausticClusters.clear();
-    for (const uint geometryInstanceID : m_CausticGeometryInstanceIDs)
-    {
-        GenerateCausticPoints(renderContext, geometryInstanceID, vertexData, indexData);
-    }
     const size_t totalCausticClusterCount = GetTotalCausticClusterCount();
-    FALCOR_ASSERT(m_CausticClusters.size() == totalCausticClusterCount);
+    m_CausticClusters.resize(totalCausticClusterCount);
+
+    std::vector<size_t> indices(m_CausticGeometryInstanceIDs.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::for_each(
+        std::execution::par_unseq, indices.begin(), indices.end(),
+        [&](const size_t geomInstanceIdx) { GenerateCausticPoints(renderContext, geomInstanceIdx, vertexData, indexData); }
+    );
 
     // Unmap buffers
     vbo->unmap();
@@ -603,16 +611,13 @@ void GaussianPhotonGuiding::CalculateSoftmaxWeightsPass(RenderContext* pRenderCo
 
 void GaussianPhotonGuiding::GenerateCausticPoints(
     RenderContext* pRenderContext,
-    const uint geometryInstanceID,
+    const uint geomInstanceIdx,
     const std::span<PackedStaticVertexData>& vertexData,
     const std::span<uint32_t>& indexData
 )
 {
-    // Profile
-    FALCOR_PROFILE(pRenderContext, "GenerateCausticPoints");
-
     // Get geometry instance info
-    // TODO: Cant retreive matrix but maybe not needed
+    const uint geometryInstanceID = m_CausticGeometryInstanceIDs[geomInstanceIdx];
     const uint geometryId = m_Scene->getGeometryInstance(geometryInstanceID).geometryID;
 
     // Get mesh info
@@ -678,9 +683,10 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
     }
 
     // Cluster
-    const auto [clusters, _] = dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(m_CausticClusterCount));
-    for (const std::array<float, 3>& cluster : clusters)
+    const auto [clusters, _] = dkm::kmeans_lloyd(causticPoints, dkm::clustering_parameters<float>(m_CausticClusterCount));
+    for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
     {
-        m_CausticClusters.push_back({cluster[0], cluster[1], cluster[2]});
+        const std::array<float, 3>&cluster = clusters[clusterIdx];
+        m_CausticClusters[geomInstanceIdx * m_CausticClusterCount + clusterIdx] = {cluster[0], cluster[1], cluster[2]};
     }
 }
