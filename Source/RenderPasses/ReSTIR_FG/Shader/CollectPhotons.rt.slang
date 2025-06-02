@@ -349,8 +349,24 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 
         // Add to first hit photon collection count
 #if TRACK_FIRST_HIT_PHOTONS
-        TrackPhotonCollection(instanceIdx, primIndex);
+        TrackPhotonCollection(instanceIndex, photonIndex);
 #endif // TRACK_FIRST_HIT_PHOTONS
+
+#if ADAPTIVE_LIGHT_SAMPLER
+        const uint leafNodeIdx = gPhotonLeafMap[instanceIndex][photonIndex];
+        if (leafNodeIdx != 0xFFFFFFFF)
+        {
+            const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
+            if (clusterIdx != 0xFFFFFFFF)
+            {
+                const float lum = luminance(photonContribution);
+                NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
+
+                InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
+                NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
+            }
+        }
+#endif
     }
 
     // Exit

@@ -24,20 +24,25 @@ public:
     void SetCollectPhotonsVars(const ShaderVar& var) const;
     void ClearClusterStatBuf(RenderContext* pRenderContext) const;
     void ClearLeafRadianceBuf(RenderContext* pRenderContext) const;
-    
+
 private:
     class LightTree : public LightBVH
     {
     public:
         LightTree(ref<Device> pDevice, const ref<const LightCollection>& pLightCollection) : LightBVH(pDevice, pLightCollection) {}
 
-        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float> & nodeImportance, const uint nodeIdx);
+        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float>& nodeImportance, const uint nodeIdx);
+
+        bool IsLeaf(const uint nodeIdx) const;
+        uint GetRightChildIdx(const uint nodeIdx) const;
     };
 
+    // Falcor objects
     ref<Device> m_Device;
     LightBVHBuilder m_LightBvhBuilder;
     LightTree m_LightBvh;
 
+    // Falcor buffers
     ref<Buffer> m_ClusterNodeIdxBuf;
     ref<Buffer> m_ClusterNodeIdxBufCPU;
     ref<Buffer> m_ClusterCdfBuf;
@@ -54,18 +59,24 @@ private:
     ref<Buffer> m_NodeImportanceBuf;
     ref<Buffer> m_NodeImportanceBufCPU;
 
+    // Stats
     bool m_Active = false;
-    uint m_MaxCutSize = 32;
+    static constexpr uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
 
+    // Learning rate
+    uint m_TimeStep = 1;
+    static constexpr float m_Beta = 4.0f;
+    static constexpr float m_Omega = 6.0f / 7.0f;
+
+    // CPU Buffer
     std::vector<uint> m_ClusterNodeIndices;
-    std::vector<uint> m_ClusterSampleCount;
-    std::vector<float> m_ClusterRadiance;
-    std::vector<float> m_ClusterRadianceSq;
-    std::vector<float> m_ClusterQ;
+    std::vector<float> m_ClusterImportance;
     std::vector<float> m_ClusterVariance;
 
     size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }
+    float GetAlpha() const { return 1.0f / (m_Beta * math::pow(static_cast<float>(m_TimeStep), m_Omega)); }
 
+    void UpdateClusterNodeIndices(RenderContext* pRenderContext);
     void UpdateNodeClusterMap(RenderContext* pRenderContext);
 };
