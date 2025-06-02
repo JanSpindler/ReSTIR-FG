@@ -40,6 +40,14 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/OptimizeGaussians.cs.slang
 	Shader/CalculateSoftmaxWeights.cs.slang
     Shader/CountCausticClusters.cs.slang
+
+    Shader/LoadShadingData.slang
+    Shader/Params.slang
+    Shader/PathReservoir.slang
+    Shader/PathTracer.slang
+    Shader/Shift.slang
+    Shader/TemporalPathRetrace.cs.slang
+    Shader/TemporalReuse.cs.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES
