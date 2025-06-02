@@ -202,7 +202,7 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
         const float variance = m_ClusterVariance[clusterIdx];
         const float splitProb =
             (1.0f / (static_cast<float>(m_ClusterCount) * math::exp(-variance))) * (variance / varianceSum) * (1.0f - (1.0f / countF));
-        if (newClusterCount < m_MaxCutSize and m_LightBvh.IsLeaf(clusterNodeIdx) and RandomGenerator::Float() < splitProb)
+        if (newClusterCount < m_MaxCutSize and !m_LightBvh.IsLeaf(clusterNodeIdx) and RandomGenerator::Float() < splitProb)
         {
             // Calculate cluster stats
             const float oldClusterImportance = m_ClusterImportance[clusterIdx];
