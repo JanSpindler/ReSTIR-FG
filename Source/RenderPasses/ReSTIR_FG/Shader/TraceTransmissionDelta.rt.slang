@@ -161,7 +161,7 @@ void rayGen()
     // Get first valid(diffuse) Surface
     for (uint i = 0; ((i < gMaxBounces) || gMaxBounces == 0) && hitInfo.isValid(); i++)
     {
-        ShadingData sd = loadShadingData(hitInfo, -viewDir, lod);
+        const ShadingData sd = loadShadingData(hitInfo, -viewDir, lod);
 
         // Get ray distance
         if (i == 0)
@@ -171,9 +171,9 @@ void rayGen()
         }
         
         // Get BSDF
-        uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
-        let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
-        let bsdfProperties = bsdf.getProperties(sd);
+        const uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
+        const let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
+        const let bsdfProperties = bsdf.getProperties(sd);
         
         // Write the reflectance on first hit
         if (i == 0 && (is_valid(gOutDiffuseReflectance) || is_valid(gOutDiffuseReflectance)))
@@ -191,9 +191,9 @@ void rayGen()
                 specularReflectance.xyz = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
                 specularReflectance.xyz = max(kDemodulateMinReflectance, specularReflectance.xyz);
             }
-            float diffLuminance = luminance(diffuseReflectance.xyz);
-            float specLuminance = luminance(specularReflectance.xyz);
-            float combined = diffLuminance + specLuminance;
+            const float diffLuminance = luminance(diffuseReflectance.xyz);
+            const float specLuminance = luminance(specularReflectance.xyz);
+            const float combined = diffLuminance + specLuminance;
             diffuseReflectance.w = diffLuminance / combined;
             specularReflectance.w = specLuminance / combined;
         }
@@ -212,22 +212,21 @@ void rayGen()
         }
         
         BSDFSample bsdfSample;
-
-        bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
+        const bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
         if (!validBSDF)
         {
             invalidSample = true;
         }
 
         // Determine if surface is diffuse
-        bool isTransmission = validBSDF ? bsdfSample.isLobe(LobeType::Transmission) : false;
-        float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
+        const bool isTransmission = validBSDF ? bsdfSample.isLobe(LobeType::Transmission) : false;
+        const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
             (bsdfProperties.diffuseReflectionAlbedo +
             bsdfProperties.specularReflectionAlbedo +
             bsdfProperties.diffuseTransmissionAlbedo +
             bsdfProperties.specularTransmissionAlbedo);
-        float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
-        bool hasDiffuseParts = gRequDiffParts ?
+        const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3.0f;
+        const bool hasDiffuseParts = gRequDiffParts ?
             (meanDiffuseProb > kDiffuseCutoff) || bsdfProperties.roughness > kRoughnessMax :
             true; // Check if surface is diffuse or above the roughness threshold
         isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
@@ -292,10 +291,10 @@ void rayGen()
     if (hitInfoDI.isValid())
     {
         // Load all needed data
-        ShadingData sd = loadShadingData(hitInfoDI, -viewDirDistDI.xyz, lod);
-        uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
-        let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
-        let bsdfProperties = bsdf.getProperties(sd);
+        const ShadingData sd = loadShadingData(hitInfoDI, -viewDirDistDI.xyz, lod);
+        const uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
+        const let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
+        const let bsdfProperties = bsdf.getProperties(sd);
     
         gRTXDI.setSurfaceData(launchIndex, sd.computeNewRayOrigin(), bsdfProperties.guideNormal, bsdfProperties.diffuseReflectionAlbedo, bsdfProperties.specularReflectance, bsdfProperties.roughness, viewDirDistDI.w);
     }
