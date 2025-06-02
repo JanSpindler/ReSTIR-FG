@@ -15,6 +15,8 @@ target_sources(ReSTIR_FG PRIVATE
     GaussianPhotonGuiding.cpp
     AdaptiveLightSampler.h
     AdaptiveLightSampler.cpp
+    PrefixRestir.h
+    PrefixRestir.cpp
 
     calc_gradient.cu
     calc_gradient.h
