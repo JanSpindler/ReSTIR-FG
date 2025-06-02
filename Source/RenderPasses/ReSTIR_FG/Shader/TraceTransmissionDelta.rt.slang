@@ -13,7 +13,7 @@ import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
 
-//Syntax Highlight
+// Syntax Highlight
 #ifndef USE_RTXDI
 #define USE_RTXDI 1
 #endif
@@ -61,11 +61,10 @@ static const bool kAlphaTest = USE_ALPHA_TEST;
 
 struct TraceData
 {
-    PackedHitInfo packedHitInfo; //< Reflection albedo of the current hit point
-    float distance; ///<Current hit distance
+    PackedHitInfo packedHitInfo; // Reflection albedo of the current hit point
+    float distance; // Current hit distance
     
-    /** Create ray payload with default parameters.
-    */
+    // Create ray payload with default parameters.
     static TraceData create()
     {
         TraceData d;
@@ -75,7 +74,7 @@ struct TraceData
     }
 };
 
-//Load in shading data from hit and direction
+// Load in shading data from hit and direction
 ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextureSampler lod)
 {
     const TriangleHit triangleHit = hit.getTriangleHit();
@@ -90,10 +89,10 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
 void miss(inout TraceData rayData : SV_RayPayload)
 {
     HitInfo hitInfo = { };
-    rayData.packedHitInfo = hitInfo.getData();  //Invalid hit
+    rayData.packedHitInfo = hitInfo.getData(); // Invalid hit
 }
 
-//Use anyhit for alpha test if activated
+// Use anyhit for alpha test if activated
 [shader("anyhit")]
 void anyHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
@@ -104,12 +103,15 @@ void anyHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersection
         VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
         uint materialID = gScene.getMaterialID(instanceID);
         if (gScene.materials.alphaTest(v, materialID, 0.f))
+        {
             IgnoreHit();
+        }
     }
 }
 
 [shader("closesthit")]
-void closestHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes){
+void closestHit(inout TraceData rayData : SV_RayPayload, BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
+{
     TriangleHit triangleHit;
     triangleHit.instanceID = getGeometryInstanceID();
     triangleHit.primitiveIndex = PrimitiveIndex();
@@ -133,7 +135,7 @@ void rayGen()
     float rayDist = 0.f;
     float3 thp = float3(1);
 
-    //Direct illumination 
+    // Direct illumination 
     HitInfo hitInfoDI = hitInfo;
     float4 viewDirDistDI = float4(viewDir, rayDist);
     float3 thpDI = thp;
@@ -144,44 +146,46 @@ void rayGen()
     bool isDiffuse = false;
 
     TraceData traceData = TraceData::create();
-    #if STORE_SAMPLE_GEN_STATE
-        SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
-    #else
-        SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 2 * 32);
-    #endif
+#if STORE_SAMPLE_GEN_STATE
+    SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
+#else
+    SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 2 * 32);
+#endif
     let lod = ExplicitLodTextureSampler(0.f);
     float hitT = 0.f;
     uint wasTracedMask = 0;
-    #if CAUSTIC_TEMPORAL_FILTER_ENABLED
-        CausticSurface causticSurface;
-    #endif
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+    CausticSurface causticSurface;
+#endif
     
-    //Get first valid(diffuse) Surface
+    // Get first valid(diffuse) Surface
     for (uint i = 0; ((i < gMaxBounces) || gMaxBounces == 0) && hitInfo.isValid(); i++)
     {
         ShadingData sd = loadShadingData(hitInfo, -viewDir, lod);
 
-        //Get ray distance
-        if(i==0){
+        // Get ray distance
+        if (i == 0)
+        {
             rayDist = distance(gScene.camera.getPosition(), sd.posW);
             viewDirDistDI.w = rayDist;
         }
-            
-
-        //Get BSDF
+        
+        // Get BSDF
         uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
         let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
         let bsdfProperties = bsdf.getProperties(sd);
         
-        //Write the reflectance on first hit
+        // Write the reflectance on first hit
         if (i == 0 && (is_valid(gOutDiffuseReflectance) || is_valid(gOutDiffuseReflectance)))
         {
             diffuseReflectance.xyz = max(kDemodulateMinReflectance, bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
             // For specular an approximate shading model with a single specular lobe is used.
             const float NdotV = saturate(dot(bsdfProperties.guideNormal, sd.V));
             const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
-            if(bsdfProperties.isTransmissive)
+            if (bsdfProperties.isTransmissive)
+            {
                 specularReflectance.xyz = float3(1);
+            }
             else
             {
                 specularReflectance.xyz = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
@@ -194,34 +198,46 @@ void rayGen()
             specularReflectance.w = specLuminance / combined;
         }
 
-        #if CAUSTIC_TEMPORAL_FILTER_ENABLED
-            if(i == 0){
-                causticSurface.normal = sd.faceN;
-                causticSurface.viewDepth = rayDist;
-            }
-        #endif    
-        
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+        if (i == 0)
+        {
+            causticSurface.normal = sd.faceN;
+            causticSurface.viewDepth = rayDist;
+        }
+#endif
+
         if (gMaxBounces == 0)
+        {
             break;
+        }
         
         BSDFSample bsdfSample;
 
         bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
-        if (!validBSDF){
+        if (!validBSDF)
+        {
             invalidSample = true;
         }
 
-        //Determine if surface is diffuse
+        // Determine if surface is diffuse
         bool isTransmission = validBSDF ? bsdfSample.isLobe(LobeType::Transmission) : false;
-        float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
+        float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
+            (bsdfProperties.diffuseReflectionAlbedo +
+            bsdfProperties.specularReflectionAlbedo +
+            bsdfProperties.diffuseTransmissionAlbedo +
+            bsdfProperties.specularTransmissionAlbedo);
         float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
-        bool hasDiffuseParts = gRequDiffParts ? (meanDiffuseProb > kDiffuseCutoff) || bsdfProperties.roughness > kRoughnessMax : true; //Check if surface is diffuse or above the roughness threshold
-        isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; //Material is only diffuse if it is over the roughness min
-        
-        if(isDiffuse || invalidSample)
+        bool hasDiffuseParts = gRequDiffParts ?
+            (meanDiffuseProb > kDiffuseCutoff) || bsdfProperties.roughness > kRoughnessMax :
+            true; // Check if surface is diffuse or above the roughness threshold
+        isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
+
+        if (isDiffuse || invalidSample)
+        {
             break;
+        }
         
-        thp *= bsdfSample.weight;   //Update troughput
+        thp *= bsdfSample.weight; // Update troughput
                 
         RayDesc tRay;
         tRay.Origin = sd.computeNewRayOrigin(!isTransmission);
@@ -231,92 +247,116 @@ void rayGen()
 
         TraceRay(gScene.rtAccel, 0, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, tRay, traceData);
 
-        #if CAUSTIC_TEMPORAL_FILTER_ENABLED
-            //Set is delta flag on caustic surface
-            if(i == 0){
-                causticSurface.isDelta = true;
-            }
-        #endif 
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+        // Set is delta flag on caustic surface
+        if (i == 0)
+        {
+            causticSurface.isDelta = true;
+        }
+#endif 
         
-        //Update info
+        // Update info
         hitInfo = HitInfo(traceData.packedHitInfo);
         viewDir = -bsdfSample.wo;
         rayDist += traceData.distance;
         hitT += traceData.distance;
         wasTracedMask = 1;
         
-        //Write DirectHit surfaces hits only for transmission or delta reflection hits
-        if(validSurfaceForDI){
-            #if USE_RESTIR_GI
-            if(true){
-            #else
-            if(isTransmission || bsdfSample.isLobe(LobeType::DeltaReflection)){
-            #endif
+        // Write DirectHit surfaces hits only for transmission or delta reflection hits
+        if (validSurfaceForDI)
+        {
+#if USE_RESTIR_GI
+            if (true)
+            {
+#else
+            if (isTransmission || bsdfSample.isLobe(LobeType::DeltaReflection))
+            {
+#endif
                 hitInfoDI = hitInfo;
                 viewDirDistDI = float4(viewDir,rayDist);
                 thpDI = thp;
-            }else{
+            }
+            else
+            {
                 validSurfaceForDI = false;
             }
-        }else
+        }
+        else
+        {
             bouncesAfterValid++;
-
+        }
     }
             
-    //Fill the RTXDI surface if it is enabled
+    // Fill the RTXDI surface if it is enabled
 #if USE_RTXDI
-    if(hitInfoDI.isValid())
+    if (hitInfoDI.isValid())
     {
-        //load all needed data
+        // Load all needed data
         ShadingData sd = loadShadingData(hitInfoDI, -viewDirDistDI.xyz, lod);
         uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
         let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
         let bsdfProperties = bsdf.getProperties(sd);
     
         gRTXDI.setSurfaceData(launchIndex, sd.computeNewRayOrigin(), bsdfProperties.guideNormal, bsdfProperties.diffuseReflectionAlbedo, bsdfProperties.specularReflectance, bsdfProperties.roughness, viewDirDistDI.w);
-    }else{
+    }
+    else
+    {
         gRTXDI.setInvalidSurfaceData(launchIndex);
     }
 #endif
 
-    #if CAUSTIC_TEMPORAL_FILTER_ENABLED
-        gPackedCausticSurface[launchIndex] = causticSurface.pack();
-    #endif
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+    gPackedCausticSurface[launchIndex] = causticSurface.pack();
+#endif
 
-     //Write DI Buffer
+    // Write DI Buffer
     gOutVBufferDI[launchIndex] = hitInfoDI.getData();
     gOutViewDirRayDistDI[launchIndex] = viewDirDistDI;
     gOutThpDI[launchIndex] = float4(thpDI, 1.f);
 
-    //Set surface to invalid if the specular surface did not produce a valid sample
-    #if !USE_RESTIR_GI
-        if(invalidSample && !isDiffuse)
-            hitInfo = {};
-    #endif
-    //Write
-    #if STORE_SAMPLE_GEN_STATE
-        gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
-    #endif //STORE_SAMPLE_GEN_STATE
+    // Set surface to invalid if the specular surface did not produce a valid sample
+#if !USE_RESTIR_GI
+    if (invalidSample && !isDiffuse)
+    {
+        hitInfo = {};
+    }
+#endif
+
+    // Write
+#if STORE_SAMPLE_GEN_STATE
+    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
+#endif //STORE_SAMPLE_GEN_STATE
     gOutVBuffer[launchIndex] = hitInfo.getData();
-    gOutViewDir[launchIndex] = float4(viewDir, validSurfaceForDI ? 0 : bouncesAfterValid + 1);  //Store a flag if this surface has direct light
+    gOutViewDir[launchIndex] = float4(viewDir, validSurfaceForDI ? 0 : bouncesAfterValid + 1);  // Store a flag if this surface has direct light
     gOutRayDist[launchIndex] = rayDist;
     gOutThp[launchIndex] = float4(thp, hitT);
-    if (is_valid(gOutDiffuseReflectance)) gOutDiffuseReflectance[launchIndex] = float4(diffuseReflectance);
-    if (is_valid(gOutSpecularReflectance)) gOutSpecularReflectance[launchIndex] = float4(specularReflectance);
+    if (is_valid(gOutDiffuseReflectance))
+    {
+        gOutDiffuseReflectance[launchIndex] = float4(diffuseReflectance);
+    }
+    if (is_valid(gOutSpecularReflectance))
+    {
+        gOutSpecularReflectance[launchIndex] = float4(specularReflectance);
+    }
 
-    #if DEBUG_MASK
-        float3 debugOut = float3(0,0,1);
-        if(invalidSample && !isDiffuse)
-            debugOut = float3(1);
-        //Enable Red channel if it is not a direct hit
-        if(hitT > 0){
-            debugOut = float3(0.8,0,0);
-            
-            if(!validSurfaceForDI)
-                debugOut = float3(0,0.6,0);
-                
-        }
+#if DEBUG_MASK
+    float3 debugOut = float3(0,0,1);
+    if (invalidSample && !isDiffuse)
+    {
+        debugOut = float3(1);
+    }
 
-        gDebugOut[launchIndex] = float4(debugOut, 1.f);
-    #endif
+    // Enable Red channel if it is not a direct hit
+    if (hitT > 0)
+    {
+        debugOut = float3(0.8,0,0);
+
+        if (!validSurfaceForDI)
+        {
+            debugOut = float3(0,0.6,0);
+        }                
+    }
+
+    gDebugOut[launchIndex] = float4(debugOut, 1.f);
+#endif
 }

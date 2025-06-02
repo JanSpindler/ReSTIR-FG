@@ -1384,10 +1384,15 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     mTraceTransmissionDelta.pProgram->addDefine("DEBUG_MASK", mDebugSpecularTraceMask ? "1" : "0");
     mTraceTransmissionDelta.pProgram->addDefine("USE_RTXDI", mpRTXDI ? "1" : "0");
     mTraceTransmissionDelta.pProgram->addDefine("USE_RESTIR_GI", mRenderMode == RenderMode::ReSTIRGI ? "1" : "0");
-    if (mpRTXDI) mTraceTransmissionDelta.pProgram->addDefines(mpRTXDI->getDefines());
+    if (mpRTXDI)
+    {
+        mTraceTransmissionDelta.pProgram->addDefines(mpRTXDI->getDefines());
+    }
     mTraceTransmissionDelta.pProgram->addDefines(getMaterialDefines());
     if (!mTraceTransmissionDelta.pVars)
+    {
         mTraceTransmissionDelta.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
+    }
 
     FALCOR_ASSERT(mTraceTransmissionDelta.pVars);
 
@@ -1398,7 +1403,10 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     var[nameBuf]["gMaxBounces"] = mTraceMaxBounces;
     var[nameBuf]["gRequDiffParts"] = mTraceRequireDiffuseMat;
 
-    if (mpRTXDI) mpRTXDI->setShaderData(var);
+    if (mpRTXDI)
+    {
+        mpRTXDI->setShaderData(var);
+    }
     var["gInVBuffer"] = renderData[kInputVBuffer]->asTexture();
 
     var["gOutThp"] = mpThp;
@@ -1412,12 +1420,18 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     var["gOutViewDirRayDistDI"] = mpViewDirRayDistDI;
     var["gOutVBufferDI"] = mpVBufferDI;
     if (mDebugSpecularTraceMask)
+    {
         var["gDebugOut"] = renderData[kOutputColor]->asTexture();
+    }
 
     if (renderData[kOutputDiffuseReflectance])
+    {
         var["gOutDiffuseReflectance"] = renderData[kOutputDiffuseReflectance]->asTexture();
+    }
     if (renderData[kOutputSpecularReflectance])
+    {
         var["gOutSpecularReflectance"] = renderData[kOutputSpecularReflectance]->asTexture();
+    }
 
     // Create dimensions based on the number of VPLs
     FALCOR_ASSERT(mScreenRes.x > 0 && mScreenRes.y > 0);
