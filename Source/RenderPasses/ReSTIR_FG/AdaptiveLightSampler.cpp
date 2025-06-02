@@ -129,6 +129,10 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
         // Active
         changed |= group.checkbox("Adaptive Light Sampler", m_Active);
 
+        // Adaptive light sampler stats
+        group.text("Time step: " + std::to_string(m_TimeStep));
+        group.text("Cluster count: " + std::to_string(m_ClusterCount));
+
         // TODO: Rebuild if builder params changed?
         if (group.group("Light BVH Builder"))
         {
