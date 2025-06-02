@@ -102,8 +102,9 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     //    var["gTemporalHistoryLength"] = (float)mTemporalHistoryLength;
     //}
 
-    pass["gScene"] = m_Scene->getParameterBlock();
-    pass["gPathTracer"] = mpPathTracerBlock;
+    // TODO: Fix (older Falcor version)
+    //pass["gScene"] = m_Scene->getParameterBlock();
+    //pass["gPathTracer"] = mpPathTracerBlock;
 
     // TODO: Do we need this?
     //mpPixelStats->prepareProgram(pass->getProgram(), pass->getRootVar());

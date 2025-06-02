@@ -345,15 +345,16 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     if (NdotL > kMinCosTheta)
     {
         // Update radiance
-        rayData.radiance += max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+        const float3 photonContribution = max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+        rayData.radiance += photonContribution;
 
         // Add to first hit photon collection count
 #if TRACK_FIRST_HIT_PHOTONS
-        TrackPhotonCollection(instanceIndex, photonIndex);
+        TrackPhotonCollection(instanceIdx, primIndex);
 #endif // TRACK_FIRST_HIT_PHOTONS
 
 #if ADAPTIVE_LIGHT_SAMPLER
-        const uint leafNodeIdx = gPhotonLeafMap[instanceIndex][photonIndex];
+        const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primIndex];
         if (leafNodeIdx != 0xFFFFFFFF)
         {
             const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
