@@ -7,6 +7,7 @@ import PathReservoir;
 __exported import Scene.HitInfo;
 __exported import Utils.Sampling.SampleGenerator;
 import Rendering.Materials.InteriorListHelpers;
+import Utils.Math.Ray;
 
 static const uint kMaxRejectedHits = 16; // Maximum number of rejected hits along a path. The path is terminated if the limit is reached to avoid getting stuck in pathological cases.
 
@@ -182,9 +183,9 @@ struct PathState
 
     uint getLength() { return length; }
 
-    RayDesc getScatterRay()
+    Ray getScatterRay()
     {
-        RayDesc ray = { origin, 0.f, dir, kRayTMax };
+        Ray ray = { origin, 0.f, dir, kRayTMax };
         return ray;
     }
 

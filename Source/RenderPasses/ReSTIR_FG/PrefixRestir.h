@@ -67,7 +67,7 @@ private:
 
         PathSamplingMode pathSamplingMode = PathSamplingMode::ReSTIR;
 
-        bool separatePathBSDF = true;
+        bool separatePathBSDF = false;
 
         bool rcDataOfflineMode = false;
 

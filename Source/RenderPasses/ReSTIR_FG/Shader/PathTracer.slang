@@ -21,13 +21,14 @@ import RenderPasses.Shared.Denoising.NRDBuffers;
 import RenderPasses.Shared.Denoising.NRDData;
 import RenderPasses.Shared.Denoising.NRDHelpers;
 import RenderPasses.Shared.Denoising.NRDConstants;
-import NRDHelpers;
+//import NRDHelpers;
 import Utils.Color.ColorHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Debug.PixelDebug;
 import LoadShadingData;
 import PathBuilder;
 import PathReservoir;
+import Rendering.Materials.IMaterialInstance;
 
 #include "Utils/Math/MathConstants.slangh"
 
@@ -301,13 +302,17 @@ struct PathTracer
 
         // Generate a BSDF sample.
         bool valid;
-        BSDFSample_ result;
+        BSDFSample result;
+        let lod = ExplicitLodTextureSampler(0.f);
 
-        if (kUseBSDFSampling) valid = sampleBSDF(sd, path.sg, result, !kSeparatePathBSDF); // daqi: indicate using deterministic BSDF
-        else valid = sampleBSDF_Reference(sd, path.sg, result);
+        // if (kUseBSDFSampling) valid = sampleBSDF(sd, path.sg, result, !kSeparatePathBSDF); // daqi: indicate using deterministic BSDF
+        // else valid = sampleBSDF_Reference(sd, path.sg, result);
+        let bsdf = gScene.materials.getMaterialInstance(sd, lod, 0); // TODO: If adjust shading normals add flag to hints
+        let bsdfProperties = bsdf.getProperties(sd);
+        valid = bsdf.sample(sd, path.sg, result, kUseBSDFSampling);
 
         float pdfAll = result.pdf;
-        if (kSeparatePathBSDF) result.pdf = result.pdfSingle;
+        //if (kSeparatePathBSDF) result.pdf = result.pdf; // No pdfSingle in this falcor version
 
         // Ignore valid on purpose for now.
         if (kOutputNRDData && path.length == 0)
@@ -320,7 +325,7 @@ struct PathTracer
         {
             // store sampled path type (diffuse or non-diffuse)
 
-            path.dir = result.wi;
+            path.dir = -sd.V;//result.wi;
 
             // add to path buffer
             // also multiply pdf
@@ -357,7 +362,7 @@ struct PathTracer
             if (result.isLobe(LobeType::Reflection))
             {
                 // We classify specular events as diffuse if the roughness is above some threshold.
-                bool isDiffuse = result.isLobe(LobeType::DiffuseReflection) || sd.linearRoughness > params.specularRoughnessThreshold;
+                bool isDiffuse = result.isLobe(LobeType::DiffuseReflection) || bsdfProperties.roughness > params.specularRoughnessThreshold;
                 if (isDiffuse)
                 {
                     path.incrementBounces(BounceType::Diffuse);
@@ -375,7 +380,7 @@ struct PathTracer
                 path.setDelta();
             }
 
-            if (result.isLobe(LobeType::SpecularOrDelta))
+            if (result.isLobe(LobeType::Specular) || result.isLobe(LobeType::Delta))
             {
                 path.setSpecularBounce();
             }
@@ -399,16 +404,16 @@ struct PathTracer
                 path.origin = sd.computeNewRayOrigin(false);
 
                 // Update interior list and inside volume flag.
-                if (!sd.isThinSurface())
+                if (!sd.mtl.isThinSurface())
                 {
-                    uint nestedPriority = gScene.materials[sd.materialID].getNestedPriority();
+                    uint nestedPriority = sd.mtl.getNestedPriority();//gScene.materials[sd.materialID].getNestedPriority();
                     path.interiorList.handleIntersection(sd.materialID, nestedPriority, sd.frontFacing);
                     path.setInsideDielectricVolume(!path.interiorList.isEmpty());
                 }
             }
 
             // Save the shading normal. This is needed for MIS.
-            path.normal = sd.N;
+            path.normal = sd.frame.N;
 
             // Mark the path as valid only if it has a non-zero throughput.
             valid = any(path.thp > 0.f);
@@ -435,7 +440,9 @@ struct PathTracer
 
         // Generate a BSDF sample.
         bool valid = true;
-        BSDFSample_ result;
+        BSDFSample result;
+        let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0);
+        let bsdfProperties = bsdf.getProperties(sd);
 
         bool isDeltaEvent = path.pathBuilder.pathFlags.decodeIsDeltaEvent(path.length < 1);
         bool isSpecularBounce = path.pathBuilder.pathFlags.decodeIsSpecularBounce(path.length < 1);
@@ -447,20 +454,21 @@ struct PathTracer
             float pdfAll = 0.f; // pdf with all BSDF
 
             {
-                result.wi = dir;
+                //result.wi = dir;
 
                 uint allowedBSDFFlags = getAllowedBSDFFlags(isSpecularBounce);
 
-                result.weight = evalBSDFCosine(sd, dir, allowedBSDFFlags);
+                // TODO: Correct cosine implementation?
+                result.weight = bsdf.evalPdf(sd, dir, false);//evalBSDFCosine(sd, dir, allowedBSDFFlags);
 
                 if (kUseBSDFSampling)
                 {
                     // this is single pdf
-                    result.pdf = evalPdfBSDF(sd, result.wi, pdfAll, allowedBSDFFlags, false);
+                    result.pdf = bsdf.evalPdf(sd, dir, true);//evalPdfBSDF(sd, dir, pdfAll, allowedBSDFFlags, false);
                 }
                 else
                 {
-                    result.pdf = dot(sd.N, result.wi) / M_PI;
+                    result.pdf = dot(sd.frame.N, dir) / M_PI;
                 }
 
                 result.weight /= result.pdf;
@@ -471,7 +479,7 @@ struct PathTracer
                 }
             }
 
-            path.dir = result.wi;
+            path.dir = dir;
 
             // add to path buffer
             // also multiply pdf
@@ -496,7 +504,7 @@ struct PathTracer
             path.clearEventFlags();
 
             // daqi: if we use direction reuse, then base and offset path reflection/transmission type is allowed to be different
-            bool isTransmissionEvent = dot(sd.N, result.wi) < 0;
+            bool isTransmissionEvent = dot(sd.frame.N, dir) < 0;
 
             // daqi: set delta/transmission path flags. we don't care about other path flags since our resampling doesn't depend on the sampled BSDF components
             // Handle transmission events.
@@ -507,9 +515,9 @@ struct PathTracer
                 path.setTransmission();
 
                 // Update interior list and inside volume flag.
-                if (!sd.isThinSurface())
+                if (!sd.mtl.isThinSurface())
                 {
-                    uint nestedPriority = gScene.materials[sd.materialID].getNestedPriority();
+                    uint nestedPriority = sd.mtl.getNestedPriority();//gScene.materials[sd.materialID].getNestedPriority();
                     path.interiorList.handleIntersection(sd.materialID, nestedPriority, sd.frontFacing);
                     path.setInsideDielectricVolume(!path.interiorList.isEmpty());
                 }
@@ -521,7 +529,7 @@ struct PathTracer
             }
 
             // Save the shading normal. This is needed for MIS.
-            path.normal = sd.N;
+            path.normal = sd.frame.N;
 
             // Mark the path as valid only if it has a non-zero throughput.
             valid = any(path.thp > 0.f);
@@ -807,8 +815,21 @@ struct PathTracer
         }
         if (kUseEmissiveLights && lightType == (uint)LightSampleType::Emissive)
         {
-            if (!kUseEmissiveLights) valid = false;
-            else emissiveSampler.skipRandomNumber(sg);
+            if (!kUseEmissiveLights)
+            {
+                valid = false;
+            }
+            else
+            {
+                // emissiveSampler.skipRandomNumber(sg);
+                if (gScene.lightCollection.isEmpty())
+                {
+                    return;
+                }
+                sampleNext1D(sg);
+                sampleNext1D(sg);
+                sampleNext2D(sg);
+            }
         }
         if (kUseAnalyticLights && lightType == (uint)LightSampleType::Analytic)
         {
@@ -822,7 +843,7 @@ struct PathTracer
     void nextVertex(inout PathState path)
     {
         // Setup ray.
-        RayDesc ray = path.getScatterRay();
+        Ray ray = path.getScatterRay();
 
         logTraceRay(PixelStatsRayType::ClosestHit);
         HitInfo hit;
@@ -849,9 +870,9 @@ struct PathTracer
     bool traceVisibilityRay(const Ray ray)
     {
         // TODO rename to PixelStatsRayType::Visibility
-        logTraceRay(PixelStatsRayType::Shadow);
+        logTraceRay(PixelStatsRayType::Visibility); //logTraceRay(PixelStatsRayType::Shadow);
         SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-        return sceneRayQuery.traceVisibilityRay(ray.toRayDesc(), RAY_FLAG_NONE, 0xff);
+        return sceneRayQuery.traceVisibilityRay(ray, RAY_FLAG_NONE, 0xff);//return sceneRayQuery.traceVisibilityRay(ray.toRayDesc(), RAY_FLAG_NONE, 0xff);
     }
 
     /** Handle scattering in homogeneous volumes.
@@ -859,17 +880,18 @@ struct PathTracer
 */
     bool handleHomogeneousVolumeExtinction(inout PathState path, const ShadingData sd)
     {
-        if (!path.interiorList.isEmpty())
-        {
-            HomogeneousVolumeSampler hvs = HomogeneousVolumeSampler::create(path.interiorList.getTopMaterialID());
-            const float surfaceDistance = length(path.origin - sd.posW);
+        // TODO: implement
+        //if (!path.interiorList.isEmpty())
+        //{
+        //    HomogeneousVolumeSampler hvs = HomogeneousVolumeSampler::create(path.interiorList.getTopMaterialID());
+        //    const float surfaceDistance = length(path.origin - sd.posW);
 
-            // our implementation doesn't support volume scattering
-            {
-                // Handle volume extinction.
-                updatePathThroughput(path, exp(-hvs.sigmaT * surfaceDistance));
-            }
-        }
+        //    // our implementation doesn't support volume scattering
+        //    {
+        //        // Handle volume extinction.
+        //        updatePathThroughput(path, exp(-hvs.sigmaT * surfaceDistance));
+        //    }
+        //}
 
         return false;
     }
@@ -880,11 +902,13 @@ struct PathTracer
     */
     bool handleNestedDielectrics(inout ShadingData sd, inout PathState path)
     {
+        // TODO: How to handle eta in newer falcor version?
+
         // Compute relative index of refraction at interface.
-        sd.eta = computeRelativeIoR(path.interiorList, sd.materialID, sd.frontFacing);
+        //sd.eta = computeRelativeIoR(path.interiorList, sd.materialID, sd.frontFacing);
 
         // Check for false intersections.
-        uint nestedPriority = gScene.materials[sd.materialID].getNestedPriority();
+        uint nestedPriority = sd.mtl.getNestedPriority();//gScene.materials[sd.materialID].getNestedPriority();
         if (!path.interiorList.isTrueIntersection(nestedPriority))
         {
             if (path.rejectedHits < kMaxRejectedHits)
@@ -902,11 +926,13 @@ struct PathTracer
         }
 
         // Limit specular transmission paths.
-        if (kLimitTransmission && sd.specularTransmission > 0.f)
+        let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0); // TODO: If adjust shading normals add flag to hints
+        let bsdfProperties = bsdf.getProperties(sd);
+        if (kLimitTransmission && bsdfProperties.specularTransmissionAlbedo > 0.f)
         {
             const uint transmissionBounces = path.getBounces(BounceType::Transmission);
             if (transmissionBounces >= kMaxTransmissionReflectionDepth) sd.setActiveLobes((uint)LobeType::All & ~((uint)LobeType::DeltaReflection | (uint)LobeType::SpecularReflection));
-            if (transmissionBounces >= kMaxTransmissionRefractionDepth) sd.eta = 1.f;
+            //if (transmissionBounces >= kMaxTransmissionRefractionDepth) sd.eta = 1.f;
         }
 
         return true;
@@ -1438,20 +1464,20 @@ struct PathTracer
 
         path.isLastVertexClassifiedAsRough = isCurrentVertexClassifiedAsRough;
 
-        if (kOutputNRDData && !path.enableRandomReplay)
-        {
-            const uint2 pixel = path.getPixel();
+        //if (kOutputNRDData && !path.enableRandomReplay)
+        //{
+        //    const uint2 pixel = path.getPixel();
 
-            if (gSppId == 0)
-            {
-                setNRDPrimaryHitEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
-                setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd);
-            }
+        //    if (gSppId == 0)
+        //    {
+        //        setNRDPrimaryHitEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
+        //        setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd);
+        //    }
 
-            setNRDSampleHitDist(path); // this will be overriden if ReSTIR is done
-            setNRDSampleEmission(kUseNRDDemodulation, path, isPrimaryHit, attenuatedEmission); // this should be the same for every sample (unless in volume rendering)
-            setNRDSampleReflectance(kUseNRDDemodulation, path, isPrimaryHit, sd); // this will be overriden in ReSTIR mode
-        }
+        //    setNRDSampleHitDist(path); // this will be overriden if ReSTIR is done
+        //    setNRDSampleEmission(kUseNRDDemodulation, path, isPrimaryHit, attenuatedEmission); // this should be the same for every sample (unless in volume rendering)
+        //    setNRDSampleReflectance(kUseNRDDemodulation, path, isPrimaryHit, sd); // this will be overriden in ReSTIR mode
+        //}
 
         if (!path.isActive()) return;
 
@@ -1566,10 +1592,10 @@ struct PathTracer
             }
         }
 
-        if (kOutputNRDData)
-        {
-            setNRDSampleHitDist(path); // this will be overriden in ReSTIR mode
-        }
+        //if (kOutputNRDData)
+        //{
+        //    setNRDSampleHitDist(path); // this will be overriden in ReSTIR mode
+        //}
 
         path.terminate();
     }
