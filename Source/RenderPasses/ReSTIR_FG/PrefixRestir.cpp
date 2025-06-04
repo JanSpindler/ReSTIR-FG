@@ -21,9 +21,11 @@ static const std::string kOutputTime = "time";
 static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
 static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
 
+static const uint32_t kNeighborOffsetCount = 8192;
+
 PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice)
 {
-    defines.add("SAMPLES_PER_PIXEL", "1");
+    defines.add(m_StaticParams.GetDefines());
 
     {
         Program::Desc desc;
@@ -267,4 +269,72 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
         // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
         pass->execute(pRenderContext, {m_Params.screenTiles.x * kScreenTileDim.x, m_Params.screenTiles.y * kScreenTileDim.y, 1u});
     }
+}
+
+DefineList PrefixRestir::StaticParams::GetDefines() const
+{
+    DefineList defines;
+
+    // Path tracer configuration.
+    defines.add("SAMPLES_PER_PIXEL", std::to_string(samplesPerPixel));  // 0 indicates a variable sample count
+    defines.add("CANDIDATE_SAMPLES", std::to_string(candidateSamples)); // 0 indicates a variable sample count
+    defines.add("MAX_SURFACE_BOUNCES", std::to_string(maxSurfaceBounces));
+    defines.add("MAX_DIFFUSE_BOUNCES", std::to_string(maxDiffuseBounces));
+    defines.add("MAX_SPECULAR_BOUNCES", std::to_string(maxSpecularBounces));
+    defines.add("MAX_TRANSMISSON_BOUNCES", std::to_string(maxTransmissionBounces));
+    defines.add("ADJUST_SHADING_NORMALS", adjustShadingNormals ? "1" : "0");
+    defines.add("USE_BSDF_SAMPLING", useBSDFSampling ? "1" : "0");
+    defines.add("USE_NEE", useNEE ? "1" : "0");
+    defines.add("USE_MIS", useMIS ? "1" : "0");
+    defines.add("USE_RUSSIAN_ROULETTE", useRussianRoulette ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", useAlphaTest ? "1" : "0");
+    defines.add("USE_LIGHTS_IN_DIELECTRIC_VOLUMES", useLightsInDielectricVolumes ? "1" : "0");
+    defines.add("LIMIT_TRANSMISSION", limitTransmission ? "1" : "0");
+    defines.add("MAX_TRANSMISSION_REFLECTION_DEPTH", std::to_string(maxTransmissionReflectionDepth));
+    defines.add("MAX_TRANSMISSION_REFRACTION_DEPTH", std::to_string(maxTransmissionRefractionDepth));
+    defines.add("DISABLE_CAUSTICS", disableCaustics ? "1" : "0");
+    defines.add("DISABLE_DIRECT_ILLUMINATION", disableDirectIllumination ? "1" : "0");
+    defines.add("PRIMARY_LOD_MODE", std::to_string((uint32_t)primaryLodMode));
+    defines.add("USE_NRD_DEMODULATION", useNRDDemodulation ? "1" : "0");
+    defines.add("COLOR_FORMAT", std::to_string((uint32_t)colorFormat));
+    defines.add("MIS_HEURISTIC", std::to_string((uint32_t)misHeuristic));
+    defines.add("MIS_POWER_EXPONENT", std::to_string(misPowerExponent));
+    defines.add("_USE_DETERMINISTIC_BSDF", useDeterministicBSDF ? "1" : "0");
+    defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(kNeighborOffsetCount));
+    defines.add("SHIFT_STRATEGY", std::to_string((uint32_t)shiftStrategy));
+    defines.add("PATH_SAMPLING_MODE", std::to_string((uint32_t)pathSamplingMode));
+
+    // Sampling utilities configuration.
+    //assert(owner.mpSampleGenerator);
+    //defines.add(owner.mpSampleGenerator->getDefines());
+
+    // We don't use the legacy shading code anymore (MaterialShading.slang).
+    defines.add("_USE_LEGACY_SHADING_CODE", "0");
+
+    defines.add("INTERIOR_LIST_SLOT_COUNT", std::to_string(maxNestedMaterials));
+
+    //defines.add("GBUFFER_ADJUST_SHADING_NORMALS", owner.mGBufferAdjustShadingNormals ? "1" : "0");
+
+    // Scene-specific configuration.
+    //const auto& scene = owner.mpScene;
+
+    // Set default (off) values for additional features.
+    defines.add("OUTPUT_GUIDE_DATA", "0");
+    defines.add("OUTPUT_TIME", "0");
+    defines.add("OUTPUT_NRD_DATA", "0");
+    defines.add("OUTPUT_NRD_ADDITIONAL_DATA", "0");
+
+    defines.add("SPATIAL_RESTIR_MIS_KIND", std::to_string((uint32_t)spatialMisKind));
+    defines.add("TEMPORAL_RESTIR_MIS_KIND", std::to_string((uint32_t)temporalMisKind));
+
+    defines.add("TEMPORAL_UPDATE_FOR_DYNAMIC_SCENE", temporalUpdateForDynamicScene ? "1" : "0");
+
+    defines.add("BPR", pathSamplingMode == PathSamplingMode::PathReuse ? "1" : "0");
+
+    defines.add("SEPARATE_PATH_BSDF", separatePathBSDF ? "1" : "0");
+
+    defines.add("RCDATA_PATH_NUM", "6");
+    defines.add("RCDATA_PAD_SIZE", "1");
+
+    return defines;
 }

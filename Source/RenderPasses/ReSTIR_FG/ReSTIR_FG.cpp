@@ -352,7 +352,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     traceTransmissiveDelta(pRenderContext, renderData);
 
     // Prefix restir
-    if (m_PrefixRestir.IsActive())
+    if (mRenderMode == RenderMode::ReSTIRFG and m_PrefixRestir.IsActive())
     {
         m_PrefixRestir.Run(pRenderContext, renderData);
     }
