@@ -17,7 +17,49 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
-void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize) {
+void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
+{
+    // Compute allocation requirements for paths and output samples.
+    // Note that the sample buffers are padded to whole tiles, while the max path count depends on actual frame dimension.
+    // If we don't have a fixed sample count, assume the worst case.
+    // TODO: Use frame size
+    uint32_t tileCount = m_Params.screenTiles.x * m_Params.screenTiles.y;
+    const uint32_t reservoirCount = tileCount * kScreenTileDim.x * kScreenTileDim.y;
+    const uint32_t screenPixelCount = m_Params.frameDim.x * m_Params.frameDim.y;
+    const uint32_t sampleCount = reservoirCount; // we are effectively only using 1spp for ReSTIR
+
+    const uint32_t baseReservoirSize = 88; // Used for ReSTIR PT
+    //const uint32_t pathTreeReservoirSize = 128; // Used for bekeart style path reuse
+    const uint reconnectionDataSize = 256; // Use online reconnection data size
+
+    if (!m_ReconnectionDataBuffer)
+    {
+        m_ReconnectionDataBuffer = Buffer::createStructured(
+            m_Device, reconnectionDataSize, reservoirCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+
+    if (!m_OutputReservoirs)
+    {
+        m_OutputReservoirs = Buffer::createStructured(
+            m_Device, baseReservoirSize, reservoirCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+
+    if (!m_TemporalReservoirs)
+    {
+        m_TemporalReservoirs = Buffer::createStructured(
+            m_Device, baseReservoirSize, reservoirCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, nullptr, false
+        );
+    }
+
+    if (!m_TemporalVBuffer)
+    {
+        m_TemporalVBuffer = Texture::create2D(m_Device, m_Params.frameDim.x, m_Params.frameDim.y, m_Scene->getHitInfo().getFormat(), 1, 1);
+    }
 }
 
 void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
@@ -47,7 +89,7 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const
 {
     // Bind runtime data.
-    var["params"].setBlob(mParams);
+    var["params"].setBlob(m_Params);
     var["vbuffer"] = renderData[kInputVBuffer]->asTexture();
     var["outputColor"] = renderData[kOutputColor]->asTexture();
 
@@ -135,7 +177,7 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     {
         // Launch one thread per pixel.
         // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
-        pass->execute(pRenderContext, {mParams.screenTiles.x * kScreenTileDim.x, mParams.screenTiles.y * kScreenTileDim.y, 1u});
+        pass->execute(pRenderContext, {m_Params.screenTiles.x * kScreenTileDim.x, m_Params.screenTiles.y * kScreenTileDim.y, 1u});
     }
 }
 
@@ -192,6 +234,6 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
     {
         // Launch one thread per pixel.
         // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
-        pass->execute(pRenderContext, {mParams.screenTiles.x * kScreenTileDim.x, mParams.screenTiles.y * kScreenTileDim.y, 1u});
+        pass->execute(pRenderContext, {m_Params.screenTiles.x * kScreenTileDim.x, m_Params.screenTiles.y * kScreenTileDim.y, 1u});
     }
 }

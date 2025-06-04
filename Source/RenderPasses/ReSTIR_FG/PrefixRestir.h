@@ -22,12 +22,11 @@ private:
     ref<Device> m_Device;
     ref<Scene> m_Scene;
 
-    RestirPathTracerParams mParams; // Runtime path tracer parameters.
+    RestirPathTracerParams m_Params; // Runtime path tracer parameters.
 
     ref<Buffer> m_OutputReservoirs; // Output paths from the path sampling stage
     ref<Buffer> m_TemporalReservoirs;
     ref<Buffer> m_ReconnectionDataBuffer;
-
     ref<Texture> m_TemporalVBuffer;
 
     bool m_Active = false;
