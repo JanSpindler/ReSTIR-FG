@@ -18,6 +18,26 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
+static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
+static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
+
+PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice)
+{
+    defines.add("SAMPLES_PER_PIXEL", "1");
+
+    {
+        Program::Desc desc;
+        desc.addShaderLibrary(kTemporalPathRetraceFile).csEntry("main").setShaderModel("6_5");
+        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, defines, false);
+    }
+
+    {
+        Program::Desc desc;
+        desc.addShaderLibrary(kTemporalReusePassFile).csEntry("main").setShaderModel("6_5");
+        m_TemporalReusePass = ComputePass::create(m_Device, desc, defines, false);
+    }
+}
+
 void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
 {
     // Compute allocation requirements for paths and output samples.
@@ -209,6 +229,7 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
     //pass->addDefine("OUTPUT_TIME", mOutputTime ? "1" : "0");
     pass->addDefine("TEMPORAL_REUSE", "1");
     //pass->addDefine("OUTPUT_NRD_DATA", mOutputNRDData ? "1" : "0");
+    pass->addDefine("SAMPLES_PER_PIXEL", "1");
 
     // Bind resources.
     auto var = pass->getRootVar()["CB"]["gPathReusePass"];

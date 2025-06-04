@@ -9,7 +9,8 @@ using namespace Falcor;
 class PrefixRestir
 {
 public:
-    PrefixRestir(ref<Device> pDevice) : m_Device(pDevice) {}
+    PrefixRestir() = default;
+    PrefixRestir(ref<Device> pDevice, DefineList defines);
 
     void PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize);
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);

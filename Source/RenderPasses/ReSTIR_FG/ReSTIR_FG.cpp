@@ -157,7 +157,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, ReSTIR_FG>();
 }
 
-ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice), m_PrefixRestir(pDevice)
+ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice)
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -175,10 +175,11 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
 
     // Photon guiding
-    m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, DefineList(getMaterialDefines()).add(mpSampleGenerator->getDefines()));
+    const DefineList defines = getMaterialDefines().add(mpSampleGenerator->getDefines());
+    m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, defines);
 
-    // Light sampling
-    m_AdaptiveLightSampler = AdaptiveLightSampler(mpDevice);
+    // Prefix restir
+    m_PrefixRestir = PrefixRestir(mpDevice, defines);
 
     // Initializes the CUDA driver API.
     if (!initCuda())

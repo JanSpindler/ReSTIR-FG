@@ -50,6 +50,7 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/Shift.slang
     Shader/TemporalPathRetrace.cs.slang
     Shader/TemporalReuse.cs.slang
+    Shader/StaticParams.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES
