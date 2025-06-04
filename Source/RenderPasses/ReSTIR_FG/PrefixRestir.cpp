@@ -17,9 +17,31 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
+void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize) {
+}
+
 void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     m_Scene = pScene;
+}
+
+bool PrefixRestir::RenderUI(Gui::Widgets& widget)
+{
+    bool changed = false;
+
+    if (auto group = widget.group("Prefix ReSTIR"))
+    {
+        // Active
+        changed |= group.checkbox("Adaptive Light Sampler", m_Active);
+    }
+
+    return changed;
+}
+
+void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    PathRetracePass(pRenderContext, renderData);
+    PathReusePass(pRenderContext, renderData);
 }
 
 void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const
@@ -117,27 +139,9 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     }
 }
 
-/*void PrefixRestir::PathReusePass(
-    RenderContext* pRenderContext,
-    uint32_t restir_i,
-    const RenderData& renderData,
-    bool isTemporalReuse,
-    int spatialRoundId,
-    bool isLastRound
-)
+void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    bool isPathReuseMISWeightComputation = spatialRoundId == -1;
-
-    PROFILE(isTemporalReuse ? "temporalReuse" : (isPathReuseMISWeightComputation ? "MISWeightComputation" : "spatialReuse"));
-
-    ComputePass::SharedPtr pass =
-        isPathReuseMISWeightComputation ? mpComputePathReuseMISWeightsPass : (isTemporalReuse ? mpTemporalReusePass : mpSpatialReusePass);
-
-    if (isPathReuseMISWeightComputation)
-    {
-        spatialRoundId = 0;
-        restir_i = 0;
-    }
+    ref<ComputePass> pass = m_TemporalReusePass;
 
     // Check shader assumptions.
     // We launch one thread group per screen tile, with threads linearly indexed.
@@ -149,83 +153,45 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     assert(pass->getThreadGroupSize().y == 16 && pass->getThreadGroupSize().z == 1);
 
     // Additional specialization. This shouldn't change resource declarations.
-    pass->addDefine("OUTPUT_TIME", mOutputTime ? "1" : "0");
-    pass->addDefine("TEMPORAL_REUSE", isTemporalReuse ? "1" : "0");
-    pass->addDefine("OUTPUT_NRD_DATA", mOutputNRDData ? "1" : "0");
+    // TODO: Do we need this?
+    //pass->addDefine("OUTPUT_TIME", mOutputTime ? "1" : "0");
+    pass->addDefine("TEMPORAL_REUSE", "1");
+    //pass->addDefine("OUTPUT_NRD_DATA", mOutputNRDData ? "1" : "0");
 
     // Bind resources.
     auto var = pass->getRootVar()["CB"]["gPathReusePass"];
 
     // TODO: refactor arguments
-    setShaderData(var, renderData, false, false);
+    SetShaderData(var, renderData, false, false);
 
-    var["outputReservoirs"] = spatialRoundId % 2 == 1 ? mpTemporalReservoirs[restir_i] : mpOutputReservoirs;
+    var["outputReservoirs"] = m_OutputReservoirs;
+    var["temporalReservoirs"] = m_TemporalReservoirs;
+    var["reconnectionDataBuffer"] = m_ReconnectionDataBuffer;
 
-    if (mStaticParams.pathSamplingMode == PathSamplingMode::PathReuse)
-    {
-        var["nRooksPattern"] = mNRooksPatternBuffer;
-    }
+    var["temporalVbuffer"] = m_TemporalVBuffer;
+    var["motionVectors"] = renderData[kInputMotionVectors]->asTexture();
+    var["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
+    var["gNoResamplingForTemporalReuse"] = m_NoResamplingForTemporalReuse;
+    // TODO: Do we need this?
+    //if (!mUseMaxHistory)
+    var["gTemporalHistoryLength"] = 1e30f;
+    //else
+    //    var["gTemporalHistoryLength"] = (float)mTemporalHistoryLength;
 
-    if (mStaticParams.pathSamplingMode == PathSamplingMode::PathReuse)
-        var["misWeightBuffer"] = mPathReuseMISWeightBuffer;
-    else if (!isPathReuseMISWeightComputation)
-        var["temporalReservoirs"] = spatialRoundId % 2 == 0 ? mpTemporalReservoirs[restir_i] : mpOutputReservoirs;
-    var["reconnectionDataBuffer"] = mReconnectionDataBuffer;
+    var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
+    var["useDirectLighting"] = m_UseDirectLighting;
+    var["gIsLastRound"] = true;
 
-    var["gNumSpatialRounds"] = mNumSpatialRounds;
+    // TODO: Fix (older Falcor version)
+    //pass["gScene"] = mpScene->getParameterBlock();
+    //pass["gPathTracer"] = mpPathTracerBlock;
 
-    if (isTemporalReuse)
-    {
-        var["temporalVbuffer"] = mpTemporalVBuffer;
-        var["motionVectors"] = renderData[kInputMotionVectors]->asTexture();
-        var["gEnableTemporalReprojection"] = mEnableTemporalReprojection;
-        var["gNoResamplingForTemporalReuse"] = mNoResamplingForTemporalReuse;
-        if (!mUseMaxHistory)
-            var["gTemporalHistoryLength"] = 1e30f;
-        else
-            var["gTemporalHistoryLength"] = (float)mTemporalHistoryLength;
-    }
-    else
-    {
-        var["gSpatialReusePattern"] =
-            mStaticParams.pathSamplingMode == PathSamplingMode::PathReuse ? (uint32_t)mPathReusePattern : (uint32_t)mSpatialReusePattern;
-
-        if (!isPathReuseMISWeightComputation)
-        {
-            var["gNeighborCount"] = mSpatialNeighborCount;
-            var["gGatherRadius"] = mSpatialReuseRadius;
-            var["gSpatialRoundId"] = spatialRoundId;
-            var["gSmallWindowRadius"] = mSmallWindowRestirWindowRadius;
-            var["gFeatureBasedRejection"] = mFeatureBasedRejection;
-            var["neighborOffsets"] = mpNeighborOffsets;
-        }
-
-        if (mOutputNRDData && !isPathReuseMISWeightComputation)
-        {
-            var["outputNRDDiffuseRadianceHitDist"] = renderData[kOutputNRDDiffuseRadianceHitDist]->asTexture();
-            var["outputNRDSpecularRadianceHitDist"] = renderData[kOutputNRDSpecularRadianceHitDist]->asTexture();
-            var["outputNRDResidualRadianceHitDist"] = renderData[kOutputNRDResidualRadianceHitDist]->asTexture();
-            var["primaryHitEmission"] = renderData[kOutputNRDEmission]->asTexture();
-            var["gSppId"] = restir_i;
-        }
-    }
-
-    if (!isPathReuseMISWeightComputation)
-    {
-        var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
-        var["useDirectLighting"] = mUseDirectLighting;
-    }
-    var["gIsLastRound"] = mStaticParams.pathSamplingMode == PathSamplingMode::PathReuse || isLastRound;
-
-    pass["gScene"] = mpScene->getParameterBlock();
-    pass["gPathTracer"] = mpPathTracerBlock;
-
-    mpPixelStats->prepareProgram(pass->getProgram(), pass->getRootVar());
-    mpPixelDebug->prepareProgram(pass->getProgram(), pass->getRootVar());
+    //mpPixelStats->prepareProgram(pass->getProgram(), pass->getRootVar());
+    //mpPixelDebug->prepareProgram(pass->getProgram(), pass->getRootVar());
 
     {
         // Launch one thread per pixel.
         // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
         pass->execute(pRenderContext, {mParams.screenTiles.x * kScreenTileDim.x, mParams.screenTiles.y * kScreenTileDim.y, 1u});
     }
-}*/
+}

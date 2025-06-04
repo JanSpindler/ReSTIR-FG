@@ -37,6 +37,7 @@
 #include <Utils/CudaUtils.h>
 #include "GaussianPhotonGuiding.h"
 #include "AdaptiveLightSampler.h"
+#include "PrefixRestir.h"
 
 using namespace Falcor;
 
@@ -311,6 +312,9 @@ private:
 
     // Adaptive light sampler
     AdaptiveLightSampler m_AdaptiveLightSampler;
+
+    // Prefix restir
+    PrefixRestir m_PrefixRestir;
 
     //
     // Buffer and Textures

@@ -157,8 +157,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, ReSTIR_FG>();
 }
 
-ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) :
-    RenderPass(pDevice), m_AdaptiveLightSampler(pDevice)
+ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice), m_PrefixRestir(pDevice)
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -351,6 +350,12 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // RenderPasses
     traceTransmissiveDelta(pRenderContext, renderData);
 
+    // Prefix restir
+    if (m_PrefixRestir.IsActive())
+    {
+        m_PrefixRestir.Run(pRenderContext, renderData);
+    }
+
     // Output the debug mask directly after the specular trace pass
     if (mDebugSpecularTraceMask) 
     {
@@ -400,16 +405,19 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Count closest caustic clusters for robust initialization
-    if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
+    if (mRenderMode != RenderMode::ReSTIRGI)
     {
-        m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext, mFrameCount);
-    }
-    // Calculate gaussian gradient and optimize
-    else if (m_GaussianPhotonGuiding.IsActive())
-    {
-        m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
-        m_GaussianPhotonGuiding.OptimizeGaussiansPass(pRenderContext);
-        m_GaussianPhotonGuiding.CalculateSoftmaxWeightsPass(pRenderContext);
+        if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
+        {
+            m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext, mFrameCount);
+        }
+        // Calculate gaussian gradient and optimize
+        else if (m_GaussianPhotonGuiding.IsActive())
+        {
+            m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
+            m_GaussianPhotonGuiding.OptimizeGaussiansPass(pRenderContext);
+            m_GaussianPhotonGuiding.CalculateSoftmaxWeightsPass(pRenderContext);
+        }
     }
 
     // Final gather resampling
@@ -714,6 +722,12 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     // Adaptive light sampling
     changed |= m_AdaptiveLightSampler.RenderUI(widget);
 
+    // Prefix restir
+    if (mRenderMode != RenderMode::ReSTIRGI)
+    {
+        changed |= m_PrefixRestir.RenderUI(widget);
+    }
+
     // ReSTIR GI
     if (mRenderMode == RenderMode::ReSTIRGI)
     {
@@ -903,6 +917,9 @@ void ReSTIR_FG::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene
 
     // Adaptive light sampling
     m_AdaptiveLightSampler.SetScene(pRenderContext, pScene);
+
+    // Prefix restir
+    m_PrefixRestir.SetScene(pRenderContext, pScene);
 }
 
 bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
@@ -1297,6 +1314,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
 
     // Adaptive light sampling
     m_AdaptiveLightSampler.PrepareBuffers(pRenderContext, mScreenRes, mNumMaxPhotons);
+
+    // Prefix restir
+    m_PrefixRestir.PrepareBuffers(pRenderContext, mScreenRes);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()

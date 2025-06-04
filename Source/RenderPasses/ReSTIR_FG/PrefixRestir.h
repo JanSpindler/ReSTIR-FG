@@ -9,10 +9,17 @@ using namespace Falcor;
 class PrefixRestir
 {
 public:
+    PrefixRestir(ref<Device> pDevice) : m_Device(pDevice) {}
+
+    void PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize);
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
-    void Run(RenderContext* pRenderContext);
+    bool RenderUI(Gui::Widgets& widget);
+    void Run(RenderContext* pRenderContext, const RenderData& renderData);
+
+    constexpr bool IsActive() const { return m_Active; }
 
 private:
+    ref<Device> m_Device;
     ref<Scene> m_Scene;
 
     RestirPathTracerParams mParams; // Runtime path tracer parameters.
@@ -23,20 +30,15 @@ private:
 
     ref<Texture> m_TemporalVBuffer;
 
+    bool m_Active = false;
     bool m_EnableTemporalReprojection = true;
     bool m_NoResamplingForTemporalReuse = false;
+    bool m_UseDirectLighting = false;
 
     ref<ComputePass> m_TemporalPathRetracePass;
     ref<ComputePass> m_TemporalReusePass; // Merges reservoirs
 
     void SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const;
     void PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData);
-    //void PathReusePass(
-    //    RenderContext* pRenderContext,
-    //    uint32_t restir_i,
-    //    const RenderData& renderData,
-    //    bool temporalReuse = false,
-    //    int spatialRoundId = 0,
-    //    bool isLastRound = false
-    //);
+    void PathReusePass(RenderContext* pRenderContext, const RenderData& renderData);
 };
