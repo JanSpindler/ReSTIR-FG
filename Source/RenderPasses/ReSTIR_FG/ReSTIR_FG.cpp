@@ -172,13 +172,16 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(
     parseProperties(props);
 
     // Create sample generator.
-    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+    // Switched to 32-bit generator for prefix restir
+    // TODO: Maybe only use 32-bit generator for prefix restir and use 128-bit for the rest again
+    //mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
 
     // Photon guiding
     m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, getMaterialDefines().add(mpSampleGenerator->getDefines()));
 
     // Prefix restir
-    m_PrefixRestir = PrefixRestir(mpDevice, getMaterialDefines());
+    m_PrefixRestir = PrefixRestir(mpDevice, getMaterialDefines().add(mpSampleGenerator->getDefines()));
 
     // Initializes the CUDA driver API.
     if (!initCuda())

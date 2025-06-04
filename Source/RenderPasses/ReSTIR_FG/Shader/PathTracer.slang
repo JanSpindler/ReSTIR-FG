@@ -1,7 +1,7 @@
 /***************************************************************************
  # Copyright (c) 2022, Daqi Lin.  All rights reserved.
  **************************************************************************/
-#include "Scene/Material/MaterialDefines.slangh"
+//#include "Scene/Material/MaterialDefines.slangh"
 
 import Scene.RaytracingInline;
 import Rendering.Lights.EnvMapSampler;
@@ -11,7 +11,7 @@ import Rendering.Lights.LightHelpers;
 import Rendering.Materials.StandardMaterial;
 import Rendering.Materials.ClothMaterial;
 import Rendering.Materials.HairMaterial;
-import Rendering.Materials.MaterialShading;
+//import Rendering.Materials.MaterialShading;
 import Rendering.Materials.Microfacet;
 import Rendering.Materials.InteriorListHelpers;
 import Rendering.Volumes.HomogeneousVolumeSampler;

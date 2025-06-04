@@ -9,7 +9,7 @@ import Utils.Sampling.SampleGenerator;
 import LoadShadingData;
 import Params;
 import Utils.Debug.PixelDebug;
-import Rendering.Materials.MaterialShading;
+//import Rendering.Materials.MaterialShading;
 import Rendering.Utils.PixelStats;
 import Scene.RaytracingInline;
 import Scene.Scene;
