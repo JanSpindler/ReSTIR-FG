@@ -1,5 +1,6 @@
 #include "PrefixRestir.h"
 #include <string>
+#include <Utils/Math/Common.h>
 
 // Render pass inputs and outputs.
 static const std::string kInputVBuffer = "vbuffer";
@@ -22,7 +23,16 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
     // Compute allocation requirements for paths and output samples.
     // Note that the sample buffers are padded to whole tiles, while the max path count depends on actual frame dimension.
     // If we don't have a fixed sample count, assume the worst case.
-    // TODO: Use frame size
+
+    m_Params.frameDim = screenSize;
+    if (m_Params.frameDim.x > kMaxFrameDimension || m_Params.frameDim.y > kMaxFrameDimension)
+    {
+        logError("Frame dimensions up to " + std::to_string(kMaxFrameDimension) + " pixels width/height are supported.");
+    }
+    assert(isPowerOf2(kScreenTileDim.x) && isPowerOf2(kScreenTileDim.y));
+    assert(kScreenTileDim.x == (1 << kScreenTileBits.x) && kScreenTileDim.y == (1 << kScreenTileBits.y));
+    m_Params.screenTiles = div_round_up(m_Params.frameDim, kScreenTileDim);
+
     uint32_t tileCount = m_Params.screenTiles.x * m_Params.screenTiles.y;
     const uint32_t reservoirCount = tileCount * kScreenTileDim.x * kScreenTileDim.y;
     const uint32_t screenPixelCount = m_Params.frameDim.x * m_Params.frameDim.y;
