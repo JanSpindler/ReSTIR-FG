@@ -175,11 +175,10 @@ ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
 
     // Photon guiding
-    const DefineList defines = getMaterialDefines().add(mpSampleGenerator->getDefines());
-    m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, defines);
+    m_GaussianPhotonGuiding = GaussianPhotonGuiding(mpDevice, getMaterialDefines().add(mpSampleGenerator->getDefines()));
 
     // Prefix restir
-    m_PrefixRestir = PrefixRestir(mpDevice, defines);
+    m_PrefixRestir = PrefixRestir(mpDevice, getMaterialDefines());
 
     // Initializes the CUDA driver API.
     if (!initCuda())

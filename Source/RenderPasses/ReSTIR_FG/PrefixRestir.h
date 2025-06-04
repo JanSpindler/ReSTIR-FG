@@ -79,6 +79,7 @@ private:
 
     ref<Device> m_Device;
     ref<Scene> m_Scene;
+    DefineList m_Defines;
 
     RestirPathTracerParams m_Params; // Runtime path tracer parameters.
     StaticParams m_StaticParams;     // Static path tracer parameters.
@@ -92,6 +93,7 @@ private:
     bool m_EnableTemporalReprojection = true;
     bool m_NoResamplingForTemporalReuse = false;
     bool m_UseDirectLighting = false;
+    bool m_GBufferAdjustShadingNormals = false;
 
     ref<ComputePass> m_TemporalPathRetracePass;
     ref<ComputePass> m_TemporalReusePass; // Merges reservoirs

@@ -23,21 +23,10 @@ static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shad
 
 static const uint32_t kNeighborOffsetCount = 8192;
 
-PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice)
+PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice), m_Defines(defines)
 {
-    defines.add(m_StaticParams.GetDefines());
-
-    {
-        Program::Desc desc;
-        desc.addShaderLibrary(kTemporalPathRetraceFile).csEntry("main").setShaderModel("6_5");
-        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, defines, false);
-    }
-
-    {
-        Program::Desc desc;
-        desc.addShaderLibrary(kTemporalReusePassFile).csEntry("main").setShaderModel("6_5");
-        m_TemporalReusePass = ComputePass::create(m_Device, desc, defines, false);
-    }
+    m_Defines.add(m_StaticParams.GetDefines());
+    m_Defines.add("GBUFFER_ADJUST_SHADING_NORMALS", m_GBufferAdjustShadingNormals ? "1" : "0");
 }
 
 void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
@@ -97,6 +86,7 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
 void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     m_Scene = pScene;
+    m_Defines.add(m_Scene->getSceneDefines());
 }
 
 bool PrefixRestir::RenderUI(Gui::Widgets& widget)
@@ -160,6 +150,12 @@ void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderD
 
 void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    if (!m_TemporalPathRetracePass)
+    {
+        Program::Desc desc;
+        desc.addShaderLibrary(kTemporalPathRetraceFile).csEntry("main").setShaderModel("6_5");
+        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, m_Defines, false);
+    }
     ref<ComputePass> pass = m_TemporalPathRetracePass;
 
     // Check shader assumptions.
@@ -215,6 +211,12 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
 
 void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    if (!m_TemporalReusePass)
+    {
+        Program::Desc desc;
+        desc.addShaderLibrary(kTemporalReusePassFile).csEntry("main").setShaderModel("6_5");
+        m_TemporalReusePass = ComputePass::create(m_Device, desc, m_Defines, false);
+    }
     ref<ComputePass> pass = m_TemporalReusePass;
 
     // Check shader assumptions.
