@@ -206,11 +206,13 @@ void rayGen()
         }
 #endif
 
+        // Exit after writing the first hit information because no additional bounces are allowed
         if (gMaxBounces == 0)
         {
             break;
         }
-        
+
+        // Sample BSDF
         BSDFSample bsdfSample;
         const bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
         if (!validBSDF)
@@ -231,13 +233,16 @@ void rayGen()
             true; // Check if surface is diffuse or above the roughness threshold
         isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
 
+        // If the BSDF sample is invalid or the surface is diffuse, exit
         if (isDiffuse || invalidSample)
         {
             break;
         }
-        
-        thp *= bsdfSample.weight; // Update troughput
-                
+
+        // Update troughput
+        thp *= bsdfSample.weight;
+
+        // Trace next ray, because surface was not diffuse
         RayDesc tRay;
         tRay.Origin = sd.computeNewRayOrigin(!isTransmission);
         tRay.TMin = 0.0001f;
