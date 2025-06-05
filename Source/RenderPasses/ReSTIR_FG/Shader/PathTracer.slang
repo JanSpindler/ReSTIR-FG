@@ -731,6 +731,7 @@ struct PathTracer
         getLightTypeSelectionProbabilities(p);
 
         float u = sampleNext1D(sg);
+        pdf = 0.0f;
 
         [unroll]
         for (lightType = 0; lightType < 3; ++lightType)
@@ -928,10 +929,10 @@ struct PathTracer
         // Limit specular transmission paths.
         let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0); // TODO: If adjust shading normals add flag to hints
         let bsdfProperties = bsdf.getProperties(sd);
-        if (kLimitTransmission && bsdfProperties.specularTransmissionAlbedo > 0.f)
+        if (kLimitTransmission && any(bsdfProperties.specularTransmissionAlbedo > 0.f))
         {
             const uint transmissionBounces = path.getBounces(BounceType::Transmission);
-            if (transmissionBounces >= kMaxTransmissionReflectionDepth) sd.setActiveLobes((uint)LobeType::All & ~((uint)LobeType::DeltaReflection | (uint)LobeType::SpecularReflection));
+            if (transmissionBounces >= kMaxTransmissionReflectionDepth) sd.mtl.setActiveLobes((uint)LobeType::All & ~((uint)LobeType::DeltaReflection | (uint)LobeType::SpecularReflection));
             //if (transmissionBounces >= kMaxTransmissionRefractionDepth) sd.eta = 1.f;
         }
 
@@ -978,8 +979,11 @@ struct PathTracer
         }
         else
         {
-            path.isLastVertexClassifiedAsRough =
-                kSeparatePathBSDF ? (!path.isSpecularBounce() || sd.linearRoughness > params.specularRoughnessThreshold) : classifyAsRough(sd, params.specularRoughnessThreshold);
+            let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0); // TODO: If adjust shading normals add flag to hints
+            let bsdfProperties = bsdf.getProperties(sd);
+            path.isLastVertexClassifiedAsRough = // kSeparatePathBSDF ?
+                (!path.isSpecularBounce() || bsdfProperties.roughness > params.specularRoughnessThreshold);// :
+                //classifyAsRough(sd, params.specularRoughnessThreshold);
         }
     }
 
@@ -1027,12 +1031,18 @@ struct PathTracer
 
 
         // Optionally disable emissive lights inside volumes.
-        if (!kUseLightsInDielectricVolumes && path.isInsideDielectricVolume()) sd.emissive = float3(0.f);
+        if (!kUseLightsInDielectricVolumes && path.isInsideDielectricVolume())
+        {
+            // sd.emissive = float3(0.f);
+            sd.mtl.setEmissive(false);
+        }
 
         // Disable specular lobes if caustics are disabled and path already contains a diffuse vertex.
-        if (kDisableCaustics && path.getBounces(BounceType::Diffuse) > 0 && sd.linearRoughness <= params.specularRoughnessThreshold)
+        let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0); // TODO: If adjust shading normals add flag to hints
+        let bsdfProperties = bsdf.getProperties(sd);
+        if (kDisableCaustics && path.getBounces(BounceType::Diffuse) > 0 && bsdfProperties.roughness <= params.specularRoughnessThreshold)
         {
-            sd.setActiveLobes((uint)LobeType::Diffuse);
+            sd.mtl.setActiveLobes((uint)LobeType::Diffuse);
         }
 
         // Check if the scatter event is samplable by the light sampling technique.
@@ -1057,7 +1067,7 @@ struct PathTracer
 
         float3 attenuatedEmission = 0.f;
 
-        if (computeEmissive && any(sd.emissive > 0.f))
+        if (computeEmissive && sd.mtl.isEmissive())//any(sd.emissive > 0.f))
         {
             float lightPdf = 0.f;
 
@@ -1088,9 +1098,9 @@ struct PathTracer
 
             // Accumulate emitted radiance weighted by path throughput and MIS weight.
             if (!kDisableDirectIllumination || !isPrimaryHit || !isLightSamplable)
-                Lr = path.getCurrentThp() * sd.emissive * misWeight;
+                Lr = path.getCurrentThp() * bsdfProperties.emission * misWeight;
 
-            attenuatedEmission = path.getCurrentThp() * sd.emissive; //only used for primary hit
+            attenuatedEmission = path.getCurrentThp() * bsdfProperties.emission; //only used for primary hit
 
             // daqi: Since ScreenSpaceReSTIR cannot handle transmission and delta reflection, we must include the contribution in the color buffer 
             if (!path.enableRandomReplay || terminateRandomReplayForEscape)
@@ -1112,8 +1122,10 @@ struct PathTracer
                     path.length - 1 == path.pathBuilder.rcVertexLength ? path.thp * sd.emissive * misWeight : path.rcVertexPathTreeIrradiance,
                     path.useHybridShift, path.russianRoulettePdf, misWeight, lightPdf, (uint)LightSampleType::Emissive, path.pathReservoir, path.enableRandomReplay);
 #else
-                bool selectedCurrentPath = path.pathBuilder.addEscapeVertex(params, max(0, path.length - 1), path.dir, Lr, path.thp * sd.emissive * misWeight, 
-                    path.useHybridShift, path.russianRoulettePdf, misWeight, lightPdf, (uint)LightSampleType::Emissive, path.pathReservoir, path.enableRandomReplay);
+                bool selectedCurrentPath = path.pathBuilder.addEscapeVertex(
+                    params, max(0, path.length - 1), path.dir, Lr, path.thp * bsdfProperties.emission * misWeight, 
+                    path.useHybridShift, path.russianRoulettePdf, misWeight, lightPdf, (uint)LightSampleType::Emissive,
+                    path.pathReservoir, path.enableRandomReplay);
 #endif
 
                 // daqi: if current escaped vertex has path.length >= 2, then it can be used as a rcVertex
@@ -1138,7 +1150,10 @@ struct PathTracer
                             float3 disp = path.origin - sd.posW;
                             float geometryFactor = abs(dot(sd.faceN, sd.V)) / dot(disp, disp);
 
-                            path.pathBuilder.markEscapeVertexAsRcVertex(params, path.length, path.pathReservoir, path.hit, path.isDelta(), path.isTransmission(), path.isSpecularBounce(), lightPdf, (uint)LightSampleType::Emissive, sd.emissive, float3(0.f), path.prevScatterPdf, geometryFactor);
+                            path.pathBuilder.markEscapeVertexAsRcVertex(
+                                params, path.length, path.pathReservoir, path.hit, path.isDelta(), path.isTransmission(),
+                                path.isSpecularBounce(), lightPdf, (uint)LightSampleType::Emissive, bsdfProperties.emission,
+                                float3(0.f), path.prevScatterPdf, geometryFactor);
                         }
                     }
                 }
@@ -1160,7 +1175,7 @@ struct PathTracer
 
         // Determine if BSDF supports sampling with next-event estimation.
         // The available lobes depend on the material.
-        uint lobes = getBSDFLobes(sd);
+        uint lobes = sd.mtl.getActiveLobes();//getBSDFLobes(sd);
 
         bool supportsNEE = (lobes & (uint)LobeType::NonDelta) != 0;
 
@@ -1183,8 +1198,9 @@ struct PathTracer
         bool is_rcVertex = false;
 
         bool isFarField = length(path.origin - prevPathOrigin) >= params.nearFieldDistance;
-        bool isCurrentVertexClassifiedAsRough =
-            kSeparatePathBSDF ? hasRoughComponent(sd, params.specularRoughnessThreshold) : classifyAsRough(sd, params.specularRoughnessThreshold);
+        bool isCurrentVertexClassifiedAsRough = // kSeparatePathBSDF ?
+            bsdfProperties.roughness > params.specularRoughnessThreshold;//hasRoughComponent(sd, params.specularRoughnessThreshold) :
+            //classifyAsRough(sd, params.specularRoughnessThreshold);
         bool isLastVertexAcceptableForRcPrev = path.isLastVertexClassifiedAsRough;
 
         // daqi: if we are not doing a hybrid shift replay, we should check if current vertex satisfy the condition to be used as a rcVertex
@@ -1255,7 +1271,9 @@ struct PathTracer
             {
                 // not possible to generate a diffuse bounce
                 if (params.localStrategyType & (uint)LocalStrategy::RoughnessCondition &&
-                        (kSeparatePathBSDF && (path.pathBuilder.pathFlags.decodeIsSpecularBounce(true) ? sd.linearRoughness <= params.specularRoughnessThreshold : !hasRoughComponent(sd, 1.f)) ||
+                        (//kSeparatePathBSDF && (path.pathBuilder.pathFlags.decodeIsSpecularBounce(true) ?
+                            bsdfProperties.roughness <= params.specularRoughnessThreshold// :
+                            /*!hasRoughComponent(sd, 1.f)*/ ||
                         !kSeparatePathBSDF && !isCurrentVertexClassifiedAsRough))
                 {
                     // daqi: invalidate the shift
@@ -1297,14 +1315,14 @@ struct PathTracer
                 // cache (NEE sampling) seed for temporal validation (only possible for non early direction reuse since it uses the cachedRandomSeed slot)
                 if (path.length == path.pathBuilder.rcVertexLength)
                 {
-                    path.pathBuilder.cachedRandomSeed = path.sg.getCurrentSeed();
+                    path.pathBuilder.cachedRandomSeed = path.sg.rng.state;//path.sg.getCurrentSeed();
                 }
 
                 LightSample ls;
                 bool validSample = true;
                 {
                     // Setup path vertex.
-                    PathVertex vertex = PathVertex.create(/*path.getVertexIndex()*/ path.length + 1, sd.posW, sd.N, sd.faceN);
+                    PathVertex vertex = PathVertex.create(/*path.getVertexIndex()*/ path.length + 1, sd.posW, sd.frame.N, sd.faceN);
 
                     // Determine if upper/lower hemispheres need to be sampled.
                     bool sampleUpperHemisphere = ((lobes & (uint)LobeType::NonDeltaReflection) != 0);
@@ -1326,13 +1344,13 @@ struct PathTracer
 
                     if (kUseMIS && ls.lightType != (uint)LightSampleType::Analytic)
                     {
-                        scatterPdf = evalPdfBSDF(sd, ls.dir);
+                        scatterPdf = bsdf.evalPdf(sd, ls.dir, true);//evalPdfBSDF(sd, ls.dir);
 
                         misWeight *= evalMIS(1, ls.pdf, 1, scatterPdf);
                     }
                     ls.Li *= misWeight;
 
-                    float3 weight = evalBSDFCosine(sd, ls.dir);
+                    float3 weight = bsdf.evalPdf(sd, ls.dir, false);//evalBSDFCosine(sd, ls.dir);
 
                     float3 Lr = weight * ls.Li * path.getCurrentThp();
 
@@ -1419,7 +1437,7 @@ struct PathTracer
         if (path.length == 0)
         {
             // daqi: save current random seed, this is required to do random number replay to construct a path
-            path.pathReservoir.initRandomSeed = path.sg.getCurrentSeed();
+            path.pathReservoir.initRandomSeed = path.sg.rng.state;//path.sg.getCurrentSeed();
         }
 
         // Generate the next path segment or terminate.
@@ -1428,7 +1446,7 @@ struct PathTracer
         // forbid current vertex being rcVertex
         if (kSeparatePathBSDF && params.localStrategyType & (uint)LocalStrategy::RoughnessCondition)
         {
-            bool seenAsConnectible = !path.isSpecularBounce() || sd.linearRoughness > params.specularRoughnessThreshold;
+            bool seenAsConnectible = !path.isSpecularBounce() || bsdfProperties.roughness > params.specularRoughnessThreshold;
 
             if (path.isReplayForHybridShift && seenAsConnectible && isLastVertexAcceptableForRcPrev && path.length >= 1)
             {
@@ -1453,7 +1471,7 @@ struct PathTracer
         // cache seed for temporal validation (only possible for non early direction reuse since it uses the cachedRandomSeed slot)
         if (path.length == path.pathBuilder.rcVertexLength)
         {
-            path.pathBuilder.cachedRandomSeed = path.sg.getCurrentSeed();
+            path.pathBuilder.cachedRandomSeed = path.sg.rng.state;//path.sg.getCurrentSeed();
         }
 
         // daqi: save the incoming direction on rcVertex
@@ -1747,7 +1765,7 @@ struct PathTracer
             else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
             else pathType = NRDPathType::Residual;
 
-            sampleReflectance = computeSampleReflectance(kUseNRDDemodulation, path.isDiffusePrimaryHit(), path.isSpecularPrimaryHit(), sd);
+            sampleReflectance = 1.0f;//computeSampleReflectance(kUseNRDDemodulation, path.isDiffusePrimaryHit(), path.isSpecularPrimaryHit(), sd);
 
             return;
         }
@@ -1768,9 +1786,9 @@ struct PathTracer
             LightSample ls;
             bool validSample = true;
             {
-                uint lobes = getBSDFLobes(rcVertexSd);
+                uint lobes = rcVertexSd.mtl.getActiveLobes();//getBSDFLobes(rcVertexSd);
                 // Setup path vertex.
-                PathVertex vertex = PathVertex.create(/*path.getVertexIndex()*/ path.length + 1, rcVertexSd.posW, rcVertexSd.N, rcVertexSd.faceN);
+                PathVertex vertex = PathVertex.create(/*path.getVertexIndex()*/ path.length + 1, rcVertexSd.posW, rcVertexSd.frame.N, rcVertexSd.faceN);
 
                 // Determine if upper/lower hemispheres need to be sampled.
                 bool sampleUpperHemisphere = ((lobes & (uint)LobeType::NonDeltaReflection) != 0);
@@ -1813,7 +1831,7 @@ struct PathTracer
             path.useHybridShift = false;
             path.isReplayForHybridShift = false;
 
-            uint lobes = getBSDFLobes(rcVertexSd);
+            uint lobes = rcVertexSd.mtl.getActiveLobes();//getBSDFLobes(rcVertexSd);
             bool sampleUpperHemisphere = ((lobes & (uint)LobeType::NonDeltaReflection) != 0);
             if (!kUseLightsInDielectricVolumes && path.isInsideDielectricVolume()) sampleUpperHemisphere = false;
             bool sampleLowerHemisphere = ((lobes & (uint)LobeType::NonDeltaTransmission) != 0);
