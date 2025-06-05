@@ -84,232 +84,159 @@ struct PathReusePass
     */
     void ReSTIR(const uint2 pixel)
     {
+        // Get sample generator.
         var sg = TinyUniformSampleGenerator(pixel, (kCandidateSamples + 1 + gNumSpatialRounds) * params.seed + kCandidateSamples);
 
-        // Compute offset into per-sample buffers. All samples are stored consecutively at this offset.
+        // Get central pixel reservoir
         const uint centralOffset = params.getReservoirOffset(pixel);
         PathReservoir dstReservoir = outputReservoirs[centralOffset];
         PathReservoir centralReservoir = dstReservoir;
-        float currentM = dstReservoir.M;
-        float3 initialColor = dstReservoir.F * dstReservoir.weight;
+        const float currentM = dstReservoir.M;
+        const float3 initialColor = dstReservoir.F * dstReservoir.weight; // Not used?
 
-        if (ReSTIRMISKind(kTemporalReSTIRMISKind) == ReSTIRMISKind::Talbot)
-        {
-            dstReservoir.init();
-        }
-        else
-        {
-            dstReservoir.prepareMerging();
-        }
+        // Prepare reservoir for MIS
+        // Use talbot mis for temporal anyways
+        dstReservoir.init();
 
+        // Get central pixel shading data
         PackedHitInfo centralPrimaryHitPacked;
         ShadingData centralPrimarySd = getPixelShadingData(pixel, centralPrimaryHitPacked);
-        if (!isValidPackedHitInfo(centralPrimaryHitPacked)) return;
+        if (!isValidPackedHitInfo(centralPrimaryHitPacked))
+        {
+            return;
+        }
 
+        //
+        bool chooseCurrent = true;
+        static const bool doTemporalUpdateForDynamicScene = kTemporalUpdateForDynamicScene;
+
+        // Color averaging test
+
+        // Get prev pixel
+        const float2 motionVector = motionVectors[pixel];
+        int2 prevPixel = pixel;
+        bool foundTemporalSurface = true;
+        if (gEnableTemporalReprojection)
+        {
+            prevPixel = pixel + motionVector * params.frameDim + (sampleNext2D(sg) * 1.f - 0.f);
+        }
+        if (!isValidScreenRegion(prevPixel) || !foundTemporalSurface)
+        {
+            return;
+        }
+
+        // Get prev pixel reservoir
+        PackedHitInfo temporalPrimaryHitPacked;
+        ShadingData temporalPrimarySd = getPixelTemporalShadingData(prevPixel, temporalPrimaryHitPacked);
+        if (!isValidPackedHitInfo(temporalPrimaryHitPacked))
+        {
+            return;
+        }
+        PathReservoir temporalReservoir = temporalReservoirs[params.getReservoirOffset(prevPixel)];
+        temporalReservoir.M = min(gTemporalHistoryLength * currentM, temporalReservoir.M);
+
+        // Talbot MIS used for temporal
+        static const int curSampleId = -1;
+        static const int prevSampleId = 0;
+
+        float dstJacobian;
         float3 color = 0.f;
         ReconnectionData dummyRcData;
         dummyRcData.Init();
 
+        for (int i = curSampleId; i <= prevSampleId; i++)
         {
-            bool chooseCurrent = true;
+            PathReservoir tempDstReservoir = dstReservoir;
+            bool possibleToBeSelected = false;
+            float p_sum = 0;
+            float p_self = 0;
 
-            // color averaging test
-
-            // fetch temporal reservoir
-            float2 motionVector = motionVectors[pixel];
-            int2 prevPixel = pixel;
-
-            bool foundTemporalSurface = true;
-
-            if (gEnableTemporalReprojection)
+            if (i == curSampleId)
             {
-                prevPixel = pixel + motionVector * params.frameDim + (sampleNext2D(sg) * 1.f - 0.f);
+                tempDstReservoir = outputReservoirs[centralOffset];
+                dstJacobian = 1.f;
+                possibleToBeSelected = tempDstReservoir.weight > 0;
+            }
+            else
+            {
+                ReconnectionData rcData;
+                if (ShiftMapping(kShiftStrategy) == ShiftMapping::Hybrid && temporalReservoir.pathFlags.rcVertexLength() > 1)
+                {
+                    rcData = reconnectionDataBuffer[centralOffset].data[1];
+                }
+                else
+                {
+                    rcData = dummyRcData;
+                }
+
+                possibleToBeSelected = shiftAndMergeReservoir(
+                    params, doTemporalUpdateForDynamicScene, dstJacobian, centralPrimaryHitPacked, centralPrimarySd, tempDstReservoir,
+                    temporalPrimarySd, temporalReservoir, rcData, true, sg, false, 1.f, true); // "true" means hypothetically selected as the sample
             }
 
-            if (!isValidScreenRegion(prevPixel) || !foundTemporalSurface) return;
-
-            PackedHitInfo temporalPrimaryHitPacked;
-            ShadingData temporalPrimarySd = getPixelTemporalShadingData(prevPixel, temporalPrimaryHitPacked);
-            if (!isValidPackedHitInfo(temporalPrimaryHitPacked)) return;
-
-            bool doTemporalUpdateForDynamicScene = kTemporalUpdateForDynamicScene;
-
-            PathReservoir temporalReservoir = temporalReservoirs[params.getReservoirOffset(prevPixel)];
-
-            temporalReservoir.M = min(gTemporalHistoryLength * currentM, temporalReservoir.M);
-
-            float dstJacobian;
-
-            ///////////////////
-            /// TALBOT RMIS ///
-            ///////////////////
-            if (ReSTIRMISKind(kTemporalReSTIRMISKind) == ReSTIRMISKind::Talbot)
+            if (possibleToBeSelected)
             {
-                static const int curSampleId = -1;
-                static const int prevSampleId = 0;
-
-                for (int i = curSampleId; i <= prevSampleId; i++)
+                for (int j = curSampleId; j <= prevSampleId; ++j)
                 {
-                    float p_sum = 0;
-                    float p_self = 0;
-
-                    PathReservoir tempDstReservoir = dstReservoir;
-
-                    bool possibleToBeSelected = false;
-
-                    if (i == curSampleId)
+                    if (j == curSampleId)
                     {
-                        tempDstReservoir = outputReservoirs[centralOffset];
-                        dstJacobian = 1.f;
-                        possibleToBeSelected = tempDstReservoir.weight > 0;
+                        const float cur_p = PathReservoir::toScalar(tempDstReservoir.F) * currentM;
+                        p_sum += cur_p;
+                        if (i == curSampleId)
+                        {
+                            p_self = cur_p;
+                        }
                     }
                     else
                     {
+                        if (i == j)
+                        {
+                            p_self = PathReservoir::toScalar(temporalReservoir.F) / dstJacobian * temporalReservoir.M;
+                            p_sum += p_self;
+                            continue;
+                        }
+
                         ReconnectionData rcData;
-                        if (ShiftMapping(kShiftStrategy) == ShiftMapping::Hybrid && temporalReservoir.pathFlags.rcVertexLength() > 1)
-                            rcData = reconnectionDataBuffer[centralOffset].data[1];
+                        if (ShiftMapping(kShiftStrategy) == ShiftMapping::Hybrid && tempDstReservoir.pathFlags.rcVertexLength() > 1)
+                        {
+                            rcData = reconnectionDataBuffer[centralOffset].data[0];
+                        }
                         else
+                        {
                             rcData = dummyRcData;
-
-                        possibleToBeSelected = shiftAndMergeReservoir(params, doTemporalUpdateForDynamicScene, dstJacobian, centralPrimaryHitPacked, centralPrimarySd, tempDstReservoir,
-                            temporalPrimarySd, temporalReservoir, rcData, true, sg, false, 1.f, true); // "true" means hypothetically selected as the sample
-                    }
-
-                    if (possibleToBeSelected)
-                    {
-                        for (int j = curSampleId; j <= prevSampleId; ++j)
-                        {
-                            if (j == curSampleId)
-                            {
-                                float cur_p = PathReservoir::toScalar(tempDstReservoir.F) * currentM;
-                                p_sum += cur_p;
-                                if (i == curSampleId) p_self = cur_p;
-                            }
-                            else
-                            {
-                                if (i == j)
-                                {
-                                    p_self = PathReservoir::toScalar(temporalReservoir.F) / dstJacobian * temporalReservoir.M;
-                                    p_sum += p_self;
-                                    continue;
-                                }
-
-                                float p_ = 0.f;
-                                float tneighborJacobian;
-
-                                ReconnectionData rcData;
-                                if (ShiftMapping(kShiftStrategy) == ShiftMapping::Hybrid && tempDstReservoir.pathFlags.rcVertexLength() > 1)
-                                    rcData = reconnectionDataBuffer[centralOffset].data[0];
-                                else
-                                    rcData = dummyRcData;
-
-                                float3 tneighborIntegrand = computeShiftedIntegrand(params, tneighborJacobian, temporalPrimaryHitPacked, temporalPrimarySd,
-                                    centralPrimarySd, tempDstReservoir, rcData, true, true); //usePrev
-                                p_ = PathReservoir::toScalar(tneighborIntegrand) * tneighborJacobian;
-                                p_sum += p_ * temporalReservoir.M;
-                            }
-                        }
-                    }
-
-                    float misWeight = p_sum == 0.f ? 0.f : p_self / p_sum;
-                    PathReservoir neighborReservoir;
-                    if (i == curSampleId) neighborReservoir = tempDstReservoir;
-                    else neighborReservoir = temporalReservoir;
-
-                    mergeReservoirWithResamplingMIS(params, tempDstReservoir.F, dstJacobian, dstReservoir, tempDstReservoir, neighborReservoir, sg, false, misWeight);
-                }
-
-                if (dstReservoir.weight > 0)
-                {
-                    dstReservoir.finalizeGRIS();
-                }
-            }
-            /////////////////////
-            /// CONSTANT RMIS ///
-            /////////////////////
-            else
-            {
-                float chosen_Jacobian = 1.f;
-
-                bool selected;
-
-                if (gNoResamplingForTemporalReuse)
-                    selected = mergeReservoirNoResampling(params, dstReservoir, temporalReservoir, sg);
-                else
-                    selected = shiftAndMergeReservoir(params, doTemporalUpdateForDynamicScene, dstJacobian, centralPrimaryHitPacked, centralPrimarySd, dstReservoir,
-                        temporalPrimarySd, temporalReservoir, dummyRcData, true, sg, false);
-
-                if (selected)
-                {
-                    chooseCurrent = false;
-                    chosen_Jacobian = dstJacobian;
-                }
-
-                // MIS weight
-                if (dstReservoir.weight > 0 && ReSTIRMISKind(kTemporalReSTIRMISKind) != ReSTIRMISKind::ConstantBiased && !gNoResamplingForTemporalReuse)
-                {
-                    if (chooseCurrent) // need to know prev pdf 
-                    {
-                        float count = currentM;
-                        float prefixJacobian = 1.f;
-
-                        // compute two shifts
-
-                        int shiftCount = 1;
-                        float prefix_approxPdf;
-
-                        float3 prefixIntegrand = computeShiftedIntegrand(params, prefixJacobian, temporalPrimaryHitPacked, temporalPrimarySd,
-                            centralPrimarySd, dstReservoir, dummyRcData, true, true); //usePrev // determinisitically select the reconnection shift
-                        prefix_approxPdf = PathReservoir::toScalar(prefixIntegrand) * prefixJacobian;
-
-                        if (prefix_approxPdf > 0.f)
-                        {
-                            count += temporalReservoir.M;
                         }
 
-                        float misWeight = 1.f / max(1.f, count);
-                        if (ReSTIRMISKind(kSpatialReSTIRMISKind) == ReSTIRMISKind::Constant)
-                            misWeight = PathReservoir::toScalar(dstReservoir.F) / (PathReservoir::toScalar(dstReservoir.F) * currentM + prefix_approxPdf * temporalReservoir.M);
-                        dstReservoir.weight *= dstReservoir.M * misWeight;
-                    }
-                    else // have already computed everything
-                    {
-                        float count = currentM;
-
-                        // compute the other shift
-                        if (ReSTIRMISKind(kSpatialReSTIRMISKind) == ReSTIRMISKind::Constant)
-                        {
-                            float sum_pdf = PathReservoir::toScalar(temporalReservoir.F) / chosen_Jacobian;
-
-                            float misWeight = (PathReservoir::toScalar(temporalReservoir.F) / chosen_Jacobian) / (sum_pdf * temporalReservoir.M + PathReservoir::toScalar(dstReservoir.F) * currentM);
-
-                            if (ReSTIRMISKind(kSpatialReSTIRMISKind) == ReSTIRMISKind::ConstantBinary)
-                            {
-                                misWeight = 1.f / max(1.f, count);
-                            }
-                            dstReservoir.weight *= dstReservoir.M * misWeight;
-                        }
+                        float tneighborJacobian;
+                        const float3 tneighborIntegrand = computeShiftedIntegrand(
+                            params, tneighborJacobian, temporalPrimaryHitPacked, temporalPrimarySd,
+                            centralPrimarySd, tempDstReservoir, rcData, true, true); //usePrev
+                        const float p_ = PathReservoir::toScalar(tneighborIntegrand) * tneighborJacobian;
+                        p_sum += p_ * temporalReservoir.M;
                     }
                 }
-
-                dstReservoir.finalizeRIS();
             }
 
-            if (dstReservoir.weight < 0.f || isinf(dstReservoir.weight) || isnan(dstReservoir.weight)) dstReservoir.weight = 0.f;
-            outputReservoirs[centralOffset] = dstReservoir;
-            color = dstReservoir.F * dstReservoir.weight;
-
-            if (gIsLastRound)
-            {
-                if (useDirectLighting)
-                {
-                    color += directLighting[pixel].rgb;
-                    if (any(isnan(color) || isinf(color))) color = 0.f;
-                }
-
-                outputColor[pixel] += float4(color / kSamplesPerPixel, 1.f);
-            }
+            const float misWeight = p_sum == 0.f ? 0.f : p_self / p_sum;
+            const PathReservoir neighborReservoir = i == curSampleId ? tempDstReservoir : temporalReservoir;
+            mergeReservoirWithResamplingMIS(
+                params, tempDstReservoir.F, dstJacobian, dstReservoir, tempDstReservoir, neighborReservoir, sg, false, misWeight);
         }
+
+        if (dstReservoir.weight > 0)
+        {
+            dstReservoir.finalizeGRIS();
+        }
+
+        // After MIS
+        if (dstReservoir.weight < 0.f || isinf(dstReservoir.weight) || isnan(dstReservoir.weight))
+        {
+            dstReservoir.weight = 0.f;
+        }
+        outputReservoirs[centralOffset] = dstReservoir;
+        //color = dstReservoir.F * dstReservoir.weight;
+
+        // Does not use direct lighting, so we can skip it.
+        // Does not need to render to outputColor, so we can skip it.
     }
 
     /** Entry point for merge pass.
