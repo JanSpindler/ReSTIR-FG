@@ -134,7 +134,10 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 {
     PreparePathTracer(renderData);
     PathRetracePass(pRenderContext, renderData);
-    //PathReusePass(pRenderContext, renderData);
+    PathReusePass(pRenderContext, renderData);
+
+    pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
+    pRenderContext->copyResource(m_TemporalVBuffer.get(), renderData[kInputVBuffer].get());
 }
 
 void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const
