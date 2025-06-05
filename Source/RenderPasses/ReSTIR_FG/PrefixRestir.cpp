@@ -6,7 +6,7 @@
 // Render pass inputs and outputs.
 static const std::string kInputVBuffer = "vbuffer";
 static const std::string kInputMotionVectors = "mvec"; //"motionVectors";
-static const std::string kInputDirectLighting = "directLighting";
+//static const std::string kInputDirectLighting = "directLighting";
 
 static const std::string kOutputColor = "color";
 static const std::string kOutputAlbedo = "albedo";
@@ -23,11 +23,6 @@ static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader
 static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
 
 static const uint32_t kNeighborOffsetCount = 8192;
-
-//static const ChannelList kInputChannels{
-//    {kInputVBuffer, "gVBuffer", "Visibility buffer in packed format"},
-//    {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)", true /* optional */},
-//};
 
 PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice), m_Defines(defines)
 {
@@ -264,7 +259,7 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
         var["gTemporalHistoryLength"] = static_cast<float>(m_TemporalHistoryLength);
     }
 
-    var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
+    //var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
     var["useDirectLighting"] = m_UseDirectLighting;
     var["gIsLastRound"] = true;
 

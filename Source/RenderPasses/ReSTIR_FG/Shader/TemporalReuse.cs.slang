@@ -12,7 +12,7 @@ import Rendering.Utils.PixelStats;
 import Utils.Sampling.TinyUniformSampleGenerator;
 import Utils.Math.Ray;
 import LoadShadingData;
-import Rendering.Materials.MaterialShading;
+//import Rendering.Materials.MaterialShading;
 
 /** TODO.
 */
@@ -58,7 +58,7 @@ struct PathReusePass
         PrimaryHitPacked = vbuffer[pixel];
         if (isValidPackedHitInfo(PrimaryHitPacked))
         {
-            HitInfo PrimaryHit; PrimaryHit.unpack(PrimaryHitPacked);
+            HitInfo PrimaryHit = HitInfo(PrimaryHitPacked); //PrimaryHit.unpack(PrimaryHitPacked);
             sd = loadShadingData(PrimaryHit, -ray.dir, true);
         }
         return sd;
@@ -67,11 +67,11 @@ struct PathReusePass
     ShadingData getPixelTemporalShadingData(int2 pixel, out PackedHitInfo PrimaryHitPacked)
     {
         ShadingData sd = {};
-        Ray ray = gScene.camera.computeRayPinholePrevFrame(pixel, params.frameDim);
+        Ray ray = gScene.camera.computeRayPinhole /*PrevFrame */(pixel, params.frameDim); // TODO: Support prev frame camera.
         PrimaryHitPacked = temporalVbuffer[pixel];
         if (isValidPackedHitInfo(PrimaryHitPacked))
         {
-            HitInfo PrimaryHit; PrimaryHit.unpack(PrimaryHitPacked);
+            HitInfo PrimaryHit = HitInfo(PrimaryHitPacked); //PrimaryHit.unpack(PrimaryHitPacked);
             sd = loadShadingData(PrimaryHit, -ray.dir, true);
         }
         return sd;
