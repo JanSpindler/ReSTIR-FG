@@ -29,10 +29,6 @@ PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(p
 {
     m_Defines.add(m_StaticParams.GetDefines());
     m_Defines.add("GBUFFER_ADJUST_SHADING_NORMALS", m_GBufferAdjustShadingNormals ? "1" : "0");
-
-    Program::Desc desc;
-    desc.addShaderLibrary(kTracePassFilename).csEntry("main").setShaderModel("6_5");
-    m_TracePass = ComputePass::create(m_Device, desc, defines, false);
 }
 
 void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
@@ -91,6 +87,13 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
 
 void PrefixRestir::PreparePathTracer(const RenderData& renderData)
 {
+    if (!m_TracePass)
+    {
+        Program::Desc desc;
+        desc.addShaderLibrary(kTracePassFilename).csEntry("main").setShaderModel("6_5");
+        m_TracePass = ComputePass::create(m_Device, desc, m_Defines, false);
+    }
+
     if (!m_PathTracerBlock)// || mVarsChanged)
     {
         auto reflector = m_TracePass->getProgram()->getReflector()->getParameterBlock("gPathTracer");
@@ -153,14 +156,14 @@ void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderD
         var["kUseEnvBackground"] = false;//mpScene->useEnvBackground();
     }
 
-    if (auto outputDebug = var.findMember("outputDebug"); outputDebug.isValid())
-    {
-        outputDebug = renderData[kOutputDebug]->asTexture(); // Can be nullptr
-    }
-    if (auto outputTime = var.findMember("outputTime"); outputTime.isValid())
-    {
-        outputTime = renderData[kOutputTime]->asTexture(); // Can be nullptr
-    }
+    //if (auto outputDebug = var.findMember("outputDebug"); outputDebug.isValid())
+    //{
+    //    outputDebug = renderData[kOutputDebug]->asTexture(); // Can be nullptr
+    //}
+    //if (auto outputTime = var.findMember("outputTime"); outputTime.isValid())
+    //{
+    //    outputTime = renderData[kOutputTime]->asTexture(); // Can be nullptr
+    //}
 
     // TODO: Do we need this?
     //if (isPathTracer && mpEmissiveSampler)
