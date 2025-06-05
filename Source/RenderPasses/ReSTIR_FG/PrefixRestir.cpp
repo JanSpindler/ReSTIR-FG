@@ -134,8 +134,7 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 {
     PreparePathTracer(renderData);
     PathRetracePass(pRenderContext, renderData);
-    PathReusePass(pRenderContext, renderData);
-    __nop();
+    //PathReusePass(pRenderContext, renderData);
 }
 
 void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const
@@ -143,7 +142,7 @@ void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderD
     // Bind runtime data.
     var["params"].setBlob(m_Params);
     var["vbuffer"] = renderData[kInputVBuffer]->asTexture();
-    var["outputColor"] = renderData[kOutputColor]->asTexture();
+    //var["outputColor"] = renderData[kOutputColor]->asTexture();
 
     // TODO: Do we need this?
     if (isPathTracer)

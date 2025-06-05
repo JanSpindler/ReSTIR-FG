@@ -28,14 +28,10 @@ struct PathRetracePass
     Texture2D<PackedHitInfo> temporalVbuffer;
     Texture2D<float2> motionVectors;
 
-    //ByteAddressBuffer nRooksPattern;
-
-    RWTexture2D<float4> outputColor;                      ///< Output resolved color.
-    RWStructuredBuffer<PathReservoir> outputReservoirs;                  
+    RWStructuredBuffer<PathReservoir> outputReservoirs;
     RWStructuredBuffer<PathReservoir> temporalReservoirs;
     RWStructuredBuffer<PixelReconnectionData> reconnectionDataBuffer;
 
-    int  gNumSpatialRounds;
     bool gEnableTemporalReprojection;
 
     float gTemporalHistoryLength;
@@ -82,7 +78,7 @@ struct PathRetracePass
     void ReSTIR(const uint2 pixel)
     {
         // TODO: How to seed efficiently?
-        var sg = TinyUniformSampleGenerator(pixel, (kCandidateSamples + 1 + gNumSpatialRounds) * params.seed + kCandidateSamples);
+        var sg = TinyUniformSampleGenerator(pixel, (kCandidateSamples + 1) * params.seed + kCandidateSamples);
 
         // Compute offset into per-sample buffers. All samples are stored consecutively at this offset.
         const uint centralOffset = params.getReservoirOffset(pixel);
@@ -121,6 +117,7 @@ struct PathRetracePass
         PathReservoir temporalReservoir = temporalReservoirs[params.getReservoirOffset(prevPixel)];
 
         // Compute Talbot MIS and store reconnection data
+        return;
         HitInfo dstRcPrevVertexHit;
         HitInfo dstRcPrevVertexHit2;
         float3 dstRcPrevVertexWo;
