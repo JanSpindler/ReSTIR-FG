@@ -154,7 +154,7 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     {
         Program::Desc desc;
         desc.addShaderLibrary(kTemporalPathRetraceFile).csEntry("main").setShaderModel("6_5");
-        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, m_Defines, false);
+        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, m_Defines, true);
     }
     ref<ComputePass> pass = m_TemporalPathRetracePass;
 
@@ -215,7 +215,7 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
     {
         Program::Desc desc;
         desc.addShaderLibrary(kTemporalReusePassFile).csEntry("main").setShaderModel("6_5");
-        m_TemporalReusePass = ComputePass::create(m_Device, desc, m_Defines, false);
+        m_TemporalReusePass = ComputePass::create(m_Device, desc, m_Defines, true);
     }
     ref<ComputePass> pass = m_TemporalReusePass;
 
