@@ -54,6 +54,7 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/NRDHelpers.slang
     Shader/PathState.slang
     Shader/PathBuilder.slang
+    Shader/TracePass.cs.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

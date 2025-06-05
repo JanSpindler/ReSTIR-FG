@@ -88,34 +88,39 @@ struct PathRetracePass
         const uint centralOffset = params.getReservoirOffset(pixel);
         PathReservoir centralReservoir = outputReservoirs[centralOffset];
 
+        // Get the central primary hit and shading data.
         PackedHitInfo centralPrimaryHitPacked;
         ShadingData centralPrimarySd = getPixelShadingData(pixel, centralPrimaryHitPacked);
-        if (!isValidPackedHitInfo(centralPrimaryHitPacked)) return;
+        if (!isValidPackedHitInfo(centralPrimaryHitPacked))
+        {
+            return;
+        }
 
-        // color averaging test
+        // Color averaging test
 
-        // fetch temporal reservoir
-        float2 motionVector = motionVectors[pixel];
+        // Get prev pixel
+        const float2 motionVector = motionVectors[pixel];
         int2 prevPixel = pixel;
-
         bool foundTemporalSurface = true;
-
         if (gEnableTemporalReprojection)
         {
             prevPixel = pixel + motionVector * params.frameDim + (sampleNext2D(sg) * 1.f - 0.f);
         }
+        if (!isValidScreenRegion(prevPixel) || !foundTemporalSurface)
+        {
+            return;
+        }
 
-        if (!isValidScreenRegion(prevPixel) || !foundTemporalSurface) return;
-
+        // Get previous pixel's reservoir and shading data.
         PackedHitInfo temporalPrimaryHitPacked;
         ShadingData temporalPrimarySd = getPixelTemporalShadingData(prevPixel, temporalPrimaryHitPacked);
-        if (!isValidPackedHitInfo(temporalPrimaryHitPacked)) return;
-
+        if (!isValidPackedHitInfo(temporalPrimaryHitPacked))
+        {
+            return;
+        }
         PathReservoir temporalReservoir = temporalReservoirs[params.getReservoirOffset(prevPixel)];
 
-        // talbot MIS
-        // compute mis weight for current pixel
-
+        // Compute Talbot MIS and store reconnection data
         HitInfo dstRcPrevVertexHit;
         HitInfo dstRcPrevVertexHit2;
         float3 dstRcPrevVertexWo;
@@ -123,7 +128,6 @@ struct PathRetracePass
         float3 Tp;
         float3 Tp2;
 
-        // write to memory
         if (centralReservoir.pathFlags.rcVertexLength() > 1)
         {
             Tp = traceHybridShiftRays(params, true, temporalPrimaryHitPacked, temporalPrimarySd, centralReservoir, dstRcPrevVertexHit, dstRcPrevVertexWo);
@@ -141,13 +145,18 @@ struct PathRetracePass
     */
     void execute(const uint2 _pixel)
     {
+        // Get pixel
         const uint2 pixel = _pixel;
+        if (any(pixel >= params.frameDim))
+        {
+            return;
+        }
 
-        if (any(pixel >= params.frameDim)) return;
-
+        // Debug
         printSetPixel(pixel);
         logSetPixel(pixel);
 
+        // Execute
         ReSTIR(pixel);
     }
 };

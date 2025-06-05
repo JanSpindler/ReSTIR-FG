@@ -6,7 +6,7 @@
 // Render pass inputs and outputs.
 static const std::string kInputVBuffer = "vbuffer";
 static const std::string kInputMotionVectors = "mvec"; //"motionVectors";
-//static const std::string kInputDirectLighting = "directLighting";
+static const std::string kInputDirectLighting = "directLighting";
 
 static const std::string kOutputColor = "color";
 static const std::string kOutputAlbedo = "albedo";
@@ -19,6 +19,7 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
+static const std::string kTracePassFilename = "RenderPasses/ReSTIR_FG/Shader/TracePass.cs.slang";
 static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
 static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
 
@@ -28,6 +29,10 @@ PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(p
 {
     m_Defines.add(m_StaticParams.GetDefines());
     m_Defines.add("GBUFFER_ADJUST_SHADING_NORMALS", m_GBufferAdjustShadingNormals ? "1" : "0");
+
+    Program::Desc desc;
+    desc.addShaderLibrary(kTracePassFilename).csEntry("main").setShaderModel("6_5");
+    m_TracePass = ComputePass::create(m_Device, desc, defines, false);
 }
 
 void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize)
@@ -50,9 +55,9 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
     const uint32_t screenPixelCount = m_Params.frameDim.x * m_Params.frameDim.y;
     const uint32_t sampleCount = reservoirCount; // we are effectively only using 1spp for ReSTIR
 
-    const uint32_t baseReservoirSize = 88; // Used for ReSTIR PT
+    static constexpr uint32_t baseReservoirSize = 88; // Used for ReSTIR PT
     //const uint32_t pathTreeReservoirSize = 128; // Used for bekeart style path reuse
-    const uint reconnectionDataSize = 256; // Use online reconnection data size
+    static constexpr uint reconnectionDataSize = 256; // Use online reconnection data size
 
     if (!m_ReconnectionDataBuffer)
     {
@@ -84,6 +89,23 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
     }
 }
 
+void PrefixRestir::PreparePathTracer(const RenderData& renderData)
+{
+    if (!m_PathTracerBlock)// || mVarsChanged)
+    {
+        auto reflector = m_TracePass->getProgram()->getReflector()->getParameterBlock("gPathTracer");
+        m_PathTracerBlock = ParameterBlock::create(m_Device, reflector);
+        assert(m_PathTracerBlock);
+        //mVarsChanged = true;
+    }
+
+    // Bind resources.
+    auto var = m_PathTracerBlock->getRootVar();
+    SetShaderData(var, renderData, true, false);
+    var["outputReservoirs"] = m_OutputReservoirs;
+    //var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
+}
+
 void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     m_Scene = pScene;
@@ -105,6 +127,7 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
 
 void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    PreparePathTracer(renderData);
     PathRetracePass(pRenderContext, renderData);
     PathReusePass(pRenderContext, renderData);
 }
@@ -117,18 +140,18 @@ void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderD
     var["outputColor"] = renderData[kOutputColor]->asTexture();
 
     // TODO: Do we need this?
-    //if (isPathTracer)
-    //{
+    if (isPathTracer)
+    {
     //    var["isLastRound"] = !mEnableSpatialReuse && !mEnableTemporalReuse;
-    //    var["useDirectLighting"] = mUseDirectLighting;
-    //    var["kUseEnvLight"] = mpScene->useEnvLight();
-    //    var["kUseEmissiveLights"] = mpScene->useEmissiveLights();
-    //    var["kUseAnalyticLights"] = mpScene->useAnalyticLights();
-    //}
-    //else if (isPathGenerator)
-    //{
-    //    var["kUseEnvBackground"] = mpScene->useEnvBackground();
-    //}
+    var["useDirectLighting"] = false; // mUseDirectLighting;
+    var["kUseEnvLight"] = false;//mpScene->useEnvLight();
+    var["kUseEmissiveLights"] = m_Scene->useEmissiveLights();
+    var["kUseAnalyticLights"] = m_Scene->useAnalyticLights();
+    }
+    else if (isPathGenerator)
+    {
+        var["kUseEnvBackground"] = false;//mpScene->useEnvBackground();
+    }
 
     if (auto outputDebug = var.findMember("outputDebug"); outputDebug.isValid())
     {

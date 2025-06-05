@@ -15,6 +15,7 @@ public:
     PrefixRestir(ref<Device> pDevice, DefineList defines);
 
     void PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize);
+    void PreparePathTracer(const RenderData& renderData);
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     bool RenderUI(Gui::Widgets& widget);
     void Run(RenderContext* pRenderContext, const RenderData& renderData);
@@ -89,6 +90,8 @@ private:
     ref<Buffer> m_ReconnectionDataBuffer;
     ref<Texture> m_TemporalVBuffer;
 
+    ref<ParameterBlock> m_PathTracerBlock;
+
     bool m_Active = false;
     bool m_EnableTemporalReprojection = true;
     bool m_NoResamplingForTemporalReuse = false;
@@ -97,6 +100,7 @@ private:
     bool m_UseMaxHistory = true;
     uint m_TemporalHistoryLength = 20;
 
+    ref<ComputePass> m_TracePass;
     ref<ComputePass> m_TemporalPathRetracePass;
     ref<ComputePass> m_TemporalReusePass; // Merges reservoirs
 
