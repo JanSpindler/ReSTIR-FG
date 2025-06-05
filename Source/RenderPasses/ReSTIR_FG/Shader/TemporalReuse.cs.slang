@@ -217,7 +217,15 @@ struct PathReusePass
             }
 
             const float misWeight = p_sum == 0.f ? 0.f : p_self / p_sum;
-            const PathReservoir neighborReservoir = i == curSampleId ? tempDstReservoir : temporalReservoir;
+            PathReservoir neighborReservoir;
+            if (i == curSampleId)
+            {
+                neighborReservoir = tempDstReservoir;
+            }
+            else
+            {
+                neighborReservoir = temporalReservoir;
+            }
             mergeReservoirWithResamplingMIS(
                 params, tempDstReservoir.F, dstJacobian, dstReservoir, tempDstReservoir, neighborReservoir, sg, false, misWeight);
         }

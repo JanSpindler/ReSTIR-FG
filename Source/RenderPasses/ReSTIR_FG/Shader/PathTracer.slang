@@ -8,7 +8,7 @@ import Rendering.Lights.EnvMapSampler;
 import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.LightHelpers;
-import Rendering.Materials.StandardMaterial;
+//import Rendering.Materials.StandardMaterial;
 import Rendering.Materials.ClothMaterial;
 import Rendering.Materials.HairMaterial;
 //import Rendering.Materials.MaterialShading;
@@ -28,7 +28,6 @@ import Utils.Debug.PixelDebug;
 import LoadShadingData;
 import PathBuilder;
 import PathReservoir;
-import Rendering.Materials.IMaterialInstance;
 
 #include "Utils/Math/MathConstants.slangh"
 
@@ -733,7 +732,7 @@ struct PathTracer
         float u = sampleNext1D(sg);
         pdf = 0.0f;
 
-        [unroll]
+        //[unroll]
         for (lightType = 0; lightType < 3; ++lightType)
         {
             if (u < p[lightType])
