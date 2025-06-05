@@ -1,10 +1,11 @@
 #include "PrefixRestir.h"
 #include <string>
 #include <Utils/Math/Common.h>
+#include <RenderGraph/RenderPassHelpers.h>
 
 // Render pass inputs and outputs.
 static const std::string kInputVBuffer = "vbuffer";
-static const std::string kInputMotionVectors = "motionVectors";
+static const std::string kInputMotionVectors = "mvec"; //"motionVectors";
 static const std::string kInputDirectLighting = "directLighting";
 
 static const std::string kOutputColor = "color";
@@ -22,6 +23,11 @@ static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader
 static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
 
 static const uint32_t kNeighborOffsetCount = 8192;
+
+//static const ChannelList kInputChannels{
+//    {kInputVBuffer, "gVBuffer", "Visibility buffer in packed format"},
+//    {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)", true /* optional */},
+//};
 
 PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice), m_Defines(defines)
 {
@@ -184,15 +190,14 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     var["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
     var["gNoResamplingForTemporalReuse"] = m_NoResamplingForTemporalReuse;
 
-    // TODO: Do we need this?
-    //if (!mUseMaxHistory)
-    //{
-    var["gTemporalHistoryLength"] = 1e30f;
-    //}
-    //else
-    //{
-    //    var["gTemporalHistoryLength"] = (float)mTemporalHistoryLength;
-    //}
+    if (!m_UseMaxHistory)
+    {
+        var["gTemporalHistoryLength"] = 1e30f;
+    }
+    else
+    {
+        var["gTemporalHistoryLength"] = static_cast<float>(m_TemporalHistoryLength);
+    }
 
     // TODO: Fix (older Falcor version)
     //pass["gScene"] = m_Scene->getParameterBlock();
@@ -249,11 +254,15 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
     var["motionVectors"] = renderData[kInputMotionVectors]->asTexture();
     var["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
     var["gNoResamplingForTemporalReuse"] = m_NoResamplingForTemporalReuse;
-    // TODO: Do we need this?
-    //if (!mUseMaxHistory)
-    var["gTemporalHistoryLength"] = 1e30f;
-    //else
-    //    var["gTemporalHistoryLength"] = (float)mTemporalHistoryLength;
+
+    if (!m_UseMaxHistory)
+    {
+        var["gTemporalHistoryLength"] = 1e30f;
+    }
+    else
+    {
+        var["gTemporalHistoryLength"] = static_cast<float>(m_TemporalHistoryLength);
+    }
 
     var["directLighting"] = renderData[kInputDirectLighting]->asTexture();
     var["useDirectLighting"] = m_UseDirectLighting;

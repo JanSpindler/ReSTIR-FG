@@ -94,6 +94,8 @@ private:
     bool m_NoResamplingForTemporalReuse = false;
     bool m_UseDirectLighting = false;
     bool m_GBufferAdjustShadingNormals = false;
+    bool m_UseMaxHistory = true;
+    uint m_TemporalHistoryLength = 20;
 
     ref<ComputePass> m_TemporalPathRetracePass;
     ref<ComputePass> m_TemporalReusePass; // Merges reservoirs

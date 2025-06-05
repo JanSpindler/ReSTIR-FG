@@ -66,7 +66,7 @@ const std::string kInputMotionVectors = "mvec";
 
 const Falcor::ChannelList kInputChannels{
     {kInputVBuffer, "gVBuffer", "Visibility buffer in packed format"},
-    {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)", true /* optional */},
+    {kInputMotionVectors, "gMotionVectors", "Motion vector buffer (float format)"},
 };
 
 const std::string kOutputColor = "color";
