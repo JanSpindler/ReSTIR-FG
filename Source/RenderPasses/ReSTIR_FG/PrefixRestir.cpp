@@ -132,7 +132,6 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
 
 void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    PreparePathTracer(renderData);
     PathRetracePass(pRenderContext, renderData);
     PathReusePass(pRenderContext, renderData);
 
@@ -140,12 +139,17 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
     pRenderContext->copyResource(m_TemporalVBuffer.get(), renderData[kInputVBuffer].get());
 }
 
-DefineList PrefixRestir::GetTraceTransmissionDeltaDefines() const
+DefineList PrefixRestir::GetDefines() const
 {
     DefineList defines;
     defines.add("PREFIX_RESTIR", m_Active ? "1" : "0");
     defines.add(m_Defines);
     return defines;
+}
+
+void PrefixRestir::SetTraceTransmissionDeltaVars(const ShaderVar& var)
+{
+    var["gPathTracer"] = m_PathTracerBlock;
 }
 
 void PrefixRestir::SetShaderData(const ShaderVar& var, const RenderData& renderData, bool isPathTracer, bool isPathGenerator) const

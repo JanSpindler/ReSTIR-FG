@@ -12,13 +12,10 @@ import Utils.Color.ColorHelpers;
 import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
-
-#if PREFIX_RESTIR
 import PathTracer;
 import PathState;
 import Params;
 import PathReservoir;
-#endif
 
 // Syntax Highlight
 #ifndef USE_RTXDI
@@ -57,6 +54,9 @@ RWTexture2D<float4> gOutDiffuseReflectance;
 RWTexture2D<float4> gOutSpecularReflectance;
 
 RWTexture2D<float4> gDebugOut;  //Only used when DEBUG_MASK == 1
+
+// Prefix restir
+ParameterBlock<PathTracer> gPathTracer;
 
 #define is_valid(name) (is_valid_##name != 0)
 

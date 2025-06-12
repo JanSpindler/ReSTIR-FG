@@ -17,10 +17,10 @@ import Rendering.Materials.InteriorListHelpers;
 import Rendering.Volumes.HomogeneousVolumeSampler;
 import Rendering.Volumes.PhaseFunction;
 import Rendering.Utils.PixelStats;
-import RenderPasses.Shared.Denoising.NRDBuffers;
-import RenderPasses.Shared.Denoising.NRDData;
-import RenderPasses.Shared.Denoising.NRDHelpers;
-import RenderPasses.Shared.Denoising.NRDConstants;
+//import RenderPasses.Shared.Denoising.NRDBuffers;
+//import RenderPasses.Shared.Denoising.NRDData;
+//import RenderPasses.Shared.Denoising.NRDHelpers;
+//import RenderPasses.Shared.Denoising.NRDConstants;
 //import NRDHelpers;
 import Utils.Color.ColorHelpers;
 import Utils.Geometry.GeometryHelpers;
@@ -48,10 +48,10 @@ struct PathTracer
 
     Texture2D<PackedHitInfo> vbuffer;               ///< Fullscreen V-buffer for the primary hits.
 
-    NRDBuffers outputNRD;                           ///< Output NRD data.
-    RWTexture2D<float4> outputNRDDiffuseRadianceHitDist;    ///< Output resolved diffuse color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
-    RWTexture2D<float4> outputNRDSpecularRadianceHitDist;   ///< Output resolved specular color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
-    RWTexture2D<float4> outputNRDResidualRadianceHitDist;   ///< Output resolved residual color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
+    //NRDBuffers outputNRD;                           ///< Output NRD data.
+    //RWTexture2D<float4> outputNRDDiffuseRadianceHitDist;    ///< Output resolved diffuse color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
+    //RWTexture2D<float4> outputNRDSpecularRadianceHitDist;   ///< Output resolved specular color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
+    //RWTexture2D<float4> outputNRDResidualRadianceHitDist;   ///< Output resolved residual color in .rgb and hit distance in .a for NRD. Only valid if kOutputNRDData == true.
 
     RWTexture2D<float4> outputColor;                ///< Output color buffer if kSamplesPerPixel == 1.
     RWTexture2D<float4> outputDebug;                ///< Output debug data. Valid if OUTPUT_DEBUG is nonzero.
@@ -859,7 +859,7 @@ struct PathTracer
         else
         {
             path.clearHit();
-            path.sceneLength = float16_t(kNRDInvalidPathLength);
+            //path.sceneLength = float16_t(kNRDInvalidPathLength);
         }
     }
 
@@ -1734,41 +1734,41 @@ struct PathTracer
         return L;
     }
 
-    void traceRandomReplayGetDenoiserData(HitInfo hit, ShadingData sd, Ray ray, ReSTIRPathFlags pathFlags,
-        uint initRandomSeed, inout float hitDist, inout NRDPathType pathType, inout float3 sampleReflectance)
-    {
-        PathState path;
-        bool isRcVertexEscapedVertex = pathFlags.pathLength() + 1 == pathFlags.rcVertexLength();
-        generateRandomReplayPath(path, hit, ray, initRandomSeed, pathFlags.pathLength(), pathFlags.lastVertexNEE(), isRcVertexEscapedVertex);
-        path.useHybridShift = true;
-        path.isReplayForHybridShift = true;
-        path.pathBuilder.rcVertexLength = pathFlags.rcVertexLength();
+    //void traceRandomReplayGetDenoiserData(HitInfo hit, ShadingData sd, Ray ray, ReSTIRPathFlags pathFlags,
+    //    uint initRandomSeed, inout float hitDist, inout NRDPathType pathType, inout float3 sampleReflectance)
+    //{
+    //    PathState path;
+    //    bool isRcVertexEscapedVertex = pathFlags.pathLength() + 1 == pathFlags.rcVertexLength();
+    //    generateRandomReplayPath(path, hit, ray, initRandomSeed, pathFlags.pathLength(), pathFlags.lastVertexNEE(), isRcVertexEscapedVertex);
+    //    path.useHybridShift = true;
+    //    path.isReplayForHybridShift = true;
+    //    path.pathBuilder.rcVertexLength = pathFlags.rcVertexLength();
 
-        if (path.pathBuilder.rcVertexLength > 1)
-        {
-            path.origin = sd.computeNewRayOrigin();
+    //    if (path.pathBuilder.rcVertexLength > 1)
+    //    {
+    //        path.origin = sd.computeNewRayOrigin();
 
-            // this is also applicable for random number reuse
-            path.pathBuilder.pathFlags.flags = 0;
+    //        // this is also applicable for random number reuse
+    //        path.pathBuilder.pathFlags.flags = 0;
 
-            generateReplayPrimaryScatterRay(path, sd);
-            if (path.isActive()) nextVertex(path);
-            else
-            {
-                // this shouldn't happen! 
-                return;
-            }
+    //        generateReplayPrimaryScatterRay(path, sd);
+    //        if (path.isActive()) nextVertex(path);
+    //        else
+    //        {
+    //            // this shouldn't happen! 
+    //            return;
+    //        }
 
-            hitDist = float(path.sceneLength);
-            if (path.isDiffusePrimaryHit()) pathType = NRDPathType::Diffuse;
-            else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
-            else pathType = NRDPathType::Residual;
+    //        hitDist = float(path.sceneLength);
+    //        if (path.isDiffusePrimaryHit()) pathType = NRDPathType::Diffuse;
+    //        else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
+    //        else pathType = NRDPathType::Residual;
 
-            sampleReflectance = 1.0f;//computeSampleReflectance(kUseNRDDemodulation, path.isDiffusePrimaryHit(), path.isSpecularPrimaryHit(), sd);
+    //        sampleReflectance = 1.0f;//computeSampleReflectance(kUseNRDDemodulation, path.isDiffusePrimaryHit(), path.isSpecularPrimaryHit(), sd);
 
-            return;
-        }
-    }
+    //        return;
+    //    }
+    //}
 
     void traceTemporalUpdate(ShadingData rcPrevSd, inout PathReservoir tempPathReservoir)
     {
@@ -2031,63 +2031,61 @@ struct PathTracer
             }
         }
 
-        if (kOutputNRDData && PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathTracing) 
-        {
-            float3 diffuseRadiance = 0.f;
-            float3 specularRadiance = 0.f;
-            float3 residualRadiance = 0.f;
-            float hitDist = path.hitDist;
+        //if (kOutputNRDData && PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathTracing) 
+        //{
+        //    float3 diffuseRadiance = 0.f;
+        //    float3 specularRadiance = 0.f;
+        //    float3 residualRadiance = 0.f;
+        //    float hitDist = path.hitDist;
 
-            {
-                NRDPathType pathType;
-                if (path.isDiffusePrimaryHit()) pathType = NRDPathType::Diffuse;
-                else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
-                else pathType = NRDPathType::Residual;
+        //    {
+        //        NRDPathType pathType;
+        //        if (path.isDiffusePrimaryHit()) pathType = NRDPathType::Diffuse;
+        //        else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
+        //        else pathType = NRDPathType::Residual;
 
-                float3 radiance = path.L + path.LDeltaDirect;
+        //        float3 radiance = path.L + path.LDeltaDirect;
 
-                if (useDirectLighting)
-                {
-                    radiance += directLighting[pixel].rgb;
-                }
+        //        if (useDirectLighting)
+        //        {
+        //            radiance += directLighting[pixel].rgb;
+        //        }
 
-                float3 reflectance = path.sharedScatterDir;
-                reflectance = max(0.04f, reflectance);
-                float3 emission = path.rcPrevVertexWo;
-                float3 demodulatedRadiance = max(0.f, (radiance - emission)) / reflectance;
+        //        float3 reflectance = path.sharedScatterDir;
+        //        reflectance = max(0.04f, reflectance);
+        //        float3 emission = path.rcPrevVertexWo;
+        //        float3 demodulatedRadiance = max(0.f, (radiance - emission)) / reflectance;
 
-                switch (pathType)
-                {
-                case NRDPathType::Diffuse:
-                    diffuseRadiance += demodulatedRadiance;
-                    break;
-                case NRDPathType::Specular:
-                    specularRadiance += demodulatedRadiance;
-                    break;
-                default:
-                    // Do not demodulate residual.
-                    residualRadiance += radiance;
-                    break;
-                }
-            }
+        //        switch (pathType)
+        //        {
+        //        case NRDPathType::Diffuse:
+        //            diffuseRadiance += demodulatedRadiance;
+        //            break;
+        //        case NRDPathType::Specular:
+        //            specularRadiance += demodulatedRadiance;
+        //            break;
+        //        default:
+        //            // Do not demodulate residual.
+        //            residualRadiance += radiance;
+        //            break;
+        //        }
+        //    }
 
-            const uint spp = kSamplesPerPixel;
-            const float invSpp = spp > 0 ? 1.f / spp : 1.f; // Setting invSpp to 1.0 if we have no samples to avoid NaNs below.
+        //    const uint spp = kSamplesPerPixel;
+        //    const float invSpp = spp > 0 ? 1.f / spp : 1.f; // Setting invSpp to 1.0 if we have no samples to avoid NaNs below.
 
-            if (sampleId == 0)
-            {
-                outputNRDDiffuseRadianceHitDist[pixel] = float4(invSpp * diffuseRadiance, invSpp * hitDist);
-                outputNRDSpecularRadianceHitDist[pixel] = float4(invSpp * specularRadiance, invSpp * hitDist);
-                outputNRDResidualRadianceHitDist[pixel] = float4(invSpp * residualRadiance, invSpp * hitDist);
-            }
-            else
-            {
-                outputNRDDiffuseRadianceHitDist[pixel] += float4(invSpp * diffuseRadiance, invSpp * hitDist);
-                outputNRDSpecularRadianceHitDist[pixel] += float4(invSpp * specularRadiance, invSpp * hitDist);
-                outputNRDResidualRadianceHitDist[pixel] += float4(invSpp * residualRadiance, invSpp * hitDist);
-            }
-        }
-
+        //    if (sampleId == 0)
+        //    {
+        //        outputNRDDiffuseRadianceHitDist[pixel] = float4(invSpp * diffuseRadiance, invSpp * hitDist);
+        //        outputNRDSpecularRadianceHitDist[pixel] = float4(invSpp * specularRadiance, invSpp * hitDist);
+        //        outputNRDResidualRadianceHitDist[pixel] = float4(invSpp * residualRadiance, invSpp * hitDist);
+        //    }
+        //    else
+        //    {
+        //        outputNRDDiffuseRadianceHitDist[pixel] += float4(invSpp * diffuseRadiance, invSpp * hitDist);
+        //        outputNRDSpecularRadianceHitDist[pixel] += float4(invSpp * specularRadiance, invSpp * hitDist);
+        //        outputNRDResidualRadianceHitDist[pixel] += float4(invSpp * residualRadiance, invSpp * hitDist);
+        //    }
+        //}
     }
-
 };

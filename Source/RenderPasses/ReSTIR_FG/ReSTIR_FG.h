@@ -364,7 +364,14 @@ private:
             return r;
         }
 
-        void initRTProgram(ref<Device> device,ref<Scene> scene, const std::string& shaderName,uint maxPayloadBytes,const Program::TypeConformanceList& globalTypeConformances);
+        void initRTProgram(
+            ref<Device> device,
+            ref<Scene> scene,
+            const std::string& shaderName,
+            uint maxPayloadBytes,
+            const Program::TypeConformanceList& globalTypeConformances,
+            const DefineList& prefixRestirDefines
+        );
 
         void initRTCollectionProgram(ref<Device> device,ref<Scene> scene,const std::string& shaderName,uint maxPayloadBytes,const Program::TypeConformanceList& globalTypeConformances);
 

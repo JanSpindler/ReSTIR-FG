@@ -20,7 +20,8 @@ public:
     bool RenderUI(Gui::Widgets& widget);
     void Run(RenderContext* pRenderContext, const RenderData& renderData);
 
-    DefineList GetTraceTransmissionDeltaDefines() const;
+    DefineList GetDefines() const;
+    void SetTraceTransmissionDeltaVars(const ShaderVar& var);
 
     constexpr bool IsActive() const { return m_Active; }
 

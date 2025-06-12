@@ -315,6 +315,10 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     prepareLighting(pRenderContext);
     prepareBuffers(pRenderContext, renderData);
     prepareAccelerationStructure();
+    if (m_PrefixRestir.IsActive())
+    {
+        m_PrefixRestir.PreparePathTracer(renderData);
+    }
 
     // Clear the reservoir
     if (mClearReservoir)
@@ -1355,9 +1359,13 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
 {
     auto globalTypeConformances = mpScene->getMaterialSystem().getTypeConformances();
 
-    mFinalGatherSamplePass.initRTProgram(mpDevice, mpScene, kFinalGatherSamplesShader, kMaxPayloadBytesGenerateFGSamples, globalTypeConformances);
-    mGeneratePhotonPass.initRTProgram(mpDevice, mpScene, kGeneratePhotonsShader, kMaxPayloadBytes, globalTypeConformances);
-    mTraceTransmissionDelta.initRTProgram(mpDevice, mpScene, kTraceTransmissionDeltaShader, kMaxPayloadBytes, globalTypeConformances);
+    mFinalGatherSamplePass.initRTProgram(
+        mpDevice, mpScene, kFinalGatherSamplesShader, kMaxPayloadBytesGenerateFGSamples, globalTypeConformances, {}
+    );
+    mGeneratePhotonPass.initRTProgram(mpDevice, mpScene, kGeneratePhotonsShader, kMaxPayloadBytes, globalTypeConformances, {});
+    mTraceTransmissionDelta.initRTProgram(
+        mpDevice, mpScene, kTraceTransmissionDeltaShader, kMaxPayloadBytes, globalTypeConformances, m_PrefixRestir.GetDefines()
+    );
 
     // Special Program for the Photon Collection as the photon acceleration structure is used
     mCollectPhotonPass.initRTCollectionProgram(mpDevice, mpScene, kCollectPhotonsShader, kMaxPayloadBytesCollect, globalTypeConformances);
@@ -1418,7 +1426,10 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     }
 
     // Prefix restir defines
-    mTraceTransmissionDelta.pProgram->addDefines(m_PrefixRestir.GetTraceTransmissionDeltaDefines());
+    if (m_PrefixRestir.IsActive())
+    {
+        mTraceTransmissionDelta.pProgram->addDefines(m_PrefixRestir.GetDefines());
+    }
 
     FALCOR_ASSERT(mTraceTransmissionDelta.pVars);
 
@@ -1460,7 +1471,10 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     }
 
     // Prefix restir vars
-
+    if (m_PrefixRestir.IsActive())
+    {
+        m_PrefixRestir.SetTraceTransmissionDeltaVars(var);
+    }
 
     // Create dimensions based on the number of VPLs
     FALCOR_ASSERT(mScreenRes.x > 0 && mScreenRes.y > 0);
@@ -2398,8 +2412,14 @@ void ReSTIR_FG::computeQuadTexSize(uint maxItems, uint& outWidth, uint& outHeigh
      outHeight = uint(textureHeight);
 }
 
-void ReSTIR_FG::RayTraceProgramHelper::initRTProgram(ref<Device> device,ref<Scene> scene,const std::string& shaderName,
-                                                     uint maxPayloadBytes,const Program::TypeConformanceList& globalTypeConformances)
+void ReSTIR_FG::RayTraceProgramHelper::initRTProgram(
+    ref<Device> device,
+    ref<Scene> scene,
+    const std::string& shaderName,
+    uint maxPayloadBytes,
+    const Program::TypeConformanceList& globalTypeConformances,
+    const DefineList& prefixRestirDefines
+)
 {
     RtProgram::Desc desc;
     desc.addShaderModules(scene->getShaderModules());
@@ -2415,14 +2435,17 @@ void ReSTIR_FG::RayTraceProgramHelper::initRTProgram(ref<Device> device,ref<Scen
     sbt->setRayGen(desc.addRayGen("rayGen", globalTypeConformances));
     sbt->setMiss(0, desc.addMiss("miss"));
 
-    //TODO: Support more geometry types and more material conformances
+    // TODO: Support more geometry types and more material conformances
     if (scene->hasGeometryType(Scene::GeometryType::TriangleMesh))
     {
-        sbt->setHitGroup(
-            0, scene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit") );
+        sbt->setHitGroup(0, scene->getGeometryIDs(Scene::GeometryType::TriangleMesh), desc.addHitGroup("closestHit", "anyHit"));
     }
 
-    pProgram = RtProgram::create(device, desc, scene->getSceneDefines());
+    DefineList defines;
+    defines.add(scene->getSceneDefines());
+    defines.add(prefixRestirDefines);
+
+    pProgram = RtProgram::create(device, desc, defines);
 }
 
 void ReSTIR_FG::RayTraceProgramHelper::initRTCollectionProgram(ref<Device> device,ref<Scene> scene,const std::string& shaderName,

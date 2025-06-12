@@ -227,14 +227,14 @@ float3 traceHybridShiftRays(const RestirPathTracerParams params, bool usePrev, c
 }
 
 
-void traceDenoiserData(const RestirPathTracerParams params, const PackedHitInfo dstPrimaryHitPacked, const ShadingData dstPrimarySd,
-    ReSTIRPathFlags pathFlags, uint initRandomSeed, inout float hitDist, inout NRDPathType pathType, inout float3 sampleReflectance)
-{
-    HitInfo dstPrimaryHit = HitInfo(dstPrimaryHitPacked); //dstPrimaryHit.unpack(dstPrimaryHitPacked);
-    Ray ray = Ray(gScene.camera.getPosition(), -dstPrimarySd.V, 0, kRayTMax); // this ray can be arbitrary, does not affect results
-    gPathTracer.traceRandomReplayGetDenoiserData(dstPrimaryHit, dstPrimarySd, ray, pathFlags,
-        initRandomSeed, hitDist, pathType, sampleReflectance);
-}
+//void traceDenoiserData(const RestirPathTracerParams params, const PackedHitInfo dstPrimaryHitPacked, const ShadingData dstPrimarySd,
+//    ReSTIRPathFlags pathFlags, uint initRandomSeed, inout float hitDist, inout NRDPathType pathType, inout float3 sampleReflectance)
+//{
+//    HitInfo dstPrimaryHit = HitInfo(dstPrimaryHitPacked); //dstPrimaryHit.unpack(dstPrimaryHitPacked);
+//    Ray ray = Ray(gScene.camera.getPosition(), -dstPrimarySd.V, 0, kRayTMax); // this ray can be arbitrary, does not affect results
+//    gPathTracer.traceRandomReplayGetDenoiserData(dstPrimaryHit, dstPrimarySd, ray, pathFlags,
+//        initRandomSeed, hitDist, pathType, sampleReflectance);
+//}
 
 
 bool isJacobianInvalid(float Jacobian)
