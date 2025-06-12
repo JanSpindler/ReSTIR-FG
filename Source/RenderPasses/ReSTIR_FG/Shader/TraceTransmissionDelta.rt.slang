@@ -164,6 +164,13 @@ void rayGen()
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
     CausticSurface causticSurface;
 #endif
+
+#if PREFIX_RESTIR
+    const uint pathID = launchIndex.x | (launchIndex.y << 12);
+    PathState path;
+    gPathTracer.generatePath(pathID, path);
+    PathReservoir prefixReservoir;
+#endif
     
     // Get first valid(diffuse) Surface
     for (uint i = 0; ((i < gMaxBounces) || gMaxBounces == 0) && hitInfo.isValid(); i++)
@@ -211,6 +218,11 @@ void rayGen()
             causticSurface.normal = sd.faceN;
             causticSurface.viewDepth = rayDist;
         }
+#endif
+
+#if PREFIX_RESTIR
+        // TODO: Reimplement handleHit so that is is compatible with this shader
+        //gPathTracer.handleHit(path);
 #endif
 
         // Exit after writing the first hit information because no additional bounces are allowed
@@ -349,6 +361,11 @@ void rayGen()
     {
         gOutSpecularReflectance[launchIndex] = float4(specularReflectance);
     }
+
+#if PREFIX_RESTIR
+    gPathTracer.finalize(path);
+    gPathTracer.writeOutput(path, prefixReservoir, 0);
+#endif
 
 #if DEBUG_MASK
     float3 debugOut = float3(0,0,1);
