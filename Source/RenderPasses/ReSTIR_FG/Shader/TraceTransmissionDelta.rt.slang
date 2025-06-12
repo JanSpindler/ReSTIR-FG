@@ -13,6 +13,13 @@ import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
 
+#if PREFIX_RESTIR
+import PathTracer;
+import PathState;
+import Params;
+import PathReservoir;
+#endif
+
 // Syntax Highlight
 #ifndef USE_RTXDI
 #define USE_RTXDI 1

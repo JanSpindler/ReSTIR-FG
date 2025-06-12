@@ -1417,6 +1417,9 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
         mTraceTransmissionDelta.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
     }
 
+    // Prefix restir defines
+    mTraceTransmissionDelta.pProgram->addDefines(m_PrefixRestir.GetTraceTransmissionDeltaDefines());
+
     FALCOR_ASSERT(mTraceTransmissionDelta.pVars);
 
     auto var = mTraceTransmissionDelta.pVars->getRootVar();
@@ -1455,6 +1458,9 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     {
         var["gOutSpecularReflectance"] = renderData[kOutputSpecularReflectance]->asTexture();
     }
+
+    // Prefix restir vars
+
 
     // Create dimensions based on the number of VPLs
     FALCOR_ASSERT(mScreenRes.x > 0 && mScreenRes.y > 0);
