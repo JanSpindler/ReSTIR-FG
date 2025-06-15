@@ -220,16 +220,16 @@ void rayGen()
         }
 #endif
 
-#if PREFIX_RESTIR
-        // TODO: Reimplement handleHit so that is is compatible with this shader
-        //gPathTracer.handleHit(path);
-#endif
-
         // Exit after writing the first hit information because no additional bounces are allowed
         if (gMaxBounces == 0)
         {
             break;
         }
+
+#if PREFIX_RESTIR
+        // TODO: Reimplement handleHit so that is is compatible with this shader
+        // gPathTracer.handleHit(path);
+#endif
 
         // Sample BSDF
         BSDFSample bsdfSample;
@@ -362,11 +362,13 @@ void rayGen()
         gOutSpecularReflectance[launchIndex] = float4(specularReflectance);
     }
 
+    // Finalize prefix restir
 #if PREFIX_RESTIR
     gPathTracer.finalize(path);
     gPathTracer.writeOutput(path, prefixReservoir, 0);
 #endif
 
+    // Debug
 #if DEBUG_MASK
     float3 debugOut = float3(0,0,1);
     if (invalidSample && !isDiffuse)
