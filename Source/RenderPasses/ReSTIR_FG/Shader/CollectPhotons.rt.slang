@@ -251,6 +251,23 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     }
 }
 
+void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx, const float3 photonContribution)
+{
+    const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primitiveIdx];
+    if (leafNodeIdx != 0xFFFFFFFF)
+    {
+        const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
+        if (clusterIdx != 0xFFFFFFFF)
+        {
+            const float lum = luminance(photonContribution);
+            NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
+
+            InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
+            NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
+        }
+    }
+}
+
 // Photon Collection via anyHit
 #if USE_STOCHASTIC_COLLECT
 
@@ -354,19 +371,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 #endif // TRACK_FIRST_HIT_PHOTONS
 
 #if ADAPTIVE_LIGHT_SAMPLER
-        const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primIndex];
-        if (leafNodeIdx != 0xFFFFFFFF)
-        {
-            const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
-            if (clusterIdx != 0xFFFFFFFF)
-            {
-                const float lum = luminance(photonContribution);
-                NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
-
-                InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
-                NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
-            }
-        }
+        TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, photonContribution);
 #endif
     }
 
@@ -456,19 +461,7 @@ float3 stochPhotonContribution(
 #endif // TRACK_FIRST_HIT_PHOTONS
 
 #if ADAPTIVE_LIGHT_SAMPLER
-            const uint leafNodeIdx = gPhotonLeafMap[instanceIndex][photonIndex];
-            if (leafNodeIdx != 0xFFFFFFFF)
-            {
-                const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
-                if (clusterIdx != 0xFFFFFFFF)
-                {
-                    const float lum = luminance(photonContribution);
-                    NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
-
-                    InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
-                    NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
-                }
-            }
+            TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex, photonContribution);
 #endif
         }
     }

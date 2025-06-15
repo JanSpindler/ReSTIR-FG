@@ -12,7 +12,7 @@ import Utils.Color.ColorHelpers;
 import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
-import PathTracer;
+import PrefixPathTracer;
 import PathState;
 import Params;
 import PathReservoir;
