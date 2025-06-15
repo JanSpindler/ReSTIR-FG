@@ -152,15 +152,18 @@ void rayGen()
     bool invalidSample = false;
     bool isDiffuse = false;
 
+    let lod = ExplicitLodTextureSampler(0.f);
+    float hitT = 0.f;
+    uint wasTracedMask = 0;
+
     TraceData traceData = TraceData::create();
+
 #if STORE_SAMPLE_GEN_STATE
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount);
 #else
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 2 * 32);
 #endif
-    let lod = ExplicitLodTextureSampler(0.f);
-    float hitT = 0.f;
-    uint wasTracedMask = 0;
+
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
     CausticSurface causticSurface;
 #endif
@@ -170,6 +173,11 @@ void rayGen()
     PathState path;
     gPathTracer.generatePath(pathID, path);
     PathReservoir prefixReservoir;
+
+    if (!hitInfo.isValid())
+    {
+        path.terminate();
+    }
 #endif
     
     // Get first valid(diffuse) Surface
@@ -255,6 +263,9 @@ void rayGen()
         // If the BSDF sample is invalid or the surface is diffuse, exit
         if (isDiffuse || invalidSample)
         {
+#if PREFIX_RESTIR
+            path.terminate();
+#endif
             break;
         }
 
@@ -284,7 +295,14 @@ void rayGen()
         rayDist += traceData.distance;
         hitT += traceData.distance;
         wasTracedMask = 1;
-        
+
+#if PREFIX_RESTIR
+        if (!hitInfo.isValid())
+        {
+            path.terminate();
+        }
+#endif
+
         // Write DirectHit surfaces hits only for transmission or delta reflection hits
         if (validSurfaceForDI)
         {

@@ -990,7 +990,12 @@ struct PathTracer
         After handling the hit, a new scatter ray is generated or the path is terminated.
         \param[in,out] path The path state.
     */
-    void handleHit(inout PathState path)
+    void handleHit(
+        inout PathState path,
+        const float diffuseCutoff,
+        const float minRoughness,
+        const float maxRoughness,
+        const bool requDiffParts)
     {
         // Upon hit:
         // - Load vertex/material data
@@ -1057,11 +1062,24 @@ struct PathTracer
         let bsdf = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f), 0); // TODO: If adjust shading normals add flag to hints
         let bsdfProperties = bsdf.getProperties(sd);
 
-        // TODO: Use ReSTIR_FG definition
+        // Use ReSTIR_FG diffuse definition
+        // const bool isTransmission = validBSDF ? bsdfSample.isLobe(LobeType::Transmission) : false; // TODO: Handle transmission
+        const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
+            (bsdfProperties.diffuseReflectionAlbedo +
+            bsdfProperties.specularReflectionAlbedo +
+             bsdfProperties.diffuseTransmissionAlbedo +
+            bsdfProperties.specularTransmissionAlbedo);
+        const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3.0f;
+        const bool hasDiffuseParts = requDiffParts ?
+            (meanDiffuseProb > diffuseCutoff) || bsdfProperties.roughness > maxRoughness :
+            true; // Check if surface is diffuse or above the roughness threshold
+        // Material is only diffuse if it is over the roughness min
+        bool isCurrentVertexClassifiedAsRough = hasDiffuseParts && bsdfProperties.roughness > minRoughness;// && !isTransmission; TODO: Handle transmission
+
         const bool isFarField = length(path.origin - prevPathOrigin) >= params.nearFieldDistance;
-        bool isCurrentVertexClassifiedAsRough = // kSeparatePathBSDF ?
-            bsdfProperties.roughness > params.specularRoughnessThreshold;//hasRoughComponent(sd, params.specularRoughnessThreshold) :
-            //classifyAsRough(sd, params.specularRoughnessThreshold);
+        //bool isCurrentVertexClassifiedAsRough = // kSeparatePathBSDF ?
+        //    bsdfProperties.roughness > params.specularRoughnessThreshold;//hasRoughComponent(sd, params.specularRoughnessThreshold) :
+        //    //classifyAsRough(sd, params.specularRoughnessThreshold);
         const bool isLastVertexAcceptableForRcPrev = path.isLastVertexClassifiedAsRough;
 
         // daqi: if we are not doing a hybrid shift replay, we should check if current vertex satisfy the condition to be used as a rcVertex
