@@ -46,7 +46,7 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/LoadShadingData.slang
     Shader/Params.slang
     Shader/PathReservoir.slang
-    Shader/PathTracer.slang
+    Shader/OldPathTracer.slang
     Shader/Shift.slang
     Shader/TemporalPathRetrace.cs.slang
     Shader/TemporalReuse.cs.slang

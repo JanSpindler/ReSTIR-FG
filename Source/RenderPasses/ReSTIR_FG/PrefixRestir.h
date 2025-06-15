@@ -96,6 +96,7 @@ private:
     ref<ParameterBlock> m_PathTracerBlock;
 
     bool m_Active = false;
+    uint m_FrameCount = 0;
     bool m_EnableTemporalReprojection = true;
     bool m_NoResamplingForTemporalReuse = false;
     bool m_UseDirectLighting = false;

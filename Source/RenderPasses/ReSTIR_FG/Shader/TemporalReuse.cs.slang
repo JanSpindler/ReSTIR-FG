@@ -5,7 +5,7 @@ import Params;
 import Shift;
 import Scene.HitInfo;
 import PathReservoir;
-import PathTracer;
+import PrefixPathTracer;
 import Scene.Scene;
 import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;

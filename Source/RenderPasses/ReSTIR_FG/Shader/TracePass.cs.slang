@@ -4,7 +4,7 @@
 import Scene.Raytracing;
 import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;
-import PathTracer;
+import PrefixPathTracer;
 import PathState;
 import Params;
 import PathReservoir;
@@ -28,7 +28,7 @@ void tracePath(uint pathID, inout PathReservoir giReservoir, uint sampleIdx)
     {
         if (path.isHit())
         {
-            gPathTracer.handleHit(path);
+            gPathTracer.handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Correct values
             if (path.isTerminated()) break;
             gPathTracer.nextVertex(path);
         }

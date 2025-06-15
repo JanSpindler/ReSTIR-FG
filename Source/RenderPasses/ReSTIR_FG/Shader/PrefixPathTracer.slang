@@ -1338,7 +1338,7 @@ struct PathTracer
             {
                 if (path.isHit())
                 {
-                    handleHit(path);
+                    handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Add correct values
                 }
             }
 
@@ -1393,7 +1393,7 @@ struct PathTracer
             {
                 if (path.isHit())
                 {
-                    handleHit(path);
+                    handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Add correct values
                 }
             }
 
@@ -1430,42 +1430,6 @@ struct PathTracer
 
         return L;
     }
-
-    //void traceRandomReplayGetDenoiserData(HitInfo hit, ShadingData sd, Ray ray, ReSTIRPathFlags pathFlags,
-    //    uint initRandomSeed, inout float hitDist, inout NRDPathType pathType, inout float3 sampleReflectance)
-    //{
-    //    PathState path;
-    //    bool isRcVertexEscapedVertex = pathFlags.pathLength() + 1 == pathFlags.rcVertexLength();
-    //    generateRandomReplayPath(path, hit, ray, initRandomSeed, pathFlags.pathLength(), pathFlags.lastVertexNEE(), isRcVertexEscapedVertex);
-    //    path.useHybridShift = true;
-    //    path.isReplayForHybridShift = true;
-    //    path.pathBuilder.rcVertexLength = pathFlags.rcVertexLength();
-
-    //    if (path.pathBuilder.rcVertexLength > 1)
-    //    {
-    //        path.origin = sd.computeNewRayOrigin();
-
-    //        // this is also applicable for random number reuse
-    //        path.pathBuilder.pathFlags.flags = 0;
-
-    //        generateReplayPrimaryScatterRay(path, sd);
-    //        if (path.isActive()) nextVertex(path);
-    //        else
-    //        {
-    //            // this shouldn't happen! 
-    //            return;
-    //        }
-
-    //        hitDist = float(path.sceneLength);
-    //        if (path.isDiffusePrimaryHit()) pathType = NRDPathType::Diffuse;
-    //        else if (path.isSpecularPrimaryHit()) pathType = NRDPathType::Specular;
-    //        else pathType = NRDPathType::Residual;
-
-    //        sampleReflectance = 1.0f;//computeSampleReflectance(kUseNRDDemodulation, path.isDiffusePrimaryHit(), path.isSpecularPrimaryHit(), sd);
-
-    //        return;
-    //    }
-    //}
 
     void traceTemporalUpdate(ShadingData rcPrevSd, inout PathReservoir tempPathReservoir)
     {
@@ -1555,7 +1519,7 @@ struct PathTracer
                 {
                     if (path.isHit())
                     {
-                        handleHit(path);
+                        handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Add correct values
                     }
                 }
 
@@ -1607,14 +1571,19 @@ struct PathTracer
             if (useDirectLighting) L += path.LDeltaDirect;
 
             if (PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathTracing)
+            {
                 L += path.L;
+            }
             else if (PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathReuse)
             {
                 path.pathReservoir.weight = 1.f;
                 if (isLastRound)
                 {
                     float3 color = path.pathReservoir.F + path.pathReservoir.cachedJacobian;
-                    if (any(isinf(color) || isnan(color))) color = 0.f;
+                    if (any(isinf(color) || isnan(color)))
+                    {
+                        color = 0.f;
+                    }
                     L += color;
                 }
             }
@@ -1627,7 +1596,10 @@ struct PathTracer
                     // Write color directly to frame buffer.
                     float3 color = path.pathReservoir.F * path.pathReservoir.weight;
 
-                    if (any(isinf(color) || isnan(color))) color = 0.f;
+                    if (any(isinf(color) || isnan(color)))
+                    {
+                        color = 0.f;
+                    }
 
                     L += color;
                 }
@@ -1638,18 +1610,29 @@ struct PathTracer
                 L += directLighting[pixel].rgb;
             }
 
-            if (any(isinf(L) || isnan(L))) L = 0.f;
+            if (any(isinf(L) || isnan(L)))
+            {
+                L = 0.f;
+            }
 
             if (PathSamplingMode(kPathSamplingMode) != PathSamplingMode::PathTracing)
+            {
                 L /= kSamplesPerPixel;
+            }
 
-            if (PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathTracing || kSamplesPerPixel == 1 || gSppId == 0 )
+            if (PathSamplingMode(kPathSamplingMode) == PathSamplingMode::PathTracing || kSamplesPerPixel == 1 || gSppId == 0)
+            {
                 outputColor[pixel] = float4(L, 1.f);
+            }
             else
+            {
                 outputColor[pixel] += float4(L, 1.f);
+            }
 
             if (PathSamplingMode(kPathSamplingMode) != PathSamplingMode::PathTracing)
+            {
                 outputReservoirs[reservoirIdx] = path.pathReservoir;
+            }
         }
         else
         {
@@ -1665,63 +1648,84 @@ struct PathTracer
                     L = giReservoir.F;
                     L += path.L / kSamplesPerPixel;
                 }
-                if (useDirectLighting && sampleId == kSamplesPerPixel - 1) L += path.LDeltaDirect;
+                if (useDirectLighting && sampleId == kSamplesPerPixel - 1)
+                {
+                    L += path.LDeltaDirect;
+                }
 
-                if (any(isinf(L) || isnan(L))) L = 0.f;
+                if (any(isinf(L) || isnan(L)))
+                {
+                    L = 0.f;
+                }
 
                 if (sampleId == kSamplesPerPixel - 1)
                 {
                     if (useDirectLighting)
                     {
                         L += directLighting[pixel].rgb;
-                        if (any(isnan(L) || isinf(L))) L = 0.f;
+                        if (any(isnan(L) || isinf(L)))
+                        {
+                            L = 0.f;
+                        }
                     }
 
                     outputColor[pixel] = float4(L, 1.f);
                 }
-                else giReservoir.F = L;
+                else
+                {
+                    giReservoir.F = L;
+                }
             }
             else
             {
-
                 if (sampleId == 0)
                 {
                     giReservoir = path.pathReservoir; // we are the first one
                 }
-                else
+                else if (giReservoir.mergeInSamplePixel(path.pathReservoir, path.sg))
                 {
-                    if (giReservoir.mergeInSamplePixel(path.pathReservoir, path.sg))
-                    {
-                        giReservoir.F = path.pathReservoir.F;
-                    }
+                    giReservoir.F = path.pathReservoir.F;
                 }
 
                 if (sampleId == kCandidateSamples - 1) // last sample
                 {
                     float3 L = 0.f;
-                    if (useDirectLighting) L += path.LDeltaDirect;
+                    if (useDirectLighting)
+                    {
+                        L += path.LDeltaDirect;
+                    }
 
                     giReservoir.finalizeRIS();
                     if (isLastRound)
                     {
                         float3 color = giReservoir.F * giReservoir.weight;
-                        
-                        if (any(isinf(color) || isnan(color))) color = 0.f;
+
+                        if (any(isinf(color) || isnan(color)))
+                        {
+                            color = 0.f;
+                        }
                         L += color;
                     }
 
                     if (useDirectLighting && isLastRound)
                     {
                         L += directLighting[pixel].rgb;
-                        if (any(isnan(L) || isinf(L))) L = 0.f;
+                        if (any(isnan(L) || isinf(L)))
+                        {
+                            L = 0.f;
+                        }
                     }
 
                     L /= kSamplesPerPixel;
 
                     if (kSamplesPerPixel == 1 || gSppId == 0)
+                    {
                         outputColor[pixel] = float4(L, 1.f);
+                    }
                     else
+                    {
                         outputColor[pixel] += float4(L, 1.f);
+                    }
 
                     outputReservoirs[reservoirIdx] = giReservoir;
                 }

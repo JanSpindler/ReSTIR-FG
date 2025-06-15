@@ -115,6 +115,7 @@ void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pSc
 {
     m_Scene = pScene;
     m_Defines.add(m_Scene->getSceneDefines());
+    m_FrameCount = 0;
 }
 
 bool PrefixRestir::RenderUI(Gui::Widgets& widget)
@@ -132,11 +133,16 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
 
 void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    PathRetracePass(pRenderContext, renderData);
-    PathReusePass(pRenderContext, renderData);
+    if (m_FrameCount > 0)
+    {
+        PathRetracePass(pRenderContext, renderData);
+        //PathReusePass(pRenderContext, renderData);
+    }
 
     pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
     pRenderContext->copyResource(m_TemporalVBuffer.get(), renderData[kInputVBuffer].get());
+
+    ++m_FrameCount;
 }
 
 DefineList PrefixRestir::GetDefines() const

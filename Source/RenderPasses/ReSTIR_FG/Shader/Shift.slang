@@ -13,7 +13,7 @@ import Utils.Debug.PixelDebug;
 import Rendering.Utils.PixelStats;
 import Scene.RaytracingInline;
 import Scene.Scene;
-import PathTracer;
+import PrefixPathTracer;
 import RenderPasses.Shared.Denoising.NRDData;
 
 ParameterBlock<PathTracer> gPathTracer;
@@ -212,17 +212,34 @@ float3 computeShiftedIntegrandHybrid(const RestirPathTracerParams params, bool u
 }
 
 
-float3 traceHybridShiftRays(const RestirPathTracerParams params, bool usePrev, const PackedHitInfo dstPrimaryHitPacked, const ShadingData dstPrimarySd,
-    PathReservoir srcReservoir, inout HitInfo dstRcPrevVertexHit, inout float3 dstRcPrevVertexWo)
+float3 traceHybridShiftRays(
+    const RestirPathTracerParams params,
+    bool usePrev,
+    const PackedHitInfo dstPrimaryHitPacked,
+    const ShadingData dstPrimarySd,
+    PathReservoir srcReservoir,
+    inout HitInfo dstRcPrevVertexHit,
+    inout float3 dstRcPrevVertexWo)
 {
-    if (srcReservoir.weight == 0.f) return 0.f;
+    if (srcReservoir.weight == 0.f)
+    {
+        return 0.f;
+    }
+
     HitInfo dstPrimaryHit = HitInfo(dstPrimaryHitPacked); //dstPrimaryHit.unpack(dstPrimaryHitPacked);
     Ray ray = Ray(
         usePrev ? gScene.camera.data.prevPosW : gScene.camera.data.posW, //gScene.camera.getPosition(usePrev),
         -dstPrimarySd.V,
         0,
         kRayTMax); // this ray can be arbitrary, does not affect results
-    float3 Tp = gPathTracer.traceRandomReplayPathHybridSimple(dstPrimaryHit, dstPrimarySd, ray, srcReservoir.pathFlags, srcReservoir.initRandomSeed, dstRcPrevVertexHit, dstRcPrevVertexWo);
+    const float3 Tp = gPathTracer.traceRandomReplayPathHybridSimple(
+        dstPrimaryHit,
+        dstPrimarySd,
+        ray,
+        srcReservoir.pathFlags,
+        srcReservoir.initRandomSeed,
+        dstRcPrevVertexHit,
+        dstRcPrevVertexWo);
     return Tp;
 }
 
