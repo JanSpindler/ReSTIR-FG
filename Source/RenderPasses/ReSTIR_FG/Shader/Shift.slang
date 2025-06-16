@@ -228,7 +228,7 @@ float3 traceHybridShiftRays(
 
     HitInfo dstPrimaryHit = HitInfo(dstPrimaryHitPacked); //dstPrimaryHit.unpack(dstPrimaryHitPacked);
     Ray ray = Ray(
-        usePrev ? gScene.camera.data.prevPosW : gScene.camera.data.posW, //gScene.camera.getPosition(usePrev),
+        usePrev ? gScene.camera.data.prevPosW : gScene.camera.data.posW, // gScene.camera.getPosition(usePrev),
         -dstPrimarySd.V,
         0,
         kRayTMax); // this ray can be arbitrary, does not affect results

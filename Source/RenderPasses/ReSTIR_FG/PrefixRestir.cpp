@@ -136,7 +136,7 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
     if (m_FrameCount > 0)
     {
         PathRetracePass(pRenderContext, renderData);
-        //PathReusePass(pRenderContext, renderData);
+        PathReusePass(pRenderContext, renderData);
     }
 
     pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
@@ -147,10 +147,7 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 
 DefineList PrefixRestir::GetDefines() const
 {
-    DefineList defines;
-    defines.add("PREFIX_RESTIR", m_Active ? "1" : "0");
-    defines.add(m_Defines);
-    return defines;
+    return m_Defines;
 }
 
 void PrefixRestir::SetTraceTransmissionDeltaVars(const ShaderVar& var)
@@ -224,6 +221,7 @@ void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderDa
     pass->addDefine("TEMPORAL_REUSE", "1");
 
     // Bind resources.
+    m_Scene->setRaytracingShaderData(pRenderContext, pass->getRootVar());
     auto var = pass->getRootVar()["CB"]["gPathRetracePass"];
 
     // TODO: refactor arguments
@@ -290,6 +288,7 @@ void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData
     pass->addDefine("SAMPLES_PER_PIXEL", "1");
 
     // Bind resources.
+    m_Scene->setRaytracingShaderData(pRenderContext, pass->getRootVar());
     auto var = pass->getRootVar()["CB"]["gPathReusePass"];
 
     // TODO: refactor arguments

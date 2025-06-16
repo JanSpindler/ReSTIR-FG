@@ -1358,8 +1358,14 @@ struct PathTracer
         return path.L;
     }
 
-    float3 traceRandomReplayPathHybridSimple(HitInfo hit, ShadingData sd, Ray ray, ReSTIRPathFlags pathFlags,
-        uint initRandomSeed, inout HitInfo rcPrevHit, inout float3 rcPrevHitWo)
+    float3 traceRandomReplayPathHybridSimple(
+        HitInfo hit,
+        ShadingData sd,
+        Ray ray,
+        ReSTIRPathFlags pathFlags,
+        uint initRandomSeed,
+        inout HitInfo rcPrevHit,
+        inout float3 rcPrevHitWo)
     {
         PathState path;
         bool isRcVertexEscapedVertex = pathFlags.pathLength() + 1 == pathFlags.rcVertexLength();
@@ -1377,9 +1383,11 @@ struct PathTracer
         path.pathBuilder.pathFlags.transferSpecularBounceInformation(pathFlags);
 
         // set up the two scatter directions (or half vectors) for reuse
-
         generateReplayPrimaryScatterRay(path, sd);
-        if (path.isActive()) nextVertex(path);
+        if (path.isActive())
+        {
+            nextVertex(path);
+        }
         else
         {
             return 0.f;
@@ -1389,16 +1397,10 @@ struct PathTracer
         {
             // Volume scattering is ignored
             // Handle surface hit 
-            if (path.isActive())
-            {
-                if (path.isHit())
-                {
-                    handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Add correct values
-                }
-            }
+            handleHit(path, 0.0f, 0.0f, 0.0f, false); // TODO: Add correct values
 
             // Move to the next path vertex.
-            if (path.isActive() && path.isHit()) nextVertex(path);
+            nextVertex(path);
         }
 
         // Handle the miss and terminate path.

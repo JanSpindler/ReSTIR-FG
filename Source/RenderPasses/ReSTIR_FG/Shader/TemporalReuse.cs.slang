@@ -144,7 +144,6 @@ struct PathReusePass
         ReconnectionData dummyRcData;
         dummyRcData.Init();
 
-        return;
         for (int i = curSampleId; i <= prevSampleId; i++)
         {
             PathReservoir tempDstReservoir = dstReservoir;

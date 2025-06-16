@@ -1364,7 +1364,8 @@ void ReSTIR_FG::prepareRayTracingShaders(RenderContext* pRenderContext)
     );
     mGeneratePhotonPass.initRTProgram(mpDevice, mpScene, kGeneratePhotonsShader, kMaxPayloadBytes, globalTypeConformances, {});
     mTraceTransmissionDelta.initRTProgram(
-        mpDevice, mpScene, kTraceTransmissionDeltaShader, kMaxPayloadBytes, globalTypeConformances, m_PrefixRestir.GetDefines()
+        mpDevice, mpScene, kTraceTransmissionDeltaShader, kMaxPayloadBytes, globalTypeConformances,
+        m_PrefixRestir.GetDefines().add("PREFIX_RESTIR", m_PrefixRestir.IsActive() ? "1" : "0")
     );
 
     // Special Program for the Photon Collection as the photon acceleration structure is used
@@ -1426,6 +1427,7 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     }
 
     // Prefix restir defines
+    mTraceTransmissionDelta.pProgram->addDefine("PREFIX_RESTIR", m_PrefixRestir.IsActive() ? "1" : "0");
     if (m_PrefixRestir.IsActive())
     {
         mTraceTransmissionDelta.pProgram->addDefines(m_PrefixRestir.GetDefines());
