@@ -12,10 +12,6 @@ import Utils.Color.ColorHelpers;
 import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
-import PrefixPathTracer;
-import PathState;
-import Params;
-import PathReservoir;
 
 // Syntax Highlight
 #ifndef USE_RTXDI
@@ -37,7 +33,7 @@ cbuffer PerFrame
 // Inputs
 Texture2D<PackedHitInfo> gInVBuffer;
 
-//Outputs
+// Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
 RWTexture2D<PackedHitInfo> gOutVBuffer;
 RWTexture2D<float4> gOutViewDir;
@@ -45,7 +41,7 @@ RWTexture2D<float> gOutRayDist;
 RWTexture2D<float4> gOutThp;
 RWTexture2D<uint2> gPackedCausticSurface;
 
-//Outputs RTXDI (ReSTIR)
+// Outputs RTXDI (ReSTIR)
 RWTexture2D<PackedHitInfo> gOutVBufferDI;
 RWTexture2D<float4> gOutViewDirRayDistDI;
 RWTexture2D<float4> gOutThpDI;
@@ -56,7 +52,7 @@ RWTexture2D<float4> gOutSpecularReflectance;
 RWTexture2D<float4> gDebugOut;  //Only used when DEBUG_MASK == 1
 
 // Prefix restir
-ParameterBlock<PathTracer> gPathTracer;
+// TODO
 
 #define is_valid(name) (is_valid_##name != 0)
 
@@ -169,15 +165,7 @@ void rayGen()
 #endif
 
 #if PREFIX_RESTIR
-    const uint pathID = launchIndex.x | (launchIndex.y << 12);
-    PathState path;
-    gPathTracer.generatePath(pathID, path);
-    PathReservoir prefixReservoir;
-
-    if (!hitInfo.isValid())
-    {
-        path.terminate();
-    }
+    // TODO
 #endif
     
     // Get first valid(diffuse) Surface
@@ -236,9 +224,7 @@ void rayGen()
 
 #if PREFIX_RESTIR
         // TODO: Reimplement handleHit so that is is compatible with this shader
-        // gPathTracer.handleHit(path);
-#endif
-
+#else
         // Sample BSDF
         BSDFSample bsdfSample;
         const bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
@@ -252,7 +238,7 @@ void rayGen()
         const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
             (bsdfProperties.diffuseReflectionAlbedo +
             bsdfProperties.specularReflectionAlbedo +
-            bsdfProperties.diffuseTransmissionAlbedo +
+             bsdfProperties.diffuseTransmissionAlbedo +
             bsdfProperties.specularTransmissionAlbedo);
         const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3.0f;
         const bool hasDiffuseParts = gRequDiffParts ?
@@ -263,15 +249,16 @@ void rayGen()
         // If the BSDF sample is invalid or the surface is diffuse, exit
         if (isDiffuse || invalidSample)
         {
-#if PREFIX_RESTIR
-            path.terminate();
-#endif
             break;
         }
+#endif
 
         // Update troughput
         thp *= bsdfSample.weight;
 
+#if PREFIX_RESTIR
+        // TODO: gPathTracer.nextVertex();
+#else
         // Trace next ray, because surface was not diffuse
         RayDesc tRay;
         tRay.Origin = sd.computeNewRayOrigin(!isTransmission);
@@ -280,6 +267,7 @@ void rayGen()
         tRay.Direction = bsdfSample.wo;
 
         TraceRay(gScene.rtAccel, 0, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, tRay, traceData);
+#endif
 
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
         // Set is delta flag on caustic surface
@@ -295,13 +283,6 @@ void rayGen()
         rayDist += traceData.distance;
         hitT += traceData.distance;
         wasTracedMask = 1;
-
-#if PREFIX_RESTIR
-        if (!hitInfo.isValid())
-        {
-            path.terminate();
-        }
-#endif
 
         // Write DirectHit surfaces hits only for transmission or delta reflection hits
         if (validSurfaceForDI)
@@ -382,8 +363,7 @@ void rayGen()
 
     // Finalize prefix restir
 #if PREFIX_RESTIR
-    gPathTracer.finalize(path);
-    gPathTracer.writeOutput(path, prefixReservoir, 0);
+    // TODO
 #endif
 
     // Debug

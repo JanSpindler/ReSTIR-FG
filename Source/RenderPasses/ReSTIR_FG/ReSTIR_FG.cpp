@@ -315,10 +315,6 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     prepareLighting(pRenderContext);
     prepareBuffers(pRenderContext, renderData);
     prepareAccelerationStructure();
-    if (m_PrefixRestir.IsActive())
-    {
-        m_PrefixRestir.PreparePathTracer(renderData);
-    }
 
     // Clear the reservoir
     if (mClearReservoir)
@@ -1475,7 +1471,7 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     // Prefix restir vars
     if (m_PrefixRestir.IsActive())
     {
-        m_PrefixRestir.SetTraceTransmissionDeltaVars(var);
+        // TODO
     }
 
     // Create dimensions based on the number of VPLs
