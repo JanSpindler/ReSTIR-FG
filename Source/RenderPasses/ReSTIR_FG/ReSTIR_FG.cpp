@@ -1471,7 +1471,7 @@ void ReSTIR_FG::traceTransmissiveDelta(RenderContext* pRenderContext, const Rend
     // Prefix restir vars
     if (m_PrefixRestir.IsActive())
     {
-        // TODO
+        m_PrefixRestir.SetTraceTransmissionDeltaVars(var);
     }
 
     // Create dimensions based on the number of VPLs

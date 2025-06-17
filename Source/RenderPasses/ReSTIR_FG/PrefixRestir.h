@@ -20,6 +20,8 @@ public:
 
     constexpr bool IsActive() const { return m_Active; }
 
+    void SetTraceTransmissionDeltaVars(const ShaderVar& var) const;
+
 private:
     ref<Device> m_Device;
     ref<Scene> m_Scene;
@@ -39,7 +41,7 @@ private:
 
     ref<ComputePass> m_TracePass;
     ref<ComputePass> m_TemporalPathRetracePass;
-    ref<ComputePass> m_TemporalReusePass; // Merges reservoirs
+    ref<ComputePass> m_TemporalReusePass;
 
     void PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData);
     void PathReusePass(RenderContext* pRenderContext, const RenderData& renderData);

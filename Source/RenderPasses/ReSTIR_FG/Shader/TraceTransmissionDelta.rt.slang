@@ -1,6 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+#include "Utils/Sampling/SampleGeneratorType.slangh"
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
@@ -12,6 +13,11 @@ import Utils.Color.ColorHelpers;
 import Rendering.RTXDI.RTXDI;
 import SurfaceDataFG;
 import FinalGatherData;
+import PrefixPathReservoir;
+
+#if !defined(SAMPLE_GENERATOR_TYPE) || SAMPLE_GENERATOR_TYPE != SAMPLE_GENERATOR_TINY_UNIFORM
+#error "This file requires SAMPLE_GENERATOR_TYPE to be SAMPLE_GENERATOR_TINY_UNIFORM."
+#endif
 
 // Syntax Highlight
 #ifndef USE_RTXDI
@@ -52,7 +58,7 @@ RWTexture2D<float4> gOutSpecularReflectance;
 RWTexture2D<float4> gDebugOut;  //Only used when DEBUG_MASK == 1
 
 // Prefix restir
-// TODO
+RWStructuredBuffer<PrefixPathReservoir> gOutputReservoirs;
 
 #define is_valid(name) (is_valid_##name != 0)
 
@@ -222,9 +228,6 @@ void rayGen()
             break;
         }
 
-#if PREFIX_RESTIR
-        // TODO: Reimplement handleHit so that is is compatible with this shader
-#else
         // Sample BSDF
         BSDFSample bsdfSample;
         const bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
@@ -251,14 +254,10 @@ void rayGen()
         {
             break;
         }
-#endif
 
         // Update troughput
         thp *= bsdfSample.weight;
 
-#if PREFIX_RESTIR
-        // TODO: gPathTracer.nextVertex();
-#else
         // Trace next ray, because surface was not diffuse
         RayDesc tRay;
         tRay.Origin = sd.computeNewRayOrigin(!isTransmission);
@@ -267,7 +266,6 @@ void rayGen()
         tRay.Direction = bsdfSample.wo;
 
         TraceRay(gScene.rtAccel, 0, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, tRay, traceData);
-#endif
 
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
         // Set is delta flag on caustic surface

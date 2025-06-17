@@ -19,11 +19,24 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
-static const std::string kTracePassFilename = "RenderPasses/ReSTIR_FG/Shader/TracePass.cs.slang";
-static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
 static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
+static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
 
 static const uint32_t kNeighborOffsetCount = 8192;
+
+struct PrefixPathReservoir
+{
+    // Jacobian is always 1 because we only perform random replay
+
+    // Path data
+    float3 F;
+    uint length; // Number of vertices inlcuding primary hit.
+    uint sgSeed; // State of sample generator right before generating this path
+
+    // Resampling data
+    float M;
+    float weight;
+};
 
 PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice), m_Defines(defines)
 {
@@ -45,12 +58,11 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
     m_ScreenSize = screenSize;
 
     const uint pixelCount = screenSize.x * screenSize.y;
-    static constexpr uint32_t baseReservoirSize = 88; // TODO: Adjust
 
     if (!m_OutputReservoirs)
     {
         m_OutputReservoirs = Buffer::createStructured(
-            m_Device, baseReservoirSize, pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            m_Device, sizeof(PrefixPathReservoir), pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
     }
@@ -58,7 +70,7 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
     if (!m_TemporalReservoirs)
     {
         m_TemporalReservoirs = Buffer::createStructured(
-            m_Device, baseReservoirSize, pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            m_Device, sizeof(PrefixPathReservoir), pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
     }
@@ -93,8 +105,8 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 {
     if (m_FrameCount > 0)
     {
-        PathRetracePass(pRenderContext, renderData);
-        PathReusePass(pRenderContext, renderData);
+        //PathRetracePass(pRenderContext, renderData);
+        //PathReusePass(pRenderContext, renderData);
     }
 
     pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
@@ -106,6 +118,11 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 DefineList PrefixRestir::GetDefines() const
 {
     return m_Defines;
+}
+
+void PrefixRestir::SetTraceTransmissionDeltaVars(const ShaderVar& var) const
+{
+    var["gOutputReservoirs"] = m_OutputReservoirs;
 }
 
 void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData)

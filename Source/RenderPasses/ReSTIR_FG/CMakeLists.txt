@@ -7,19 +7,22 @@ add_plugin(ReSTIR_FG)
 target_sources(ReSTIR_FG PRIVATE
 	ReSTIR_FG.cpp
     ReSTIR_FG.h
+
+    RandomGenerator.h
+    falcor_cuda_math.h
+
     Gaussian3D.h
     FirstHitPhotonInfo.h
-    falcor_cuda_math.h
-    RandomGenerator.h
     GaussianPhotonGuiding.h
     GaussianPhotonGuiding.cpp
+    calc_gradient.h
+    calc_gradient.cu
+
     AdaptiveLightSampler.h
     AdaptiveLightSampler.cpp
+
     PrefixRestir.h
     PrefixRestir.cpp
-
-    calc_gradient.cu
-    calc_gradient.h
 
     dkm/dkm.hpp
     dkm/dkm_utils.hpp
@@ -38,10 +41,15 @@ target_sources(ReSTIR_FG PRIVATE
 	Shader/Reservoir.slang
 	Shader/SurfaceDataFG.slang
 	Shader/TraceTransmissionDelta.rt.slang
+
     Shader/GaussianHelper.slang
     Shader/OptimizeGaussians.cs.slang
 	Shader/CalculateSoftmaxWeights.cs.slang
     Shader/CountCausticClusters.cs.slang
+
+    Shader/PrefixPathReservoir.slang
+    Shader/TemporalPathRetrace.cs.slang
+    Shader/TemporalReuse.cs.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES
