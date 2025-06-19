@@ -48,8 +48,7 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/CountCausticClusters.cs.slang
 
     Shader/PrefixPathReservoir.slang
-    Shader/TemporalPathRetrace.cs.slang
-    Shader/TemporalReuse.cs.slang
+    Shader/PrefixPathResampling.rt.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

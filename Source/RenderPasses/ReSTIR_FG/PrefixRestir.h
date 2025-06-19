@@ -43,6 +43,5 @@ private:
     ref<ComputePass> m_TemporalPathRetracePass;
     ref<ComputePass> m_TemporalReusePass;
 
-    void PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData);
-    void PathReusePass(RenderContext* pRenderContext, const RenderData& renderData);
+    void PrefixResampling(RenderContext* pRenderContext, const RenderData& renderData);
 };

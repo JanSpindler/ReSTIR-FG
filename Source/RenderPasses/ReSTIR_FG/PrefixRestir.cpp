@@ -19,8 +19,7 @@ static const std::string kOutputPathLength = "pathLength";
 static const std::string kOutputDebug = "debug";
 static const std::string kOutputTime = "time";
 
-static const std::string kTemporalPathRetraceFile = "RenderPasses/ReSTIR_FG/Shader/TemporalPathRetrace.cs.slang";
-static const std::string kTemporalReusePassFile = "RenderPasses/ReSTIR_FG/Shader/TemporalReuse.cs.slang";
+static const std::string kPrefixPathResamplingPassFile = "RenderPasses/ReSTIR_FG/Shader/PrefixPathResampling.rt.slang";
 
 static const uint32_t kNeighborOffsetCount = 8192;
 
@@ -105,8 +104,6 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
 {
     if (m_FrameCount > 0)
     {
-        //PathRetracePass(pRenderContext, renderData);
-        //PathReusePass(pRenderContext, renderData);
     }
 
     pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
@@ -125,64 +122,7 @@ void PrefixRestir::SetTraceTransmissionDeltaVars(const ShaderVar& var) const
     var["gOutputReservoirs"] = m_OutputReservoirs;
 }
 
-void PrefixRestir::PathRetracePass(RenderContext* pRenderContext, const RenderData& renderData)
+void PrefixRestir::PrefixResampling(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (!m_TemporalPathRetracePass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(m_Scene->getShaderModules());
-        desc.addTypeConformances(m_Scene->getTypeConformances());
-        desc.addShaderLibrary(kTemporalPathRetraceFile).csEntry("main").setShaderModel("6_5");
 
-        m_TemporalPathRetracePass = ComputePass::create(m_Device, desc, m_Defines, true);
-    }
-    ref<ComputePass> pass = m_TemporalPathRetracePass;
-
-    // Bind resources.
-    auto var = m_TemporalPathRetracePass->getRootVar();
-    m_Scene->setRaytracingShaderData(pRenderContext, var);
-
-    // TODO: refactor arguments
-    var["gOutputReservoirs"] = m_OutputReservoirs;
-    var["gTemporalReservoirs"] = m_TemporalReservoirs;
-
-    var["gTemporalVbuffer"] = m_TemporalVBuffer;
-    var["gMotionVectors"] = renderData[kInputMotionVectors]->asTexture();
-    var["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
-
-    var["gTemporalHistoryLength"] = m_UseMaxHistory ? static_cast<float>(m_TemporalHistoryLength) : 1e30f;
-
-    // Launch one thread per pixel.
-    // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
-    pass->execute(pRenderContext, {m_ScreenSize, 1u});
-}
-
-void PrefixRestir::PathReusePass(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    if (!m_TemporalReusePass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(m_Scene->getShaderModules());
-        desc.addTypeConformances(m_Scene->getTypeConformances());
-        desc.addShaderLibrary(kTemporalReusePassFile).csEntry("main").setShaderModel("6_5");
-        m_TemporalReusePass = ComputePass::create(m_Device, desc, m_Defines, true);
-    }
-    ref<ComputePass> pass = m_TemporalReusePass;
-
-    // Bind resources.
-    auto var = pass->getRootVar();
-    m_Scene->setRaytracingShaderData(pRenderContext, var);
-
-    var["gOutputReservoirs"] = m_OutputReservoirs;
-    var["gTemporalReservoirs"] = m_TemporalReservoirs;
-    
-    var["gTemporalVbuffer"] = m_TemporalVBuffer;
-    var["gMotionVectors"] = renderData[kInputMotionVectors]->asTexture();
-    var["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
-
-    var["gTemporalHistoryLength"] = m_UseMaxHistory ? static_cast<float>(m_TemporalHistoryLength) : 1e30f;
-
-    // Launch one thread per pixel.
-    // The dimensions are padded to whole tiles to allow re-indexing the threads in the shader.
-    pass->execute(pRenderContext, {m_ScreenSize, 1u});
 }
