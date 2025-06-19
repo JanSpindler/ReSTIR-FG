@@ -679,7 +679,7 @@ bool GeneratePhotonGeometric(
         {
             return false;
         }
-        pls.flux *= dot(pls.normal, ray.Direction);
+        pls.flux *= max(0.0f, dot(pls.normal, ray.Direction));
 
         // MIS weight
         const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
@@ -727,6 +727,12 @@ void rayGen()
         }
     }
 #endif // USE_EMISSIVE_LIGHT
+
+    // Skip photon distribution if photon does not have a valid flux
+    if (luminance(pls.flux) <= 0.0f)
+    {
+        return;
+    }
 
     // Division through all dipatched photons
     pls.flux /= launchDim.x * launchDim.y;
