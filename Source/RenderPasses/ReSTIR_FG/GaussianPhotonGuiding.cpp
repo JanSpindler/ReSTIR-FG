@@ -95,10 +95,11 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
         std::vector<Gaussian3D> gaussians(totalGaussianCount);
 
         // Init N random gaussians in the scene
-        const float sigma = GetSceneSize() / 30.0f;
+        const float positionScaling = GetPositionScaling();
+        const float sigma = positionScaling * GetSceneSize() / 30.0f;
         for (size_t gaussIdx = 0; gaussIdx < totalGaussianCount; ++gaussIdx)
         {
-            gaussians[gaussIdx] = Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()), sigma, 0.0f);
+            gaussians[gaussIdx] = Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, sigma, 0.0f);
         }
 
         // Create buffer
@@ -320,7 +321,6 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
 
     std::vector<size_t> indices(m_CausticGeometryInstanceIDs.size());
     std::iota(indices.begin(), indices.end(), 0);
-
     std::for_each(
         std::execution::par_unseq, indices.begin(), indices.end(),
         [&](const size_t geomInstanceIdx) { GenerateCausticPoints(renderContext, geomInstanceIdx, vertexData, indexData); }
@@ -387,7 +387,6 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     var["Constants"]["gTotalLightCount"] = lightCount;
     var["Constants"]["gCausticClusterCount"] = clusterCount;
     var["Constants"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
-    var["Constants"]["gPositionScaling"] = GetPositionScaling();
 
     // Buffers
     var["gCausticClusters"] = m_CausticClusterBuf;
@@ -418,7 +417,6 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     );
 
     // Sort and select gaussian
-    const float sceneSize = GetSceneSize();
     const size_t totalGaussianCount = m_GaussianCount * lightCount;
 
     std::vector<uint> clusterIndices(clusterCount);
@@ -440,11 +438,14 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
         );
 
         // Update gaussians
+        const float positionScaling = GetPositionScaling();
+        const float sigma = positionScaling * GetSceneSize() / 30.0f;
         for (size_t gaussianIdx = 0; gaussianIdx < m_GaussianCount; ++gaussianIdx)
         {
             Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
-            gaussian.mean = gaussianIdx < clusterCount ? m_CausticClusters[clusterIndices[gaussianIdx]] : RandomGenerator::Float3();
-            gaussian.sigma = sceneSize / 30.0f;
+            gaussian.mean =
+                gaussianIdx < clusterCount ? m_CausticClusters[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
+            gaussian.sigma = sigma;
             gaussian.weight = 1.0f;
         }
     }

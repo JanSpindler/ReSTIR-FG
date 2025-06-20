@@ -435,7 +435,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
                     
                     const TriangleHit triangleHit = hitInfo.getTriangleHit();
                     const VertexData vertexData = gScene.getVertexData(triangleHit);
-                    const float3 firstHitPos = vertexData.posW;
+                    const float3 firstHitPos = vertexData.posW * gPositionScaling;
 
                     const float result = length(firstHitPos - gaussian.mean) / gaussian.sigma;
                     minDist = min(minDist, result);

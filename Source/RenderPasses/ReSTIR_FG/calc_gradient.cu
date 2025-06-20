@@ -169,7 +169,7 @@ __global__ void CalculateGaussianGradientKernel(
 
     // Calculate gradient wrt. parameters of gaussian
     const uint lightIdx = firstHitPhotonInfo[firstHitPhotonIdx].lightIdx;
-    const float3& position = firstHitPhotonInfo[firstHitPhotonIdx].pos;
+    const float3 position = firstHitPhotonInfo[firstHitPhotonIdx].pos * positionScaling;
     DerivGmm(
         gaussians,
         gradients,

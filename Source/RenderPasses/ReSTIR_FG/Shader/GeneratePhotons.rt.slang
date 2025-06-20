@@ -187,9 +187,14 @@ float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
     return x + mu;
 }
 
-float GMMProb(const float3 pos0, const float3 gmmPos, const uint lightIdx)
+// Assumes that pos0 and gmmPos are in world space
+float GMMProb(float3 pos0, float3 gmmPos, const uint lightIdx)
 {
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
+
+    // Scale into gaussian space
+    pos0 *= gPositionScaling;
+    gmmPos *= gPositionScaling;
 
     // Get index of first gaussian belonging to this light
     const uint startGaussIdx = lightIdx * gGaussianCount;
@@ -214,6 +219,7 @@ float GMMProb(const float3 pos0, const float3 gmmPos, const uint lightIdx)
 #endif
 }
 
+// Assumes that pos0 and gmmPos are in world space
 float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator sg, out float gmmPdf)
 {
     // Get index of first gaussian belonging to this light
@@ -231,7 +237,7 @@ float3 SampleGMM(const float3 pos0, const uint lightIdx, inout SampleGenerator s
         sum += gaussWeight;
         if (r <= sum)
         {
-            gmmPos = SampleGaussian(gaussian, sg);
+            gmmPos = SampleGaussian(gaussian, sg) / gPositionScaling;
             break;
         }
     }

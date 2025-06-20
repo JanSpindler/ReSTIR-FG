@@ -5,7 +5,6 @@ cbuffer Constants
     uint gTotalLightCount;
     uint gCausticClusterCount;
     uint gMaxFirstHitPhotonCount;
-    float gPositionScaling;
 }
 
 StructuredBuffer<FirstHitPhotonInfo> gFirstHitPhotonInfos;
