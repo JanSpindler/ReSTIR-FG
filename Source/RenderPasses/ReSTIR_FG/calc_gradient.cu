@@ -144,7 +144,8 @@ __global__ void CalculateGaussianGradientKernel(
     const FirstHitPhotonInfo* firstHitPhotonInfo,
     const uint* firstHitPhotonCount,
     const float* softmaxWeights,
-    Gaussian3D* gradients)
+    Gaussian3D* gradients,
+    const float positionScaling)
 {
     // Get first hit photon index
     const uint firstHitPhotonIdx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -187,7 +188,8 @@ void CalculateGaussianGradient(
     const FirstHitPhotonInfo* firstHitPhotonInfo,
     const uint* firstHitPhotonCount,
     const float* softmaxWeights,
-    Gaussian3D* gradients)
+    Gaussian3D* gradients,
+    const float positionScaling)
 {
     CalculateGaussianGradientKernel<<<(maxFistHitPhotonCount + 127) / 128, 128>>>(
         gaussianCount,
@@ -197,5 +199,6 @@ void CalculateGaussianGradient(
         firstHitPhotonInfo,
         firstHitPhotonCount,
         softmaxWeights,
-        gradients);
+        gradients,
+        positionScaling);
 }

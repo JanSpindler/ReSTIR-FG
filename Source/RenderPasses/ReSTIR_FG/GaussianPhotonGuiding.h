@@ -50,12 +50,6 @@ public:
 
     constexpr bool IsActive() const { return m_Active; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
-    constexpr uint GetGaussianCount() const { return m_GaussianCount; }
-    constexpr uint GetAnalyticLightCount() const { return m_AnalyticLightCount; }
-    constexpr uint GetGeometricLightCount() const { return m_GeometricLightCount; }
-    constexpr uint GetMaxFirstHitPhotonCount() const { return m_MaxFirstHitPhotonCount; }
-    constexpr float GetMinPdf() const { return m_MinPdf; }
-    constexpr float GetBeta() const { return m_Beta; }
 
 private:
     // Constants
@@ -137,6 +131,7 @@ private:
     constexpr uint GetTotalGaussianCount() const { return GetTotalLightCount() * m_GaussianCount; }
     constexpr float GetSceneSize() const { return math::length(m_Scene->getSceneBounds().extent()); }
     constexpr uint GetTotalCausticClusterCount() const { return m_CausticClusterCount * m_CausticGeometryInstanceIDs.size(); }
+    constexpr float GetPositionScaling() const { return m_Cb / GetSceneSize(); }
 
     void GenerateCausticPoints(
         RenderContext* pRenderContext,

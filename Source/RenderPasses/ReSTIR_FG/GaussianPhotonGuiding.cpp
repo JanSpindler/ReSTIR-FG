@@ -387,6 +387,7 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     var["Constants"]["gTotalLightCount"] = lightCount;
     var["Constants"]["gCausticClusterCount"] = clusterCount;
     var["Constants"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+    var["Constants"]["gPositionScaling"] = GetPositionScaling();
 
     // Buffers
     var["gCausticClusters"] = m_CausticClusterBuf;
@@ -474,7 +475,7 @@ void GaussianPhotonGuiding::CalculateGaussianGradientCuda(RenderContext* pRender
         reinterpret_cast<const uint*>(m_FirstHitCollectionCountsBuf.devicePtr),
         reinterpret_cast<const FirstHitPhotonInfo*>(m_FirstHitPhotonInfoBuf.devicePtr),
         reinterpret_cast<const uint*>(m_FirstHitPhotonCountBuf.devicePtr), reinterpret_cast<const float*>(m_SoftmaxBuf.devicePtr),
-        reinterpret_cast<Gaussian3D*>(m_GradientBuf.devicePtr)
+        reinterpret_cast<Gaussian3D*>(m_GradientBuf.devicePtr), GetPositionScaling()
     );
 
     // Ensure CUDA kernel has completed before proceeding
@@ -540,16 +541,18 @@ void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
     // Set variables
     const uint totalGaussianCount = GetTotalGaussianCount();
     auto var = m_OptimizeGaussiansPass->getRootVar();
-    var["gGaussians"] = m_GaussianBuf.buffer;
-    var["gGradients"] = m_GradientBuf.buffer;
-    var["gLightFirstHitCounts"] = m_LightFirstHitCountsBuf;
-    var["gGaussianMoments"] = m_OptimizationBuf;
+
     var["Constants"]["gGaussianCount"] = m_GaussianCount;
     var["Constants"]["gTotalGaussianCount"] = totalGaussianCount;
     var["Constants"]["gLearningRate"] = m_LearningRate;
     var["Constants"]["gBeta1"] = m_Beta1;
     var["Constants"]["gBeta2"] = m_Beta2;
     var["Constants"]["gOptimStep"] = static_cast<float>(m_OptimStep);
+
+    var["gGaussians"] = m_GaussianBuf.buffer;
+    var["gGradients"] = m_GradientBuf.buffer;
+    var["gLightFirstHitCounts"] = m_LightFirstHitCountsBuf;
+    var["gGaussianMoments"] = m_OptimizationBuf;
 
     // More defines
     m_OptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m_Optimizer == Optimizer::SGD ? "1" : "0");
@@ -625,6 +628,7 @@ void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var, const u
     var[nameBuf]["gGmmMinPdf"] = m_MinPdf;
     var[nameBuf]["gBeta"] = frameCount <= 1 and IsRobustInitialization() ? 0.0f : m_Beta;
     var[nameBuf]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+    var[nameBuf]["gPositionScaling"] = GetPositionScaling();
 
     // Buffers
     var["gGaussians"] = m_GaussianBuf.buffer;
@@ -645,12 +649,13 @@ void GaussianPhotonGuiding::ClearBuffersForPhotonCollection(RenderContext* rende
 
 void GaussianPhotonGuiding::SetCollectPhotonsVars(const ShaderVar& var) const
 {
+    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+
     for (uint32_t idx = 0; idx < 2; ++idx)
     {
         var["gPhotonFirstHitMap"][idx] = m_PhotonFirstHitMapBufs[idx];
     }
     var["gFirstHitCollectionCounts"] = m_FirstHitCollectionCountsBuf.buffer;
-    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
 }
 
 void GaussianPhotonGuiding::SetFinalShadingVars(const ShaderVar& var) const
@@ -659,6 +664,8 @@ void GaussianPhotonGuiding::SetFinalShadingVars(const ShaderVar& var) const
     var[nameBuf]["gGaussianCount"] = m_GaussianCount;
     var[nameBuf]["gAnalyticLightCount"] = m_AnalyticLightCount;
     var[nameBuf]["gGeometricLightCount"] = m_GeometricLightCount;
+    var[nameBuf]["gPositionScaling"] = GetPositionScaling();
+
     var["gGaussians"] = m_GaussianBuf.buffer;
 }
 

@@ -45,6 +45,7 @@ cbuffer GaussianPhotonGuiding
     float gGmmMinPdf;
     float gBeta;
     uint gMaxFirstHitPhotonCount;
+    float gPositionScaling;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
