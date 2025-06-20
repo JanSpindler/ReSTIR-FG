@@ -346,7 +346,7 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
 
 void GaussianPhotonGuiding::TrackActualFirstHitPhotonCount(RenderContext* renderContext)
 {
-    if (m_Active and m_CopyToCPU)
+    if (m_CopyToCPU)
     {
         // Barrier
         renderContext->uavBarrier(m_FirstHitPhotonCountBuf.buffer.get());
@@ -607,6 +607,59 @@ void GaussianPhotonGuiding::CalculateSoftmaxWeightsPass(RenderContext* pRenderCo
 
     __nop();
 #endif
+}
+
+void GaussianPhotonGuiding::ClearBuffersForGeneratePhotons(RenderContext* renderContext)
+{
+    renderContext->clearUAV(m_FirstHitPhotonCountBuf.buffer->getUAV().get(), uint4(0));
+    renderContext->clearUAV(m_LightFirstHitCountsBuf->getUAV().get(), uint4(0));
+}
+
+void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var, const uint frameCount) const
+{
+    // Constants
+    static const std::string nameBuf = "GaussianPhotonGuiding";
+    var[nameBuf]["gGaussianCount"] = m_GaussianCount;
+    var[nameBuf]["gAnalyticLightCount"] = m_AnalyticLightCount;
+    var[nameBuf]["gGeometricLightCount"] = m_GeometricLightCount;
+    var[nameBuf]["gGmmMinPdf"] = m_MinPdf;
+    var[nameBuf]["gBeta"] = frameCount <= 1 and IsRobustInitialization() ? 0.0f : m_Beta;
+    var[nameBuf]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+
+    // Buffers
+    var["gGaussians"] = m_GaussianBuf.buffer;
+    var["gFirstHitPhotonCounter"] = m_FirstHitPhotonCountBuf.buffer;
+    var["gFirstHitPhotonInfo"] = m_FirstHitPhotonInfoBuf.buffer;
+    for (uint32_t idx = 0; idx < 2; ++idx)
+    {
+        var["gPhotonFirstHitMap"][idx] = m_PhotonFirstHitMapBufs[idx];
+    }
+    var["gLightFirstHitCounts"] = m_LightFirstHitCountsBuf;
+    var["gSoftmaxWeights"] = m_SoftmaxBuf.buffer;
+}
+
+void GaussianPhotonGuiding::ClearBuffersForPhotonCollection(RenderContext* renderContext)
+{
+    renderContext->clearUAV(m_FirstHitCollectionCountsBuf.buffer->getUAV().get(), uint4(0));
+}
+
+void GaussianPhotonGuiding::SetCollectPhotonsVars(const ShaderVar& var) const
+{
+    for (uint32_t idx = 0; idx < 2; ++idx)
+    {
+        var["gPhotonFirstHitMap"][idx] = m_PhotonFirstHitMapBufs[idx];
+    }
+    var["gFirstHitCollectionCounts"] = m_FirstHitCollectionCountsBuf.buffer;
+    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+}
+
+void GaussianPhotonGuiding::SetFinalShadingVars(const ShaderVar& var) const
+{
+    const std::string nameBuf = "GaussianPhotonGuiding";
+    var[nameBuf]["gGaussianCount"] = m_GaussianCount;
+    var[nameBuf]["gAnalyticLightCount"] = m_AnalyticLightCount;
+    var[nameBuf]["gGeometricLightCount"] = m_GeometricLightCount;
+    var["gGaussians"] = m_GaussianBuf.buffer;
 }
 
 void GaussianPhotonGuiding::GenerateCausticPoints(

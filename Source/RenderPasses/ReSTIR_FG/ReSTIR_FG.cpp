@@ -1599,11 +1599,11 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         pRenderContext->clearUAV(mpPhotonAABB[0]->getUAV().get(), uint4(0));
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
 
-        // Clear first hit photon counter
-        pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitPhotonCountBuffer()->getUAV().get(), uint4(0));
-
-        // Clear light first hit buffer
-        pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetLightFirstHitCountBuffer()->getUAV().get(), uint4(0));
+        // GMM PG
+        if (m_GaussianPhotonGuiding.IsActive())
+        {
+            m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
+        }
     }
 
     // Get dimensions of ray dispatch.
@@ -1691,14 +1691,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
     // 3D gaussian photon guiding constants
-    nameBuf = "GaussianPhotonGuiding";
-    var[nameBuf]["gGaussianCount"] = m_GaussianPhotonGuiding.GetGaussianCount();
-    var[nameBuf]["gAnalyticLightCount"] = m_GaussianPhotonGuiding.GetAnalyticLightCount();
-    var[nameBuf]["gGeometricLightCount"] = m_GaussianPhotonGuiding.GetGeometricLightCount();
-    var[nameBuf]["gGmmMinPdf"] = m_GaussianPhotonGuiding.GetMinPdf();
-    var[nameBuf]["gBeta"] =
-        mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization() ? 0.0f : m_GaussianPhotonGuiding.GetBeta();
-    var[nameBuf]["gMaxFirstHitPhotonCount"] = m_GaussianPhotonGuiding.GetMaxFirstHitPhotonCount();
+    if (m_GaussianPhotonGuiding.IsActive())
+    {
+        m_GaussianPhotonGuiding.SetGeneratePhotonsVars(var, mFrameCount);
+    }
 
     // Light samples constants
     if (mpEmissiveLightSampler)
@@ -1714,17 +1710,6 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     }
     var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
-
-    // 3D gaussian photon guiding buffers
-    var["gGaussians"] = m_GaussianPhotonGuiding.GetGaussianBuffer();
-    var["gFirstHitPhotonCounter"] = m_GaussianPhotonGuiding.GetFirstHitPhotonCountBuffer();
-    var["gFirstHitPhotonInfo"] = m_GaussianPhotonGuiding.GetFirstHitPhotonInfoBuffer();
-    for (uint32_t idx = 0; idx < 2; ++idx)
-    {
-        var["gPhotonFirstHitMap"][idx] = m_GaussianPhotonGuiding.GetPhotonFirstHitMapBuffer(idx);
-    }
-    var["gLightFirstHitCounts"] = m_GaussianPhotonGuiding.GetLightFirstHitCountBuffer();
-    var["gSoftmaxWeights"] = m_GaussianPhotonGuiding.GetSoftmaxBuffer();
 
     // Adaptive light sampler buffers
     if (m_AdaptiveLightSampler.IsActive())
@@ -1750,7 +1735,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     pRenderContext->uavBarrier(mpPhotonData[1].get());
 
     // First hit photon count
-    m_GaussianPhotonGuiding.TrackActualFirstHitPhotonCount(pRenderContext);
+    if (m_GaussianPhotonGuiding.IsActive())
+    {
+        m_GaussianPhotonGuiding.TrackActualFirstHitPhotonCount(pRenderContext);
+    }
 
     // Global and caustic photon counts
     if (!mMixedLights || mMixedLights && secondPass)
@@ -1822,7 +1810,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
     // Clear first hit collection counts
-    pRenderContext->clearUAV(m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer()->getUAV().get(), uint4(0));
+    if (m_GaussianPhotonGuiding.IsActive())
+    {
+        m_GaussianPhotonGuiding.ClearBuffersForPhotonCollection(pRenderContext);
+    }
     if (m_AdaptiveLightSampler.IsActive())
     {
         m_AdaptiveLightSampler.ClearClusterStatBuf(pRenderContext);
@@ -1908,12 +1899,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
-    for (uint32_t idx = 0; idx < 2; ++idx)
+    if (m_GaussianPhotonGuiding.IsActive())
     {
-        var["gPhotonFirstHitMap"][idx] = m_GaussianPhotonGuiding.GetPhotonFirstHitMapBuffer(idx);
+        m_GaussianPhotonGuiding.SetCollectPhotonsVars(var);
     }
-    var["gFirstHitCollectionCounts"] = m_GaussianPhotonGuiding.GetFirstHitCollectionCountsBuffer();
-    var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_GaussianPhotonGuiding.GetMaxFirstHitPhotonCount();
 
     // Adaptive light sampler
     if (m_AdaptiveLightSampler.IsActive())
@@ -2309,12 +2298,11 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
         }
     }
 
-    // 3D gaussian photon guiding constants
-    const std::string nameBuf = "GaussianPhotonGuiding";
-    var[nameBuf]["gGaussianCount"] = m_GaussianPhotonGuiding.GetGaussianCount();
-    var[nameBuf]["gAnalyticLightCount"] = m_GaussianPhotonGuiding.GetAnalyticLightCount();
-    var[nameBuf]["gGeometricLightCount"] = m_GaussianPhotonGuiding.GetGeometricLightCount();
-    var["gGaussians"] = m_GaussianPhotonGuiding.GetGaussianBuffer();
+    // 3D gaussian photon guiding
+    if (m_GaussianPhotonGuiding.IsActive())
+    {
+        m_GaussianPhotonGuiding.SetFinalShadingVars(var);
+    }
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)

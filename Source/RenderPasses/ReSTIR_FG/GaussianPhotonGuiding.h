@@ -40,6 +40,14 @@ public:
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
 
+    void ClearBuffersForGeneratePhotons(RenderContext* renderContext);
+    void SetGeneratePhotonsVars(const ShaderVar& var, const uint frameCount) const;
+
+    void ClearBuffersForPhotonCollection(RenderContext* renderContext);
+    void SetCollectPhotonsVars(const ShaderVar& var) const;
+
+    void SetFinalShadingVars(const ShaderVar& var) const;
+
     constexpr bool IsActive() const { return m_Active; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
     constexpr uint GetGaussianCount() const { return m_GaussianCount; }
@@ -48,14 +56,6 @@ public:
     constexpr uint GetMaxFirstHitPhotonCount() const { return m_MaxFirstHitPhotonCount; }
     constexpr float GetMinPdf() const { return m_MinPdf; }
     constexpr float GetBeta() const { return m_Beta; }
-
-    ref<Buffer> GetGaussianBuffer() const { return m_GaussianBuf.buffer; }
-    ref<Buffer> GetPhotonFirstHitMapBuffer(const uint idx) const { return m_PhotonFirstHitMapBufs[idx]; }
-    ref<Buffer> GetFirstHitCollectionCountsBuffer() const { return m_FirstHitCollectionCountsBuf.buffer; }
-    ref<Buffer> GetFirstHitPhotonCountBuffer() const { return m_FirstHitPhotonCountBuf.buffer; }
-    ref<Buffer> GetLightFirstHitCountBuffer() const { return m_LightFirstHitCountsBuf; }
-    ref<Buffer> GetFirstHitPhotonInfoBuffer() const { return m_FirstHitPhotonInfoBuf.buffer; }
-    ref<Buffer> GetSoftmaxBuffer() const { return m_SoftmaxBuf.buffer; }
 
 private:
     // Constants
