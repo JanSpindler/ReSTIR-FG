@@ -1600,7 +1600,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
 
         // GMM PG
-        if (m_GaussianPhotonGuiding.IsActive())
+        if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
         {
             m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
         }
@@ -1691,7 +1691,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
     // 3D gaussian photon guiding constants
-    if (m_GaussianPhotonGuiding.IsActive())
+    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.SetGeneratePhotonsVars(var, mFrameCount);
     }
@@ -1810,7 +1810,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
     // Clear first hit collection counts
-    if (m_GaussianPhotonGuiding.IsActive())
+    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.ClearBuffersForPhotonCollection(pRenderContext);
     }
@@ -1899,7 +1899,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
-    if (m_GaussianPhotonGuiding.IsActive())
+    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.SetCollectPhotonsVars(var);
     }
@@ -2299,10 +2299,7 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
     }
 
     // 3D gaussian photon guiding
-    if (m_GaussianPhotonGuiding.IsActive())
-    {
-        m_GaussianPhotonGuiding.SetFinalShadingVars(var);
-    }
+    m_GaussianPhotonGuiding.SetFinalShadingVars(var);
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)
