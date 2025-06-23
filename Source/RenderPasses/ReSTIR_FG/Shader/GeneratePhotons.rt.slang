@@ -46,6 +46,7 @@ cbuffer GaussianPhotonGuiding
     float gBeta;
     uint gMaxFirstHitPhotonCount;
     float gPositionScaling;
+    float gCS;
 };
 
 #if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
@@ -173,7 +174,7 @@ float3 fromLocalToWorld(const in float3 normal, float3 w)
 float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
 {
     const float3 mu = gaussian.mean;
-    const float sigma = gaussian.sigma;
+    const float sigma = gaussian.GetSigma(gCS);
 
     const float r1 = sampleNext1D(sg);
     const float r2 = sampleNext1D(sg);
@@ -206,7 +207,7 @@ float GMMProb(float3 pos0, float3 gmmPos, const uint lightIdx)
         const uint totalGaussianIdx = startGaussIdx + gaussIdx;
         const Gaussian3D gaussian = gGaussians[totalGaussianIdx];
         const float gaussWeight = gSoftmaxWeights[totalGaussianIdx];
-        gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.sigma) * gaussWeight;
+        gmmPdf += F0(gmmPos, pos0, gaussian.mean, gaussian.GetSigma(gCS)) * gaussWeight;
     }
 
     // Return

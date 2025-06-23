@@ -6,8 +6,13 @@ static const float SQRT_2 = 1.41421356237f;
 struct Gaussian3D
 {
     float3 mean; // Mean
-    float sigma; // Standard deviation
+    float pSigma; // Standard deviation
     float weight; // Unnormalized weight used in GMM
+
+    float GetSigma(const float cS)
+    {
+        return cS / (1.0f + exp(-pSigma));
+    }
 };
 
 struct Gaussian3DMoments
@@ -15,8 +20,8 @@ struct Gaussian3DMoments
     float3 meanMoment1;
     float3 meanMoment2;
 
-    float sigmaMoment1;
-    float sigmaMoment2;
+    float pSigmaMoment1;
+    float pSigmaMoment2;
 
     float weightMoment1;
     float weightMoment2;

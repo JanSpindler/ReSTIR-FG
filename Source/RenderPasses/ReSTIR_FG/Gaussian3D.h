@@ -5,12 +5,26 @@
 struct Gaussian3D
 {
     float3 mean;
-    float sigma;
+    float pSigma;
     float weight;
 
-    constexpr Gaussian3D() : mean{0.f, 0.0f, 0.0f}, sigma(1.f), weight(0.f) {}
+    constexpr Gaussian3D() : mean{0.f, 0.0f, 0.0f}, pSigma(0.f), weight(0.f) {}
 
-    constexpr Gaussian3D(const float3& mean, const float sigma, const float weight) : mean(mean), sigma(sigma), weight(weight) {}
+    constexpr Gaussian3D(const float3& mean, const float pSigma, const float weight) : mean(mean), pSigma(pSigma), weight(weight) {}
+
+#ifdef __CUDACC__
+    __forceinline__ __device__ float GetSigma(const float cS) const
+    {
+        return cS / (1.0f + exp(-pSigma));
+    }
+
+    __forceinline__ __device__ float GetSigmaDeriv(const float cS) const
+    {
+        const float expP = exp(pSigma);
+        const float denomSqrt = 1.0f + expP;
+        return cS * expP / (denomSqrt * denomSqrt);
+    }
+#endif
 };
 
 struct Gaussian3DMoments
@@ -18,8 +32,8 @@ struct Gaussian3DMoments
     float3 meanMoment1;
     float3 meanMoment2;
 
-    float sigmaMoment1;
-    float sigmaMoment2;
+    float pSigmaMoment1;
+    float pSigmaMoment2;
 
     float weightMoment1;
     float weightMoment2;
@@ -27,8 +41,8 @@ struct Gaussian3DMoments
     constexpr Gaussian3DMoments()
         : meanMoment1{0.f, 0.0f, 0.0f}
         , meanMoment2{0.f, 0.0f, 0.0f}
-        , sigmaMoment1(0.f)
-        , sigmaMoment2(0.f)
+        , pSigmaMoment1(0.f)
+        , pSigmaMoment2(0.f)
         , weightMoment1(0.f)
         , weightMoment2(0.f)
     {}

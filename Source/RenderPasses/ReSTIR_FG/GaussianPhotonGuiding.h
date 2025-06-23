@@ -99,7 +99,7 @@ private:
 
     // Optimization
     Optimizer m_Optimizer = Optimizer::Adam;
-    float m_LearningRate = 0.03f;
+    float m_LearningRate = 0.01f;
     float m_Beta1 = 0.9f;
     float m_Beta2 = 0.999f;
     uint m_OptimStep = 0;

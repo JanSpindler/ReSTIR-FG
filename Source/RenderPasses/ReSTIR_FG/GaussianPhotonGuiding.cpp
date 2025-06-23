@@ -96,10 +96,9 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Init N random gaussians in the scene
         const float positionScaling = GetPositionScaling();
-        const float sigma = m_Cs;
         for (size_t gaussIdx = 0; gaussIdx < totalGaussianCount; ++gaussIdx)
         {
-            gaussians[gaussIdx] = Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, sigma, 0.0f);
+            gaussians[gaussIdx] = Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, 0.0f, 0.0f);
         }
 
         // Create buffer
@@ -444,7 +443,7 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
             Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
             gaussian.mean =
                 gaussianIdx < clusterCount ? m_CausticClusters[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
-            gaussian.sigma = m_Cs;
+            gaussian.pSigma = 0.0f;
             gaussian.weight = 1.0f;
         }
     }
@@ -475,7 +474,7 @@ void GaussianPhotonGuiding::CalculateGaussianGradientCuda(RenderContext* pRender
         reinterpret_cast<const uint*>(m_FirstHitCollectionCountsBuf.devicePtr),
         reinterpret_cast<const FirstHitPhotonInfo*>(m_FirstHitPhotonInfoBuf.devicePtr),
         reinterpret_cast<const uint*>(m_FirstHitPhotonCountBuf.devicePtr), reinterpret_cast<const float*>(m_SoftmaxBuf.devicePtr),
-        reinterpret_cast<Gaussian3D*>(m_GradientBuf.devicePtr), GetPositionScaling()
+        reinterpret_cast<Gaussian3D*>(m_GradientBuf.devicePtr), GetPositionScaling(), m_Cs
     );
 
     // Ensure CUDA kernel has completed before proceeding
@@ -629,6 +628,7 @@ void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var, const u
     var[nameBuf]["gBeta"] = frameCount <= 1 and IsRobustInitialization() ? 0.0f : m_Beta;
     var[nameBuf]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
     var[nameBuf]["gPositionScaling"] = GetPositionScaling();
+    var[nameBuf]["gCS"] = m_Cs;
 
     // Buffers
     var["gGaussians"] = m_GaussianBuf.buffer;
@@ -665,6 +665,7 @@ void GaussianPhotonGuiding::SetFinalShadingVars(const ShaderVar& var) const
     var[nameBuf]["gAnalyticLightCount"] = m_AnalyticLightCount;
     var[nameBuf]["gGeometricLightCount"] = m_GeometricLightCount;
     var[nameBuf]["gPositionScaling"] = GetPositionScaling();
+    var[nameBuf]["gCS"] = m_Cs;
 
     var["gGaussians"] = m_GaussianBuf.buffer;
 }

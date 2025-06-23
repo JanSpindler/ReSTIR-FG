@@ -86,6 +86,7 @@ cbuffer GaussianPhotonGuiding
     uint gAnalyticLightCount;
     uint gGeometricLightCount;
     float gPositionScaling;
+    float gCS;
 };
 RWStructuredBuffer<Gaussian3D> gGaussians;
 
@@ -437,7 +438,7 @@ void main(uint2 pixel : SV_DispatchThreadID)
                     const VertexData vertexData = gScene.getVertexData(triangleHit);
                     const float3 firstHitPos = vertexData.posW * gPositionScaling;
 
-                    const float result = length(firstHitPos - gaussian.mean) / gaussian.sigma;
+                    const float result = length(firstHitPos - gaussian.mean) / gaussian.GetSigma(gCS);
                     minDist = min(minDist, result);
                 }
             }
