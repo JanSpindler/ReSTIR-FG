@@ -22,7 +22,8 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
     m_LightBvh = LightTree(m_Device, lightCollection);
-    if (lightCollection->getTotalLightCount() == 0)
+    m_HasLights = lightCollection->getTotalLightCount() > 0;
+    if (!m_HasLights)
     {
         return;
     }
@@ -43,6 +44,11 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
 {
+    if (!m_HasLights)
+    {
+        return;
+    }
+
     if (!m_ClusterNodeIdxBuf)
     {
         const std::vector<uint> clusterNodeIndices(m_MaxCutSize, 0);
@@ -149,6 +155,11 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
+    if (!m_HasLights)
+    {
+        return;
+    }
+
     //
     const size_t nodeCount = GetTotalNodeCount();
 
@@ -288,12 +299,20 @@ void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
 {
+    if (!m_HasLights)
+    {
+        return;
+    }
     pRenderContext->clearUAV(m_ClusterSampleCountBuf->getUAV().get(), uint4(0));
     pRenderContext->clearUAV(m_ClusterRadianceSqBuf->getUAV().get(), float4(0.0f));
 }
 
 void AdaptiveLightSampler::ClearLeafRadianceBuf(RenderContext* pRenderContext) const
 {
+    if (!m_HasLights)
+    {
+        return;
+    }
     pRenderContext->clearUAV(m_LeafRadianceBuf->getUAV().get(), float4(0.0f));
 }
 

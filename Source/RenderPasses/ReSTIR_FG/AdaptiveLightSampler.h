@@ -60,6 +60,7 @@ private:
     ref<Buffer> m_NodeImportanceBufCPU;
 
     // Stats
+    bool m_HasLights = false;
     bool m_Active = false;
     static constexpr uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
