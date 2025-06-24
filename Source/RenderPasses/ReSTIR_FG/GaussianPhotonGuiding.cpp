@@ -251,6 +251,7 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
         }
 
         // Optimizer
+        changed |= group.checkbox("Optimize Gaussians", m_Optimize);
         const bool changedOptimizer = group.dropdown("Optimizer", m_OptimizerList, reinterpret_cast<uint&>(m_Optimizer));
         if (changedOptimizer)
         {

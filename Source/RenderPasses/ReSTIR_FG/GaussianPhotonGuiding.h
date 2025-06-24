@@ -49,6 +49,7 @@ public:
     void SetFinalShadingVars(const ShaderVar& var) const;
 
     constexpr bool IsActive() const { return m_Active; }
+    constexpr bool IsOptimizing() const { return m_Optimize; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
 
 private:
@@ -98,6 +99,7 @@ private:
     std::vector<float3> m_CausticClusters;
 
     // Optimization
+    bool m_Optimize = true;
     Optimizer m_Optimizer = Optimizer::Adam;
     float m_LearningRate = 0.01f;
     float m_Beta1 = 0.9f;

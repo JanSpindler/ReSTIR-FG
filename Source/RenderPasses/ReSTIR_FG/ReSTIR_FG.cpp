@@ -408,6 +408,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Count closest caustic clusters for robust initialization
+    // Optimize gaussians
     if (mRenderMode != RenderMode::ReSTIRGI)
     {
         if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
@@ -415,7 +416,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
             m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext, mFrameCount);
         }
         // Calculate gaussian gradient and optimize
-        else if (m_GaussianPhotonGuiding.IsActive())
+        else if (m_GaussianPhotonGuiding.IsActive() and m_GaussianPhotonGuiding.IsOptimizing())
         {
             m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
             m_GaussianPhotonGuiding.OptimizeGaussiansPass(pRenderContext);
