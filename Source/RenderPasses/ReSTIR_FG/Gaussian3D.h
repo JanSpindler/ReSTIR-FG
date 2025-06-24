@@ -15,7 +15,7 @@ struct Gaussian3D
 #ifdef __CUDACC__
     __forceinline__ __device__ float GetSigma(const float cS) const
     {
-        return cS / (1.0f + exp(-pSigma));
+        return 0.1f + (cS / (1.0f + exp(-pSigma)));
     }
 
     __forceinline__ __device__ float GetSigmaDeriv(const float cS) const

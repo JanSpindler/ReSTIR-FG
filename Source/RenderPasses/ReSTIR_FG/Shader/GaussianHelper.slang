@@ -11,7 +11,7 @@ struct Gaussian3D
 
     float GetSigma(const float cS)
     {
-        return cS / (1.0f + exp(-pSigma));
+        return 0.1f + (cS / (1.0f + exp(-pSigma)));
     }
 };
 
