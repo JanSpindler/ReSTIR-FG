@@ -345,7 +345,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     }
 
     // Generate caustic clusters for use in robust gaussian initialization
-    if (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization())
+    if (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization())
     {
         m_GaussianPhotonGuiding.GenerateCausticClusters(pRenderContext);
     }
@@ -411,9 +411,9 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Optimize gaussians
     if (mRenderMode != RenderMode::ReSTIRGI)
     {
-        if (mFrameCount <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
+        if (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
         {
-            m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext, mFrameCount);
+            m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext);
         }
         // Calculate gaussian gradient and optimize
         else if (m_GaussianPhotonGuiding.IsActive() and m_GaussianPhotonGuiding.IsOptimizing())
@@ -440,6 +440,9 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Final shading
     finalShadingPass(pRenderContext, renderData);
 
+    // End frame for GaussianPhotonGuiding (independent of active flag)
+    m_GaussianPhotonGuiding.EndFrame(pRenderContext);
+    
     // Restir Di
     if (mpRTXDI)
     {
@@ -1601,7 +1604,8 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         pRenderContext->clearUAV(mpPhotonAABB[1]->getUAV().get(), uint4(0));
 
         // GMM PG
-        if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
+        if (m_GaussianPhotonGuiding.IsActive() or
+            (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
         {
             m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
         }
@@ -1643,8 +1647,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     // Gaussian photon guiding defines
     mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", m_GaussianPhotonGuiding.IsActive() ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefine(
-        "TRACK_FIRST_HIT_PHOTONS",
-        m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
+        "TRACK_FIRST_HIT_PHOTONS", m_GaussianPhotonGuiding.IsActive() or (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and
+                                                                          m_GaussianPhotonGuiding.IsRobustInitialization())
+                                       ? "1"
+                                       : "0"
     );
 
     // Adaptive light sampler defines
@@ -1692,9 +1698,10 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
     // 3D gaussian photon guiding constants
-    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
+    if (m_GaussianPhotonGuiding.IsActive() or
+        (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
-        m_GaussianPhotonGuiding.SetGeneratePhotonsVars(var, mFrameCount);
+        m_GaussianPhotonGuiding.SetGeneratePhotonsVars(var);
     }
 
     // Light samples constants
@@ -1811,7 +1818,8 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     FALCOR_PROFILE(pRenderContext, "CollectPhotons");
 
     // Clear first hit collection counts
-    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
+    if (m_GaussianPhotonGuiding.IsActive() or
+        (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.ClearBuffersForPhotonCollection(pRenderContext);
     }
@@ -1840,8 +1848,10 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Gaussian photon guiding defines
     mCollectPhotonPass.pProgram->addDefine(
-        "TRACK_FIRST_HIT_PHOTONS",
-        m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()) ? "1" : "0"
+        "TRACK_FIRST_HIT_PHOTONS", m_GaussianPhotonGuiding.IsActive() or (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and
+                                                                          m_GaussianPhotonGuiding.IsRobustInitialization())
+                                       ? "1"
+                                       : "0"
     );
 
     // Adaptive light sampler defines
@@ -1900,7 +1910,8 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
 
     // 3D gaussian photon guiding
-    if (m_GaussianPhotonGuiding.IsActive() or (mFrameCount == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
+    if (m_GaussianPhotonGuiding.IsActive() or
+        (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.SetCollectPhotonsVars(var);
     }

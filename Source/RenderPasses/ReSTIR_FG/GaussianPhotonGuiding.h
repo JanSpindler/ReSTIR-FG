@@ -35,13 +35,14 @@ public:
 
     void GenerateCausticClusters(RenderContext* renderContext);
     void TrackActualFirstHitPhotonCount(RenderContext* renderContext);
-    void CountCausticClustersPass(RenderContext* renderContext, const uint frameCount);
+    void CountCausticClustersPass(RenderContext* renderContext);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
+    void EndFrame(RenderContext* renderContext);
 
     void ClearBuffersForGeneratePhotons(RenderContext* renderContext);
-    void SetGeneratePhotonsVars(const ShaderVar& var, const uint frameCount) const;
+    void SetGeneratePhotonsVars(const ShaderVar& var) const;
 
     void ClearBuffersForPhotonCollection(RenderContext* renderContext);
     void SetCollectPhotonsVars(const ShaderVar& var) const;
@@ -50,6 +51,7 @@ public:
 
     constexpr bool IsActive() const { return m_Active; }
     constexpr bool IsOptimizing() const { return m_Optimize; }
+    constexpr uint GetFrameCountAfterOptimReset() const { return m_FrameCountAfterOptimReset; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
 
 private:
@@ -105,6 +107,7 @@ private:
     float m_Beta1 = 0.9f;
     float m_Beta2 = 0.999f;
     uint m_OptimStep = 0;
+    uint m_FrameCountAfterOptimReset = 0;
 
     // Buffers
     InteropBuffer m_GaussianBuf;

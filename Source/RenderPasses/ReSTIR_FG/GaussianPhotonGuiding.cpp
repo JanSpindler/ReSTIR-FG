@@ -106,6 +106,7 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Reset optimization
         m_OptimStep = 0;
+        m_FrameCountAfterOptimReset = 0;
     }
 
     if (!m_GaussianTex)
@@ -164,6 +165,7 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Reset optimization
         m_OptimStep = 0;
+        m_FrameCountAfterOptimReset = 0;
     }
 
     if (!m_SoftmaxBuf.buffer)
@@ -359,7 +361,7 @@ void GaussianPhotonGuiding::TrackActualFirstHitPhotonCount(RenderContext* render
     }
 }
 
-void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderContext, const uint frameCount)
+void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderContext)
 {
     // Profile
     FALCOR_PROFILE(pRenderContext, "CountCausticClusters");
@@ -406,7 +408,7 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     );
 
     // Weird logic
-    if (frameCount < 1)
+    if (m_FrameCountAfterOptimReset < 1)
     {
         return;
     }
@@ -612,13 +614,19 @@ void GaussianPhotonGuiding::CalculateSoftmaxWeightsPass(RenderContext* pRenderCo
 #endif
 }
 
+void GaussianPhotonGuiding::EndFrame(RenderContext* renderContext)
+{
+    // Increment counter after this is called because this happens when GaussianPhotonGuiding is used
+    ++m_FrameCountAfterOptimReset;
+}
+
 void GaussianPhotonGuiding::ClearBuffersForGeneratePhotons(RenderContext* renderContext)
 {
     renderContext->clearUAV(m_FirstHitPhotonCountBuf.buffer->getUAV().get(), uint4(0));
     renderContext->clearUAV(m_LightFirstHitCountsBuf->getUAV().get(), uint4(0));
 }
 
-void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var, const uint frameCount) const
+void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var) const
 {
     // Constants
     static const std::string nameBuf = "GaussianPhotonGuiding";
@@ -626,7 +634,7 @@ void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var, const u
     var[nameBuf]["gAnalyticLightCount"] = m_AnalyticLightCount;
     var[nameBuf]["gGeometricLightCount"] = m_GeometricLightCount;
     var[nameBuf]["gGmmMinPdf"] = m_MinPdf;
-    var[nameBuf]["gBeta"] = frameCount <= 1 and IsRobustInitialization() ? 0.0f : m_Beta;
+    var[nameBuf]["gBeta"] = m_FrameCountAfterOptimReset <= 1 and IsRobustInitialization() ? 0.0f : m_Beta;
     var[nameBuf]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
     var[nameBuf]["gPositionScaling"] = GetPositionScaling();
     var[nameBuf]["gCS"] = m_Cs;
