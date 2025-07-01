@@ -85,6 +85,5 @@ void main(uint2 index : SV_DispatchThreadID)
 
     // Safety checks
     // TODO: Handle this in a better way
-    //gGaussians[gaussianIdx].pSigma = max(gGaussians[gaussianIdx].pSigma, -1.0f);
     gGaussians[gaussianIdx].weight = clamp(gGaussians[gaussianIdx].weight, -2.0f, 2.0f);
 }

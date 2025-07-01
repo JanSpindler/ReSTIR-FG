@@ -103,6 +103,8 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Create buffer
         m_GaussianBuf = CreateStructuredInteropBuffer<Gaussian3D>(m_Device, totalGaussianCount, Buffer::CpuAccess::None, gaussians.data());
+        m_GaussianBufCPU =
+            Buffer::createStructured(m_Device, sizeof(Gaussian3D), totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
 
         // Reset optimization
         m_OptimStep = 0;
@@ -562,6 +564,15 @@ void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
 
     // Execute
     m_OptimizeGaussiansPass->execute(pRenderContext, uint3(totalGaussianCount, 1, 1));
+
+    // Copy gaussians to CPU
+#if 0
+    pRenderContext->uavBarrier(m_GaussianBuf.buffer.get());
+    pRenderContext->copyBufferRegion(m_GaussianBufCPU.get(), 0, m_GaussianBuf.buffer.get(), 0, sizeof(Gaussian3D) * totalGaussianCount);
+    std::span<Gaussian3D> gaussians(reinterpret_cast<Gaussian3D*>(m_GaussianBufCPU->map(Buffer::MapType::Read)), totalGaussianCount);
+    __nop();
+    m_GaussianBufCPU->unmap();
+#endif
 }
 
 void GaussianPhotonGuiding::CalculateSoftmaxWeightsPass(RenderContext* pRenderContext)

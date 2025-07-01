@@ -111,6 +111,7 @@ private:
 
     // Buffers
     InteropBuffer m_GaussianBuf;
+    ref<Buffer> m_GaussianBufCPU;
     ref<Texture> m_GaussianTex;
     InteropBuffer m_FirstHitPhotonCountBuf;
     ref<Buffer> m_FirstHitPhotonCountBufCPU;
