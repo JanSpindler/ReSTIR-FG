@@ -353,7 +353,10 @@ void Profiler::endEvent(RenderContext* pRenderContext, const std::string& name, 
         if (!mPaused)
             pEvent->end(mFrameIndex);
 
-        mCurrentEventName.erase(mCurrentEventName.find_last_of("/"));
+        if (mCurrentEventName.find("/") != std::string::npos)
+        {
+            mCurrentEventName.erase(mCurrentEventName.find_last_of("/"));
+        }
     }
 
     if (is_set(flags, Flags::Pix))

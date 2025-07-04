@@ -157,7 +157,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, ReSTIR_FG>();
 }
 
-ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice)
+ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
+    : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice), m_ProfilerUI(pDevice->getProfiler())
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -440,8 +441,6 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Final shading
     finalShadingPass(pRenderContext, renderData);
 
-    // End frame for GaussianPhotonGuiding (independent of active flag)
-    m_GaussianPhotonGuiding.EndFrame(pRenderContext);
     
     // Restir Di
     if (mpRTXDI)
@@ -470,7 +469,8 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         mSPPMFramesCameraStill++;
     }
 
-    //
+    // End frame
+    m_GaussianPhotonGuiding.EndFrame(pRenderContext);
     mReservoirValid = true;
     mFrameCount++;
 }
@@ -518,6 +518,12 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         group.tooltip(
             "Shows a mask which path is used for which pixel. \n Blue: First hit is diffuse \n"
             "Red: DI and FG evaluated on the same surface \n Green: DI and FG evaluated on different surfaces.");
+    }
+
+    // Profiling
+    if (auto group = widget.group("Profiling"))
+    {
+        m_ProfilerUI.render();
     }
 
     // Photon Mapping Options

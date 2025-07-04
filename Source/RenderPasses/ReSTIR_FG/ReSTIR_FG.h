@@ -38,6 +38,7 @@
 #include "GaussianPhotonGuiding.h"
 #include "AdaptiveLightSampler.h"
 #include "PrefixRestir.h"
+#include <Utils/Timing/ProfilerUI.h>
 
 using namespace Falcor;
 
@@ -286,7 +287,7 @@ private:
     float mCullingCellRadius = 0.1f;                                //Radius used for the culling cells
 
     const uint kDynamicPhotonDispatchInitValue = 500224; // Start with 500 thousand photons
-    bool mUseDynamicPhotonDispatchCount = true;  // Dynamically change the number of photons to fit the max photon number
+    bool mUseDynamicPhotonDispatchCount = false;  // Dynamically change the number of photons to fit the max photon number
     uint mPhotonDynamicDispatchMax = 2000000;     // Max value for dynamically dispatched photons
     float mPhotonDynamicGuardPercentage = 0.08f;  // Determines how much space of the buffer is used to guard against buffer overflows
     float mPhotonDynamicChangePercentage = 0.04f; // The percentage the buffer is increased/decreased per frame
@@ -315,6 +316,9 @@ private:
 
     // Prefix restir
     PrefixRestir m_PrefixRestir;
+
+    // Profiling
+    ProfilerUI m_ProfilerUI;
 
     //
     // Buffer and Textures
