@@ -11,7 +11,6 @@ cbuffer Constants
     float gLearningRate;
     float gBeta1;
     float gBeta2;
-    float gOptimStep;
 }
 
 static const float EPSILON = 1e-8f;
@@ -19,7 +18,8 @@ static const float EPSILON = 1e-8f;
 RWStructuredBuffer<Gaussian3D> gGaussians;
 StructuredBuffer<Gaussian3D> gGradients;
 Buffer<uint> gLightFirstHitCounts;
-RWStructuredBuffer<Gaussian3DMoments> gGaussianMoments;
+RWStructuredBuffer<Gaussian3DOptimizationData> gGaussianOptimizationData;
+RWBuffer<uint> gGaussianOptimizationReset;
 
 bool CheckNumeric(const float value)
 {
@@ -31,18 +31,18 @@ bool CheckNumeric(const float3 value)
     return all(isfinite(value) && !isnan(value));
 }
 
-float Adam(const float g, inout float m, inout float v)
+float Adam(const float g, inout float m, inout float v, const float step)
 {
     m = gBeta1 * m + (1.0f - gBeta1) * g;
     v = gBeta2 * v + (1.0f - gBeta2) * g * g;
-    const float numerator = m / (1.0f - pow(gBeta1, gOptimStep));
-    const float denominator = sqrt(v / (1.0f - pow(gBeta2, gOptimStep))) + EPSILON;
+    const float numerator = m / (1.0f - pow(gBeta1, step));
+    const float denominator = sqrt(v / (1.0f - pow(gBeta2, step))) + EPSILON;
     return numerator / denominator;
 }
 
-void OptimAdam(inout float param, const float gradient, inout float firstMoment, inout float secondMoment)
+void OptimAdam(inout float param, const float gradient, inout float firstMoment, inout float secondMoment, const float step)
 {
-    param -= gLearningRate * Adam(gradient, firstMoment, secondMoment);
+    param -= gLearningRate * Adam(gradient, firstMoment, secondMoment, step);
 }
 
 [numthreads(32, 1, 1)]
@@ -75,12 +75,54 @@ void main(uint2 index : SV_DispatchThreadID)
     gGaussians[gaussianIdx].pSigma -= gLearningRate * pSigmaGradient;
     gGaussians[gaussianIdx].weight -= gLearningRate * weightGradient;
 #endif
+
 #if OPTIM_ADAM
-    OptimAdam(gGaussians[gaussianIdx].mean.x, meanGradient.x, gGaussianMoments[gaussianIdx].meanMoment1.x, gGaussianMoments[gaussianIdx].meanMoment2.x);
-    OptimAdam(gGaussians[gaussianIdx].mean.y, meanGradient.y, gGaussianMoments[gaussianIdx].meanMoment1.y, gGaussianMoments[gaussianIdx].meanMoment2.y);
-    OptimAdam(gGaussians[gaussianIdx].mean.z, meanGradient.z, gGaussianMoments[gaussianIdx].meanMoment1.z, gGaussianMoments[gaussianIdx].meanMoment2.z);
-    OptimAdam(gGaussians[gaussianIdx].pSigma, pSigmaGradient, gGaussianMoments[gaussianIdx].pSigmaMoment1, gGaussianMoments[gaussianIdx].pSigmaMoment2);
-    OptimAdam(gGaussians[gaussianIdx].weight, weightGradient, gGaussianMoments[gaussianIdx].weightMoment1, gGaussianMoments[gaussianIdx].weightMoment2);
+    if (gGaussianOptimizationReset[gaussianIdx] == 1)
+    {
+        // Reset the optimization data
+        gGaussianOptimizationData[gaussianIdx].meanMoment1 = float3(0.0f, 0.0f, 0.0f);
+        gGaussianOptimizationData[gaussianIdx].meanMoment2 = float3(0.0f, 0.0f, 0.0f);
+        gGaussianOptimizationData[gaussianIdx].pSigmaMoment1 = 0.0f;
+        gGaussianOptimizationData[gaussianIdx].pSigmaMoment2 = 0.0f;
+        gGaussianOptimizationData[gaussianIdx].weightMoment1 = 0.0f;
+        gGaussianOptimizationData[gaussianIdx].weightMoment2 = 0.0f;
+        gGaussianOptimizationData[gaussianIdx].step = 0;
+        gGaussianOptimizationReset[gaussianIdx] = 0;
+    };
+
+    ++gGaussianOptimizationData[gaussianIdx].step;
+    const float step = (float)gGaussianOptimizationData[gaussianIdx].step;
+
+    OptimAdam(
+        gGaussians[gaussianIdx].mean.x,
+        meanGradient.x,
+        gGaussianOptimizationData[gaussianIdx].meanMoment1.x,
+        gGaussianOptimizationData[gaussianIdx].meanMoment2.x,
+        step);
+    OptimAdam(
+        gGaussians[gaussianIdx].mean.y,
+        meanGradient.y,
+        gGaussianOptimizationData[gaussianIdx].meanMoment1.y,
+        gGaussianOptimizationData[gaussianIdx].meanMoment2.y,
+        step);
+    OptimAdam(
+        gGaussians[gaussianIdx].mean.z,
+        meanGradient.z,
+        gGaussianOptimizationData[gaussianIdx].meanMoment1.z,
+        gGaussianOptimizationData[gaussianIdx].meanMoment2.z,
+        step);
+    OptimAdam(
+        gGaussians[gaussianIdx].pSigma,
+        pSigmaGradient,
+        gGaussianOptimizationData[gaussianIdx].pSigmaMoment1,
+        gGaussianOptimizationData[gaussianIdx].pSigmaMoment2,
+        step);
+    OptimAdam(
+        gGaussians[gaussianIdx].weight,
+        weightGradient,
+        gGaussianOptimizationData[gaussianIdx].weightMoment1,
+        gGaussianOptimizationData[gaussianIdx].weightMoment2,
+        step);
 #endif
 
     // Safety checks

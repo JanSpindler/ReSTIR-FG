@@ -103,11 +103,13 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Create buffer
         m_GaussianBuf = CreateStructuredInteropBuffer<Gaussian3D>(m_Device, totalGaussianCount, Buffer::CpuAccess::None, gaussians.data());
-        m_GaussianBufCPU =
+        m_GaussianBufReadCPU =
             Buffer::createStructured(m_Device, sizeof(Gaussian3D), totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+        m_GaussianBufWriteCPU =
+            Buffer::createStructured(m_Device, sizeof(Gaussian3D), totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
 
         // Reset optimization
-        m_OptimStep = 0;
+        m_OptimizationBuf.reset();
         m_FrameCountAfterOptimReset = 0;
     }
 
@@ -159,14 +161,21 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
     if (!m_OptimizationBuf)
     {
-        const std::vector<Gaussian3DMoments> gaussianMoments(totalGaussianCount, Gaussian3DMoments());
+        const std::vector<Gaussian3DOptimizationData> gaussianOptimizationData(totalGaussianCount, Gaussian3DOptimizationData());
         m_OptimizationBuf = Buffer::createStructured(
-            m_Device, sizeof(Gaussian3DMoments), totalGaussianCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-            Buffer::CpuAccess::None, gaussianMoments.data()
+            m_Device, sizeof(Gaussian3DOptimizationData), totalGaussianCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, Buffer::CpuAccess::None, gaussianOptimizationData.data()
         );
 
+        const std::vector<uint> optimizationReset(totalGaussianCount, 0);
+        m_OptimizationResetBuf = Buffer::create(
+            m_Device, sizeof(uint) * totalGaussianCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
+            Buffer::CpuAccess::None, optimizationReset.data()
+        );
+        m_OptimizationResetBufWriteCPU =
+            Buffer::create(m_Device, sizeof(uint) * totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
+
         // Reset optimization
-        m_OptimStep = 0;
         m_FrameCountAfterOptimReset = 0;
     }
 
@@ -263,7 +272,6 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
         }
         changed |= changedOptimizer;
 
-        group.text("Optimizer step: " + std::to_string(m_OptimStep));
         changed |= group.var("Learning Rate", m_LearningRate, 0.0f, 1.0f);
 
         if (m_Optimizer == Optimizer::Adam)
@@ -271,6 +279,11 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
             changed |= group.var("Adam Beta1", m_Beta1, 0.0f, 1.0f);
             changed |= group.var("Adam Beta2", m_Beta2, 0.0f, 1.0f);
         }
+
+        // Random replace
+        changed |= group.checkbox("Enable Random Replace", m_RandomReplace);
+        changed |= group.var("Random Replace Count", m_RandomReplaceCount, 0u, m_GaussianCount);
+        changed |= group.var("Random Replace Frequency", m_RandomReplaceFrequency, 1u, 1024u);
     }
 
     return changed;
@@ -522,9 +535,6 @@ void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
     // Profile
     FALCOR_PROFILE(pRenderContext, "OptimizeGaussians");
 
-    // Increase optimizer step
-    ++m_OptimStep;
-
     // Init shader
     if (!m_OptimizeGaussiansPass)
     {
@@ -551,12 +561,12 @@ void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
     var["Constants"]["gLearningRate"] = m_LearningRate;
     var["Constants"]["gBeta1"] = m_Beta1;
     var["Constants"]["gBeta2"] = m_Beta2;
-    var["Constants"]["gOptimStep"] = static_cast<float>(m_OptimStep);
 
     var["gGaussians"] = m_GaussianBuf.buffer;
     var["gGradients"] = m_GradientBuf.buffer;
     var["gLightFirstHitCounts"] = m_LightFirstHitCountsBuf;
-    var["gGaussianMoments"] = m_OptimizationBuf;
+    var["gGaussianOptimizationData"] = m_OptimizationBuf;
+    var["gGaussianOptimizationReset"] = m_OptimizationResetBuf;
 
     // More defines
     m_OptimizeGaussiansPass->getProgram()->addDefine("OPTIM_SGD", m_Optimizer == Optimizer::SGD ? "1" : "0");
@@ -573,6 +583,70 @@ void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
     __nop();
     m_GaussianBufCPU->unmap();
 #endif
+}
+
+void GaussianPhotonGuiding::RandomReplacePass(RenderContext* renderContext)
+{
+    // Profile
+    FALCOR_PROFILE(renderContext, "RandomReplace");
+    if (!m_RandomReplace or m_FrameCountAfterOptimReset == 0 or m_FrameCountAfterOptimReset % m_RandomReplaceFrequency != 0)
+    {
+        return;
+    }
+
+    // Copy gaussians to CPU
+    const size_t totalGaussianCount = GetTotalGaussianCount();
+    renderContext->uavBarrier(m_GaussianBuf.buffer.get());
+    renderContext->copyBufferRegion(m_GaussianBufReadCPU.get(), 0, m_GaussianBuf.buffer.get(), 0, sizeof(Gaussian3D) * totalGaussianCount);
+    renderContext->flush(true);
+    std::span<Gaussian3D> gaussians(
+        reinterpret_cast<Gaussian3D*>(m_GaussianBufWriteCPU->map(Buffer::MapType::WriteDiscard)), totalGaussianCount
+    );
+    const std::span<Gaussian3D> srcGaussians(
+        reinterpret_cast<Gaussian3D*>(m_GaussianBufReadCPU->map(Buffer::MapType::Read)), totalGaussianCount
+    );
+    std::copy(srcGaussians.begin(), srcGaussians.end(), gaussians.begin());
+    m_GaussianBufReadCPU->unmap();
+
+    // Copy reset buffer to CPU
+    std::span<uint> resetData(
+        reinterpret_cast<uint*>(m_OptimizationResetBufWriteCPU->map(Buffer::MapType::WriteDiscard)), totalGaussianCount
+    );
+    std::fill(resetData.begin(), resetData.end(), 0);
+
+    const float positionScaling = GetPositionScaling();
+    for (size_t lightIdx = 0; lightIdx < GetTotalLightCount(); ++lightIdx)
+    {
+        const size_t lightBaseIdx = lightIdx * m_GaussianCount;
+
+        std::vector<size_t> indices(m_GaussianCount);
+        std::iota(indices.begin(), indices.end(), 0);
+        std::partial_sort(
+            indices.begin(), indices.begin() + m_RandomReplaceCount, indices.end(),
+            [&](uint idx1, uint idx2) { return gaussians[lightBaseIdx + idx1].weight < gaussians[lightBaseIdx + idx2].weight; }
+        );
+
+        for (size_t badGaussIdx = 0; badGaussIdx < m_RandomReplaceCount; ++badGaussIdx)
+        {
+            // Reset optimization
+            const size_t totalGaussIdx = lightBaseIdx + indices[badGaussIdx];
+            resetData[totalGaussIdx] = 1;
+
+            // Replace with random gaussian
+            gaussians[totalGaussIdx] = Gaussian3D(
+                RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, RandomGenerator::Float() * 100.0f, 0.0f
+            );
+        }
+    }
+
+    // Copy reset buffer to GPU
+    renderContext->copyBufferRegion(
+        m_OptimizationResetBuf.get(), 0, m_OptimizationResetBufWriteCPU.get(), 0, sizeof(uint) * totalGaussianCount);
+    m_OptimizationResetBufWriteCPU->unmap();
+
+    // Copy gaussians back to GPU
+    renderContext->copyBufferRegion(m_GaussianBuf.buffer.get(), 0, m_GaussianBufWriteCPU.get(), 0, sizeof(Gaussian3D) * totalGaussianCount);
+    m_GaussianBufWriteCPU->unmap();
 }
 
 void GaussianPhotonGuiding::CalculateSoftmaxWeightsPass(RenderContext* pRenderContext)

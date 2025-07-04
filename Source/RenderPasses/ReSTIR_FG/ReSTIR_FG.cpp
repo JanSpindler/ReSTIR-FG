@@ -421,6 +421,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
         {
             m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
             m_GaussianPhotonGuiding.OptimizeGaussiansPass(pRenderContext);
+            m_GaussianPhotonGuiding.RandomReplacePass(pRenderContext);
             m_GaussianPhotonGuiding.CalculateSoftmaxWeightsPass(pRenderContext);
         }
     }

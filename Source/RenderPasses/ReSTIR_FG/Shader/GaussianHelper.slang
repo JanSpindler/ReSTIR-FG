@@ -15,7 +15,7 @@ struct Gaussian3D
     }
 };
 
-struct Gaussian3DMoments
+struct Gaussian3DOptimizationData
 {
     float3 meanMoment1;
     float3 meanMoment2;
@@ -25,6 +25,8 @@ struct Gaussian3DMoments
 
     float weightMoment1;
     float weightMoment2;
+
+    uint step;
 };
 
 struct FirstHitPhotonInfo

@@ -38,6 +38,7 @@ public:
     void CountCausticClustersPass(RenderContext* renderContext);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
+    void RandomReplacePass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
     void EndFrame(RenderContext* renderContext);
 
@@ -76,7 +77,7 @@ private:
     // General
     bool m_Active = false;
     bool m_CopyToCPU = false;
-    uint m_GaussianCount = 16;
+    uint m_GaussianCount = 16; // Number of gaussians per light
     uint m_MaxFirstHitPhotonCount = 100000;
     uint m_ActualFirstHitPhotonCount = 0;
 
@@ -106,12 +107,17 @@ private:
     float m_LearningRate = 0.01f;
     float m_Beta1 = 0.9f;
     float m_Beta2 = 0.999f;
-    uint m_OptimStep = 0;
     uint m_FrameCountAfterOptimReset = 0;
+
+    // Random replace
+    bool m_RandomReplace = false;
+    uint m_RandomReplaceCount = 4;
+    uint m_RandomReplaceFrequency = 256;
 
     // Buffers
     InteropBuffer m_GaussianBuf;
-    ref<Buffer> m_GaussianBufCPU;
+    ref<Buffer> m_GaussianBufReadCPU;
+    ref<Buffer> m_GaussianBufWriteCPU;
     ref<Texture> m_GaussianTex;
     InteropBuffer m_FirstHitPhotonCountBuf;
     ref<Buffer> m_FirstHitPhotonCountBufCPU;
@@ -121,6 +127,8 @@ private:
     ref<Buffer> m_LightFirstHitCountsBuf;
     InteropBuffer m_GradientBuf;
     ref<Buffer> m_OptimizationBuf;
+    ref<Buffer> m_OptimizationResetBuf;
+    ref<Buffer> m_OptimizationResetBufWriteCPU;
     InteropBuffer m_SoftmaxBuf;
     ref<Buffer> m_CausticClusterBuf;
     ref<Buffer> m_CausticClusterBufCPU;

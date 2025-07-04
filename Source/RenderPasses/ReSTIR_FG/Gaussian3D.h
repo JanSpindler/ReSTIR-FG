@@ -27,7 +27,7 @@ struct Gaussian3D
 #endif
 };
 
-struct Gaussian3DMoments
+struct Gaussian3DOptimizationData
 {
     float3 meanMoment1;
     float3 meanMoment2;
@@ -38,12 +38,15 @@ struct Gaussian3DMoments
     float weightMoment1;
     float weightMoment2;
 
-    constexpr Gaussian3DMoments()
+    uint step;
+
+    constexpr Gaussian3DOptimizationData()
         : meanMoment1{0.f, 0.0f, 0.0f}
         , meanMoment2{0.f, 0.0f, 0.0f}
         , pSigmaMoment1(0.f)
         , pSigmaMoment2(0.f)
         , weightMoment1(0.f)
         , weightMoment2(0.f)
+        , step(0)
     {}
 };
