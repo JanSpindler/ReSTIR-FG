@@ -320,6 +320,9 @@ private:
     // Profiling
     ProfilerUI m_ProfilerUI;
 
+    // Additional settings
+    bool m_TracenFGUntilDiffuse = true;
+
     //
     // Buffer and Textures
     //

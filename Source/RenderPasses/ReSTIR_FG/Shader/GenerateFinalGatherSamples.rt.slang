@@ -54,7 +54,12 @@ RWTexture2D<uint4> gReservoir;
 #endif
 
 static const bool kUsePhotonCulling = USE_PHOTON_CULLING;
-static const bool kUseCausticPhotons = USE_CAUSTIC_CULLING; 
+static const bool kUseCausticPhotons = USE_CAUSTIC_CULLING;
+
+static const float kTraceRoughnessMin = MAT_ROUGHNESS_CUTOFF_MIN;
+static const float kTraceRoughnessMax = MAT_ROUGHNESS_CUTOFF_MAX;
+static const bool kRequireDiffuseParts = MAT_REQUIRE_DIFFUSE_PART;
+static const float kTraceDiffuseCutoff = MAT_DIFFUSEPART_CUTOFF;
 
 struct TraceData
 {
@@ -152,15 +157,13 @@ void closestHit(
     inout TraceData rayData : SV_RayPayload,
     BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
-    const float3 incomingRayDir = -WorldRayDirection();
-
     // Evaluate Falcor's material parameters at the hit point.
     TriangleHit triangleHit;
     triangleHit.instanceID = getGeometryInstanceID();
     triangleHit.primitiveIndex = PrimitiveIndex();
     triangleHit.barycentrics = attribs.barycentrics;
     
-    rayData.distance =  RayTCurrent();
+    rayData.distance = RayTCurrent();
     rayData.packedHitInfo = HitInfo(triangleHit).getData();
 }
 
@@ -180,39 +183,27 @@ void rayGen()
 #else
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 3 * 32);
 #endif
-    
-    if (hitInfo.isValid())
-    {
-        float4 viewTmp = gView[launchIndex];
-        float3 view = -viewTmp.xyz;
-        bool collectDirect = viewTmp.w == 0;
-        float viewDepth = gLinZ[launchIndex];
-        let lod = ExplicitLodTextureSampler(0.f);
-        ShadingData sd = loadShadingData(hitInfo, view, lod);
-        
-        // Use only BRDF
-        sd.mtl.setActiveLobes((uint) LobeType::Reflection);
 
-        uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
+    const float4 viewTmp = gView[launchIndex];
+    float3 view = -viewTmp.xyz;
+    const bool collectDirect = viewTmp.w == 0;
+    let lod = ExplicitLodTextureSampler(0.f);
+    const float viewDepth = gLinZ[launchIndex];
+
+    for (uint i = 0; hitInfo.isValid() && i < 1; ++i)
+    {
+        ShadingData sd = loadShadingData(hitInfo, view, lod);
+
+        // Sample BSDF
+        sd.mtl.setActiveLobes((uint) LobeType::Reflection); // Use only BRDF
+        const uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
         let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
         let bsdfProperties = bsdf.getProperties(sd);
 
         BSDFSample bsdfSample;
         bool validSample = bsdf.sample(sd, sg, bsdfSample);
-                
-        // Fill Surface Buffer used for calculating the target PDF
-        surface = SurfaceFG::create(
-            sd.computeNewRayOrigin(),
-            bsdfProperties.guideNormal,
-            sd.V,
-            viewDepth,
-            bsdfProperties.roughness,
-            luminance(bsdfProperties.diffuseReflectionAlbedo),
-            luminance(bsdfProperties.specularReflectance));
-        
-        reservoir.targetFunc = surface.getPdf(bsdfSample.wo);
-        reservoir.weightSum = 1.f / bsdfSample.pdf; // 1/selectPDF
 
+        // Trace ray to final gather hit
         RayDesc tRay;
         tRay.Origin = sd.computeNewRayOrigin();
         tRay.TMin = 0.0001f;
@@ -232,16 +223,53 @@ void rayGen()
                 traceData);
             validSample = traceData.distance > 0;
         }
-    
+
+        // If surface or tracing is invalid, clear and break
+        if (!validSample)
+        {
+            traceData.packedHitInfo = {};
+            reservoir.weightSum = 0.f; // invalidate reseroir
+            break;
+        }
+
+        // Check if the hit Material is diffuse
+        const bool transmission = bsdfSample.isLobe(LobeType::Transmission);
+        const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
+        const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
+        const bool hasDiffuseParts = kRequireDiffuseParts ? (meanDiffuseProb > kTraceDiffuseCutoff) || bsdfProperties.roughness > kTraceRoughnessMax : true; // Check if surface is diffuse or above the roughness threshold
+        const bool diffuseHit = hasDiffuseParts && bsdfProperties.roughness > kTraceRoughnessMin && !transmission; // Material is only diffuse if it is over the roughness min
+
+#if TRACE_FG_UNTIL_DIFFUSE
+        if (!diffuseHit)
+        {
+            hitInfo = HitInfo(traceData.packedHitInfo);
+            view = -bsdfSample.wo;
+            continue;
+        }
+#endif // TRACE_FG_UNTIL_DIFFUSE
+
+        // Fill Surface Buffer used for calculating the target PDF
+        surface = SurfaceFG::create(
+            sd.computeNewRayOrigin(),
+            bsdfProperties.guideNormal,
+            sd.V,
+            viewDepth,
+            bsdfProperties.roughness,
+            luminance(bsdfProperties.diffuseReflectionAlbedo),
+            luminance(bsdfProperties.specularReflectance));
+        reservoir.targetFunc = surface.getPdf(bsdfSample.wo);
+        reservoir.weightSum = 1.f / bsdfSample.pdf; // 1/selectPDF
+
+        // Final gather sample here
         if (validSample)
         {                      
-            reservoir.M = 1; 
+            reservoir.M = 1;
             float3 hitPos = tRay.Origin + tRay.Direction * traceData.distance;
     
             if (kUsePhotonCulling)
             {
-                photonCulling(hitPos,gCollectionRadius.x);
-                if (kUseCausticPhotons || collectDirect)
+                photonCulling(hitPos, gCollectionRadius.x);
+                if (i == 0 && (kUseCausticPhotons || collectDirect)) // TODO: i == 0 && correct here?
                 {
                     float radius = collectDirect ? gCollectionRadius.x : gCollectionRadius.y;
                     photonCulling(sd.posW, radius);
@@ -249,11 +277,14 @@ void rayGen()
             }
         }
 
+        // Reset info if the sample is not valid
         if (!validSample)
         {
             traceData.packedHitInfo = { };
             reservoir.weightSum = 0.f; // invalidate reseroir
         }
+
+        break;
     }
     
     // Store data in buffers

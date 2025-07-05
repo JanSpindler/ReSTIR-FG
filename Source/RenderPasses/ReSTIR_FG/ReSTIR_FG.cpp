@@ -232,7 +232,7 @@ void ReSTIR_FG::parseProperties(const Properties& props)
         else if (key == kPropsCausticResamplingMode)
             (uint&)mCausticResamplingMode = value;
         else if (key == kPropsEnableDynamicDispatch)
-            mUseDynamicPhotonDispatchCount = value;
+            mUseDynamicPhotonDispatchCount = false; //value;
         else if (key == kPropsNumDispatchedPhotons)
             mNumDispatchedPhotons = value;
         else
@@ -532,6 +532,8 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("PhotonMapper"))
         {
+            changed |= group.checkbox("Trace FG Until Diffuse", m_TracenFGUntilDiffuse);
+
             if (mUseDynamicPhotonDispatchCount)
             {
                 group.text("Dispatched Photons: " + std::to_string(mNumDispatchedPhotons));
@@ -1540,20 +1542,28 @@ void ReSTIR_FG::generateReSTIRGISamples(RenderContext* pRenderContext, const Ren
     mpScene->raytrace(pRenderContext, mReSTIRGISamplePass.pProgram.get(), mReSTIRGISamplePass.pVars, uint3(mScreenRes, 1));
 }
 
-void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const RenderData& renderData) {
+void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const RenderData& renderData)
+{
     FALCOR_PROFILE(pRenderContext, "FinalGatherSample");
     if (mUsePhotonCulling)
     {
         pRenderContext->clearUAV(mpPhotonCullingMask->getUAV().get(), uint4(0));
     }
 
+    mFinalGatherSamplePass.pProgram->addDefine("MAT_ROUGHNESS_CUTOFF_MIN", std::to_string(mTraceRoughnessCutoff.x));
+    mFinalGatherSamplePass.pProgram->addDefine("MAT_ROUGHNESS_CUTOFF_MAX", std::to_string(mTraceRoughnessCutoff.y));
+    mFinalGatherSamplePass.pProgram->addDefine("MAT_REQUIRE_DIFFUSE_PART", mTraceRequireDiffuseMat ? "1" : "0");
+    mFinalGatherSamplePass.pProgram->addDefine("MAT_DIFFUSEPART_CUTOFF", std::to_string(mTraceDiffuseCutoff));
     mFinalGatherSamplePass.pProgram->addDefine("USE_PHOTON_CULLING", mUsePhotonCulling ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefine("USE_CAUSTIC_CULLING", (mCausticCollectMode != CausticCollectionMode::None) && mUseCausticCulling ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefines(getMaterialDefines());
+    mFinalGatherSamplePass.pProgram->addDefine("TRACE_FG_UNTIL_DIFFUSE", m_TracenFGUntilDiffuse ? "1" : "0");
         
     if (!mFinalGatherSamplePass.pVars)
+    {
         mFinalGatherSamplePass.initProgramVars(mpDevice, mpScene, mpSampleGenerator);
+    }
 
     FALCOR_ASSERT(mFinalGatherSamplePass.pVars);
 
@@ -1589,7 +1599,9 @@ void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const Rende
     mpScene->raytrace(pRenderContext, mFinalGatherSamplePass.pProgram.get(), mFinalGatherSamplePass.pVars, uint3(mScreenRes, 1));
 
     if (mpPhotonCullingMask)
+    {
         pRenderContext->uavBarrier(mpPhotonCullingMask.get());
+    }
 }
 
 void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderData& renderData, bool secondPass)
