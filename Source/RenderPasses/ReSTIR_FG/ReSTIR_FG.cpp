@@ -1586,6 +1586,7 @@ void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const Rende
     var["gVBuffer"] = mpVBuffer;
     var["gView"] = mpViewDir;
     var["gLinZ"] = mpRayDist;
+    var["gThp"] = mpThp;
 
     var["gSampleGenState"] = mpSampleGenState;
     var["gReservoir"] = mpReservoirBuffer[mFrameCount % 2];
@@ -1953,7 +1954,6 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     var["gVBuffer"] = mpVBuffer;
     var["gView"] = mpViewDir;
-    var["gThp"] = mpThp;
     var["gSampleGenState"] = mpSampleGenState;
 
     if (mCausticCollectMode != CausticCollectionMode::Temporal)

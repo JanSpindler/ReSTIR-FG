@@ -45,6 +45,7 @@ RWStructuredBuffer<SampleGenerator> gSampleGenState;
 RWStructuredBuffer<PackedSurfaceDataFG> gSurfaceData;
 RWTexture2D<PackedHitInfo> gFinalGatherHit;
 RWTexture2D<uint> gPhotonCullingMask;
+RWTexture2D<float4> gThp;
 
 // Outputs
 #if USE_REDUCED_RESERVOIR_FORMAT
@@ -170,134 +171,221 @@ void closestHit(
 [shader("raygeneration")]
 void rayGen()
 {
-    uint2 launchIndex = DispatchRaysIndex().xy;
-    uint2 launchDim = DispatchRaysDimensions().xy;
-    
+    // Get the launch index and dimensions
+    const uint2 launchIndex = DispatchRaysIndex().xy;
+    const uint2 launchDim = DispatchRaysDimensions().xy;
+
+    // Load data and initialize variables
+    // Default to invalid state
     HitInfo hitInfo = HitInfo(gVBuffer[launchIndex]);
     SurfaceFG surface = SurfaceFG();
     Reservoir reservoir = Reservoir();
     TraceData traceData = TraceData::create();
 
+    // Get sample generator
 #if STORE_SAMPLE_GEN_STATE
     SampleGenerator sg = gSampleGenState[index2Dto1D(launchIndex,launchDim.x)];
 #else
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 3 * 32);
 #endif
 
+    // Only trace final gather sample if previous ather hit is valid
+    if (hitInfo.isValid())
+    {
+        TraceFinalGatherSample(launchIndex, sg, hitInfo, surface, reservoir, traceData);
+    }
+    
+    // Final gather data
+    gFinalGatherHit[launchIndex] = traceData.packedHitInfo;
+    gSurfaceData[index2Dto1D(launchIndex, launchDim.x)] = surface.pack();
+
+    // Store sample generator state
+#if STORE_SAMPLE_GEN_STATE
+    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
+#endif // STORE_SAMPLE_GEN_STATE
+
+    // Store reservoir
+#if USE_REDUCED_RESERVOIR_FORMAT
+    gReservoir[launchIndex] = reservoir.packReduced();
+#else
+    gReservoir[launchIndex] = reservoir.pack();
+#endif
+}
+
+void TraceFinalGatherSample(
+    const uint2 launchIndex,
+    inout SampleGenerator sg,
+    inout HitInfo hitInfo,
+                            inout SurfaceFG surface,
+    inout Reservoir reservoir,
+    inout TraceData traceData)
+{
+    // Initialize variables
     const float4 viewTmp = gView[launchIndex];
     float3 view = -viewTmp.xyz;
     const bool collectDirect = viewTmp.w == 0;
     let lod = ExplicitLodTextureSampler(0.f);
     const float viewDepth = gLinZ[launchIndex];
 
-    for (uint i = 0; hitInfo.isValid() && i < 1; ++i)
+    // Trace first hit
+    // Load shading data
+    ShadingData sd = loadShadingData(hitInfo, view, lod);
+
+    // Sample first BSDF
+    sd.mtl.setActiveLobes((uint)LobeType::Reflection); // Use only BRDF
+    static const uint hints = (uint)MaterialInstanceHints::AdjustShadingNormal;
+    const IMaterialInstance bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
+    BSDFProperties bsdfProperties = bsdf.getProperties(sd);
+
+    BSDFSample bsdfSample;
+    bool validSample = bsdf.sample(sd, sg, bsdfSample);
+    float3 thp = bsdfSample.weight;
+    if (!validSample)
     {
-        ShadingData sd = loadShadingData(hitInfo, view, lod);
+        traceData.packedHitInfo = {};
+        reservoir.weightSum = 0.f; // invalidate reservoir
+        return;
+    }
 
-        // Sample BSDF
-        sd.mtl.setActiveLobes((uint) LobeType::Reflection); // Use only BRDF
-        const uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
-        let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
-        let bsdfProperties = bsdf.getProperties(sd);
+    // Trace ray to first potential final gather hit
+    RayDesc tRay;
+    tRay.Origin = sd.computeNewRayOrigin();
+    tRay.TMin = 0.0001f;
+    tRay.TMax = 10000.f;
+    tRay.Direction = bsdfSample.wo;
 
-        BSDFSample bsdfSample;
-        bool validSample = bsdf.sample(sd, sg, bsdfSample);
+    TraceRay(
+            gScene.rtAccel,
+            0,
+            0xff /* instanceInclusionMask */,
+            0 /* hitIdx */,
+            rayTypeCount,
+            0 /* missIdx */,
+            tRay,
+             traceData);
+    validSample = traceData.distance > 0;
+    if (!validSample)
+    {
+        traceData.packedHitInfo = {};
+        reservoir.weightSum = 0.f; // invalidate reservoir
+        return;
+    }
+    hitInfo = HitInfo(traceData.packedHitInfo);
+    float dist = traceData.distance;
 
-        // Trace ray to final gather hit
-        RayDesc tRay;
-        tRay.Origin = sd.computeNewRayOrigin();
-        tRay.TMin = 0.0001f;
-        tRay.TMax = 10000.f;
-        tRay.Direction = bsdfSample.wo;
-    
-        if (validSample)
+    // Continue tracing until diffuse hit if enabled
+    bool firstHit = true;
+#if TRACE_FG_UNTIL_DIFFUSE
+    view = -bsdfSample.wo;
+    TraceData currentTraceData = traceData;
+    ShadingData prevSd;
+    BSDFProperties prevBsdfProperties;
+    BSDFSample prevBsdfSample;
+
+    uint i = 0;
+    for (; hitInfo.isValid() && i < 16; ++i)
+    {
+        ShadingData currentSd = loadShadingData(hitInfo, view, lod);
+
+        // Sample BSDF at current hit
+        currentSd.mtl.setActiveLobes((uint)LobeType::Reflection);
+        IMaterialInstance currentBsdf = gScene.materials.getMaterialInstance(currentSd, lod, hints);
+        BSDFProperties currentBsdfProperties = currentBsdf.getProperties(currentSd);
+
+        // Check if the current hit is diffuse - if so, we're done
+        if (IsDiffuseBsdf(currentBsdfProperties))
         {
-            TraceRay(
-                gScene.rtAccel,
-                0,
-                0xff /* instanceInclusionMask */,
-                0 /* hitIdx */,
-                rayTypeCount,
-                0 /* missIdx */,
-                tRay,
-                traceData);
-            validSample = traceData.distance > 0;
-        }
-
-        // If surface or tracing is invalid, clear and break
-        if (!validSample)
-        {
-            traceData.packedHitInfo = {};
-            reservoir.weightSum = 0.f; // invalidate reseroir
             break;
         }
 
-        // Check if the hit Material is diffuse
-        const bool transmission = bsdfSample.isLobe(LobeType::Transmission);
-        const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
-        const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
-        const bool hasDiffuseParts = kRequireDiffuseParts ? (meanDiffuseProb > kTraceDiffuseCutoff) || bsdfProperties.roughness > kTraceRoughnessMax : true; // Check if surface is diffuse or above the roughness threshold
-        const bool diffuseHit = hasDiffuseParts && bsdfProperties.roughness > kTraceRoughnessMin && !transmission; // Material is only diffuse if it is over the roughness min
-
-#if TRACE_FG_UNTIL_DIFFUSE
-        if (!diffuseHit)
+        // Sample the BSDF to continue tracing
+        BSDFSample currentBsdfSample;
+        bool currentValidSample = currentBsdf.sample(currentSd, sg, currentBsdfSample);
+        if (!currentValidSample)
         {
-            hitInfo = HitInfo(traceData.packedHitInfo);
-            view = -bsdfSample.wo;
-            continue;
+            validSample = false;
+            break;
         }
+
+        // Update throughput and distance
+        thp *= currentBsdfSample.weight;
+        dist += currentTraceData.distance;
+
+        // Setup next ray
+        view = -currentBsdfSample.wo;
+        tRay.Origin = currentSd.computeNewRayOrigin();
+        tRay.Direction = currentBsdfSample.wo;
+
+        // Trace next ray
+        TraceRay(
+            gScene.rtAccel,
+            0,
+            0xff /* instanceInclusionMask */,
+            0 /* hitIdx */,
+            rayTypeCount,
+            0 /* missIdx */,
+            tRay,
+            currentTraceData);
+
+        if (currentTraceData.distance <= 0)
+        {
+            validSample = false;
+            break;
+        }
+
+        // Update for next iteration
+        hitInfo = HitInfo(currentTraceData.packedHitInfo);
+        prevSd = currentSd;
+        prevBsdfProperties = currentBsdfProperties;
+        prevBsdfSample = currentBsdfSample;
+    }
+
+    // Update
+    if (validSample && i > 0)
+    {
+        gThp[launchIndex].xyz *= thp;
+        gThp[launchIndex].w += dist;
+
+        traceData = currentTraceData;
+        sd = prevSd;
+        bsdfProperties = prevBsdfProperties;
+        bsdfSample = prevBsdfSample;
+
+        firstHit = false;
+    }
 #endif // TRACE_FG_UNTIL_DIFFUSE
 
-        // Fill Surface Buffer used for calculating the target PDF
-        surface = SurfaceFG::create(
-            sd.computeNewRayOrigin(),
-            bsdfProperties.guideNormal,
-            sd.V,
-            viewDepth,
-            bsdfProperties.roughness,
-            luminance(bsdfProperties.diffuseReflectionAlbedo),
-            luminance(bsdfProperties.specularReflectance));
-        reservoir.targetFunc = surface.getPdf(bsdfSample.wo);
-        reservoir.weightSum = 1.f / bsdfSample.pdf; // 1/selectPDF
+    // Fill Surface Buffer used for calculating the target PDF
+    surface = SurfaceFG::create(
+        sd.computeNewRayOrigin(),
+        bsdfProperties.guideNormal,
+        sd.V,
+        viewDepth,
+        bsdfProperties.roughness,
+        luminance(bsdfProperties.diffuseReflectionAlbedo),
+        luminance(bsdfProperties.specularReflectance));
+    reservoir.targetFunc = surface.getPdf(bsdfSample.wo);
+    reservoir.weightSum = 1.f / bsdfSample.pdf; // 1/selectPDF
 
-        // Final gather sample here
-        if (validSample)
-        {                      
-            reservoir.M = 1;
-            float3 hitPos = tRay.Origin + tRay.Direction * traceData.distance;
-    
-            if (kUsePhotonCulling)
-            {
-                photonCulling(hitPos, gCollectionRadius.x);
-                if (i == 0 && (kUseCausticPhotons || collectDirect)) // TODO: i == 0 && correct here?
-                {
-                    float radius = collectDirect ? gCollectionRadius.x : gCollectionRadius.y;
-                    photonCulling(sd.posW, radius);
-                }
-            }
-        }
-
-        // Reset info if the sample is not valid
-        if (!validSample)
+    // Final gather sample here
+    reservoir.M = 1;
+    if (kUsePhotonCulling)
+    {
+        const float3 hitPos = tRay.Origin + tRay.Direction * traceData.distance;
+        photonCulling(hitPos, gCollectionRadius.x);
+        if (firstHit && (kUseCausticPhotons || collectDirect))
         {
-            traceData.packedHitInfo = { };
-            reservoir.weightSum = 0.f; // invalidate reseroir
+            const float radius = gCollectionRadius.x;
+            photonCulling(sd.posW, radius);
         }
-
-        break;
     }
-    
-    // Store data in buffers
-    gFinalGatherHit[launchIndex] = traceData.packedHitInfo;
-    gSurfaceData[index2Dto1D(launchIndex, launchDim.x)] = surface.pack(); 
+}
 
-#if STORE_SAMPLE_GEN_STATE
-    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
-#endif // STORE_SAMPLE_GEN_STATE
-
-#if USE_REDUCED_RESERVOIR_FORMAT
-    gReservoir[launchIndex] = reservoir.packReduced();
-#else
-    gReservoir[launchIndex] = reservoir.pack();
-#endif
+bool IsDiffuseBsdf(const in BSDFProperties bsdfProperties)
+{
+    const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
+    const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
+    const bool hasDiffuseParts = kRequireDiffuseParts ? (meanDiffuseProb > kTraceDiffuseCutoff) || bsdfProperties.roughness > kTraceRoughnessMax : true; // Check if surface is diffuse or above the roughness threshold
+    const bool diffuseHit = hasDiffuseParts && bsdfProperties.roughness > kTraceRoughnessMin; // && !transmission; // Material is only diffuse if it is over the roughness min
+    return diffuseHit;
 }
