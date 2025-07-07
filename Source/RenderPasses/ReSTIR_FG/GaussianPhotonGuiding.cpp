@@ -242,6 +242,9 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
 
         changed |= group.var("Beta (MIS)", m_Beta, 0.0f, 1.0f);
 
+        changed |= group.var("Global Photon Weight", m_GlobalPhotonWeight, 0u, 1000u);
+        changed |= group.var("Caustic Photon Weight", m_CausticPhotonWeight, 0u, 1000u);
+
         const bool rebuildFirstPhoton = group.var("Max First Hit Photons", m_MaxFirstHitPhotonCount);
         if (m_MaxFirstHitPhotonCount > 0)
         {
@@ -744,6 +747,8 @@ void GaussianPhotonGuiding::ClearBuffersForPhotonCollection(RenderContext* rende
 void GaussianPhotonGuiding::SetCollectPhotonsVars(const ShaderVar& var) const
 {
     var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
+    var["GaussianPhotonGuiding"]["gGlobalPhotonWeight"] = m_GlobalPhotonWeight;
+    var["GaussianPhotonGuiding"]["gCausticPhotonWeight"] = m_CausticPhotonWeight;
 
     for (uint32_t idx = 0; idx < 2; ++idx)
     {

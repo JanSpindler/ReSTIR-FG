@@ -56,6 +56,8 @@ cbuffer TemporalFilter
 cbuffer GaussianPhotonGuiding
 {
     uint gMaxFirstHitPhotonCount;
+    uint gGlobalPhotonWeight;
+    uint gCausticPhotonWeight;
 }
 
 // Inputs
@@ -246,7 +248,7 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primitiveIdx];
     if (firstHitIdx < gMaxFirstHitPhotonCount)
     {
-        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], 1u);
+        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], instanceIdx == 0 ? gGlobalPhotonWeight : gCausticPhotonWeight);
     }
 }
 
