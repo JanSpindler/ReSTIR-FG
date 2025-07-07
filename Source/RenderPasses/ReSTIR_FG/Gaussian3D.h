@@ -20,9 +20,9 @@ struct Gaussian3D
 
     __forceinline__ __device__ float GetSigmaDeriv(const float cS) const
     {
-        const float expP = exp(pSigma);
-        const float denomSqrt = 1.0f + expP;
-        return cS * expP / (denomSqrt * denomSqrt);
+        const float expNegP = exp(-pSigma);    // e^(-pSigma)
+        const float denom = 1.0f + expNegP;    // 1 + e^(-pSigma)
+        return cS * expNegP / (denom * denom); // cS * e^(-pSigma) / (1 + e^(-pSigma))²
     }
 #endif
 };

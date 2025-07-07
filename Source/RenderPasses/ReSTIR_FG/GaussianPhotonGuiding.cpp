@@ -98,7 +98,8 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
         const float positionScaling = GetPositionScaling();
         for (size_t gaussIdx = 0; gaussIdx < totalGaussianCount; ++gaussIdx)
         {
-            gaussians[gaussIdx] = Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, 0.0f, 0.0f);
+            gaussians[gaussIdx] =
+                Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, RandomGenerator::Float(), 0.0f);
         }
 
         // Create buffer
@@ -464,7 +465,7 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
             Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
             gaussian.mean =
                 gaussianIdx < clusterCount ? m_CausticClusters[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
-            gaussian.pSigma = 0.0f;
+            gaussian.pSigma = RandomGenerator::Float();
             gaussian.weight = 1.0f;
         }
     }
@@ -636,9 +637,8 @@ void GaussianPhotonGuiding::RandomReplacePass(RenderContext* renderContext)
             resetData[totalGaussIdx] = 1;
 
             // Replace with random gaussian
-            gaussians[totalGaussIdx] = Gaussian3D(
-                RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, RandomGenerator::Float() * 100.0f, 0.0f
-            );
+            gaussians[totalGaussIdx] =
+                Gaussian3D(RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling, RandomGenerator::Float(), 0.0f);
         }
     }
 

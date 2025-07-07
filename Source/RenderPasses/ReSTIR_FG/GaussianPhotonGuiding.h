@@ -80,7 +80,7 @@ private:
     uint m_GaussianCount = 16; // Number of gaussians per light
     uint m_MaxFirstHitPhotonCount = 100000;
     uint m_ActualFirstHitPhotonCount = 0;
-    uint m_GlobalPhotonWeight = 1;
+    uint m_GlobalPhotonWeight = 0;
     uint m_CausticPhotonWeight = 1;
 
     // Sampling
