@@ -62,7 +62,8 @@ private:
     // Stats
     bool m_HasLights = false;
     bool m_Active = false;
-    static constexpr uint m_MaxCutSize = 32;
+    bool m_Reset = false;
+    uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
     uint m_GlobalPhotonWeight = 0;
     uint m_CausticPhotonWeight = 1;

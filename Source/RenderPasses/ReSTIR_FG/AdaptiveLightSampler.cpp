@@ -9,15 +9,7 @@ AdaptiveLightSampler::AdaptiveLightSampler(ref<Device> device)
 void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Reset buffers
-    m_ClusterNodeIdxBuf.reset();
-    m_ClusterCdfBuf.reset();
-    m_ClusterSampleCountBuf.reset();
-    m_ClusterRadianceSqBuf.reset();
-    m_LeafRadianceBuf.reset();
-    m_NodeClusterMapBuf.reset();
-    m_PhotonLeafMapBuf[0].reset();
-    m_PhotonLeafMapBuf[1].reset();
-    m_NodeImportanceBuf.reset();
+    m_Reset = true;
 
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
@@ -30,25 +22,46 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
     m_LightBvhBuilder.build(pRenderContext, reinterpret_cast<LightBVH&>(m_LightBvh));
     FALCOR_ASSERT(m_LightBvh.isValid());
 
-    // Init vector
-    m_ClusterNodeIndices.resize(m_MaxCutSize);
-    m_ClusterImportance.resize(m_MaxCutSize); // Q
-    m_ClusterVariance.resize(m_MaxCutSize);
-
-    // Init cluster importance
-    std::fill(m_ClusterImportance.begin(), m_ClusterImportance.end(), 1.0f);
-
     // Reset alpha
-    m_TimeStep;
+    m_TimeStep = 1;
 }
 
 void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize, const uint2 photonCounts)
 {
+    // Do not run if no lights are present
     if (!m_HasLights)
     {
         return;
     }
 
+    // Check if reset is requested
+    if (m_Reset)
+    {
+        m_TimeStep = 1;
+        m_ClusterCount = 1;
+
+        m_ClusterNodeIndices.resize(m_MaxCutSize);
+        m_ClusterImportance.resize(m_MaxCutSize);
+        m_ClusterVariance.resize(m_MaxCutSize);
+
+        std::fill(m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.end(), 0);
+        std::fill(m_ClusterImportance.begin(), m_ClusterImportance.end(), 1.0f);
+        std::fill(m_ClusterVariance.begin(), m_ClusterVariance.end(), 0.0f);
+
+        m_ClusterNodeIdxBuf.reset();
+        m_ClusterCdfBuf.reset();
+        m_ClusterSampleCountBuf.reset();
+        m_ClusterRadianceSqBuf.reset();
+        m_LeafRadianceBuf.reset();
+        m_NodeClusterMapBuf.reset();
+        m_PhotonLeafMapBuf[0].reset();
+        m_PhotonLeafMapBuf[1].reset();
+        m_NodeImportanceBuf.reset();
+
+        m_Reset = false;
+    }
+
+    // Prepare buffers
     if (!m_ClusterNodeIdxBuf)
     {
         const std::vector<uint> clusterNodeIndices(m_MaxCutSize, 0);
@@ -136,25 +149,9 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
         changed |= group.checkbox("Adaptive Light Sampler", m_Active);
 
         // Reset button
-        if (group.button("Reset"))
+        if (group.button("Reset") or group.var("Max Cut Size", m_MaxCutSize, 1u, 1024u))
         {
-            m_TimeStep = 1;
-            m_ClusterCount = 1;
-
-            std::fill(m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.end(), 0);
-            std::fill(m_ClusterImportance.begin(), m_ClusterImportance.end(), 1.0f);
-            std::fill(m_ClusterVariance.begin(), m_ClusterVariance.end(), 0.0f);
-
-            m_ClusterNodeIdxBuf.reset();
-            m_ClusterCdfBuf.reset();
-            m_ClusterSampleCountBuf.reset();
-            m_ClusterRadianceSqBuf.reset();
-            m_LeafRadianceBuf.reset();
-            m_NodeClusterMapBuf.reset();
-            m_PhotonLeafMapBuf[0].reset();
-            m_PhotonLeafMapBuf[1].reset();
-            m_NodeImportanceBuf.reset();
-
+            m_Reset = true;
             changed = true;
         }
 
