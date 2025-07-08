@@ -232,7 +232,7 @@ void ReSTIR_FG::parseProperties(const Properties& props)
         else if (key == kPropsCausticResamplingMode)
             (uint&)mCausticResamplingMode = value;
         else if (key == kPropsEnableDynamicDispatch)
-            mUseDynamicPhotonDispatchCount = false; //value;
+            mUseDynamicPhotonDispatchCount = value;
         else if (key == kPropsNumDispatchedPhotons)
             mNumDispatchedPhotons = value;
         else

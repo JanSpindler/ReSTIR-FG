@@ -135,6 +135,29 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
         // Active
         changed |= group.checkbox("Adaptive Light Sampler", m_Active);
 
+        // Reset button
+        if (group.button("Reset"))
+        {
+            m_TimeStep = 1;
+            m_ClusterCount = 1;
+
+            std::fill(m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.end(), 0);
+            std::fill(m_ClusterImportance.begin(), m_ClusterImportance.end(), 1.0f);
+            std::fill(m_ClusterVariance.begin(), m_ClusterVariance.end(), 0.0f);
+
+            m_ClusterNodeIdxBuf.reset();
+            m_ClusterCdfBuf.reset();
+            m_ClusterSampleCountBuf.reset();
+            m_ClusterRadianceSqBuf.reset();
+            m_LeafRadianceBuf.reset();
+            m_NodeClusterMapBuf.reset();
+            m_PhotonLeafMapBuf[0].reset();
+            m_PhotonLeafMapBuf[1].reset();
+            m_NodeImportanceBuf.reset();
+
+            changed = true;
+        }
+
         // Adaptive light sampler stats
         group.text("Time step: " + std::to_string(m_TimeStep));
         group.text("Cluster count: " + std::to_string(m_ClusterCount));
