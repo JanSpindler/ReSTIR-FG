@@ -747,8 +747,8 @@ void GaussianPhotonGuiding::ClearBuffersForPhotonCollection(RenderContext* rende
 void GaussianPhotonGuiding::SetCollectPhotonsVars(const ShaderVar& var) const
 {
     var["GaussianPhotonGuiding"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
-    var["GaussianPhotonGuiding"]["gGlobalPhotonWeight"] = m_GlobalPhotonWeight;
-    var["GaussianPhotonGuiding"]["gCausticPhotonWeight"] = m_CausticPhotonWeight;
+    var["GaussianPhotonGuiding"]["gGpgGlobalPhotonWeight"] = m_GlobalPhotonWeight;
+    var["GaussianPhotonGuiding"]["gGpgCausticPhotonWeight"] = m_CausticPhotonWeight;
 
     for (uint32_t idx = 0; idx < 2; ++idx)
     {

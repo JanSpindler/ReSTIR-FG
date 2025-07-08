@@ -56,8 +56,14 @@ cbuffer TemporalFilter
 cbuffer GaussianPhotonGuiding
 {
     uint gMaxFirstHitPhotonCount;
-    uint gGlobalPhotonWeight;
-    uint gCausticPhotonWeight;
+    uint gGpgGlobalPhotonWeight;
+    uint gGpgCausticPhotonWeight;
+}
+
+cbuffer AdaptiveLightSampler
+{
+    uint gAlsGlobalPhotonWeight;
+    uint gAlsCausticPhotonWeight;
 }
 
 // Inputs
@@ -248,7 +254,7 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primitiveIdx];
     if (firstHitIdx < gMaxFirstHitPhotonCount)
     {
-        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], instanceIdx == 0 ? gGlobalPhotonWeight : gCausticPhotonWeight);
+        InterlockedAdd(gFirstHitCollectionCounts[firstHitIdx], instanceIdx == 0 ? gGpgGlobalPhotonWeight : gGpgCausticPhotonWeight);
     }
 }
 
@@ -260,7 +266,7 @@ void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primi
         const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
         if (clusterIdx != 0xFFFFFFFF)
         {
-            const float lum = luminance(photonContribution);
+            const float lum = luminance(photonContribution) * (instanceIdx == 0 ? (float)gAlsGlobalPhotonWeight : (float)gAlsCausticPhotonWeight);
             NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
 
             InterlockedAdd(gClusterSampleCount[clusterIdx], 1);

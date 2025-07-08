@@ -64,6 +64,8 @@ private:
     bool m_Active = false;
     static constexpr uint m_MaxCutSize = 32;
     uint m_ClusterCount = 1;
+    uint m_GlobalPhotonWeight = 0;
+    uint m_CausticPhotonWeight = 1;
 
     // Learning rate
     uint m_TimeStep = 1;

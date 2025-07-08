@@ -158,6 +158,10 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
             changed = true;
         }
 
+        // Global and caustic weights
+        changed |= group.var("Global photon weight", m_GlobalPhotonWeight, 0u, 1000u);
+        changed |= group.var("Caustic photon weight", m_CausticPhotonWeight, 0u, 1000u);
+
         // Adaptive light sampler stats
         group.text("Time step: " + std::to_string(m_TimeStep));
         group.text("Cluster count: " + std::to_string(m_ClusterCount));
@@ -178,6 +182,8 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
 
 void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 {
+    //
+    FALCOR_PROFILE(pRenderContext, "AdaptiveLightSampler CPU");
     if (!m_HasLights)
     {
         return;
@@ -318,6 +324,9 @@ void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
     var["gNodeClusterMap"] = m_NodeClusterMapBuf;
     var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
     var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
+
+    var["AdaptiveLightSampler"]["gAlsGlobalPhotonWeight"] = m_GlobalPhotonWeight;
+    var["AdaptiveLightSampler"]["gAlsCausticPhotonWeight"] = m_CausticPhotonWeight;
 }
 
 void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
