@@ -140,6 +140,8 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
     if (!m_FirstHitCollectionCountsBuf.buffer)
     {
         m_FirstHitCollectionCountsBuf = CreateInteropBuffer(m_Device, sizeof(uint) * m_MaxFirstHitPhotonCount);
+        m_FirstHitCollectionCountsBufCPU =
+            Buffer::create(m_Device, sizeof(uint) * m_MaxFirstHitPhotonCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 
     for (size_t idx = 0; idx < 2; ++idx)
@@ -284,7 +286,6 @@ void GaussianPhotonGuiding::ResetPhotonFirstHitMap()
 void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext)
 {
     // Profile
-    logInfo("Generating caustic cluster");
     FALCOR_PROFILE(renderContext, "GenerateCausticPoints");
 
     // Get vertex position
@@ -352,7 +353,6 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     const size_t lightClusterCount = clusterCount * lightCount;
     const size_t firstHitPhotonCount = std::min<size_t>(m_MaxFirstHitPhotonCount, m_ActualFirstHitPhotonCount);
 
-    // TODO: Count
     // Copy first hit photon info to CPU
     pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
     pRenderContext->copyBufferRegion(
@@ -362,10 +362,22 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     std::memcpy(
         firstHitPhotonInfos.data(), m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read), sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
     );
+    m_FirstHitPhotonInfoBufCPU->unmap();
+
+    // Copy first hit collection counts to CPU
+    pRenderContext->uavBarrier(m_FirstHitCollectionCountsBuf.buffer.get());
+    pRenderContext->copyBufferRegion(
+        m_FirstHitCollectionCountsBufCPU.get(), 0, m_FirstHitCollectionCountsBuf.buffer.get(), 0, sizeof(uint) * firstHitPhotonCount
+    );
+    std::vector<uint> firstHitCollectionCounts(firstHitPhotonCount);
+    std::memcpy(
+        firstHitCollectionCounts.data(), m_FirstHitCollectionCountsBufCPU->map(Buffer::MapType::Read), sizeof(uint) * firstHitPhotonCount
+    );
+    m_FirstHitCollectionCountsBufCPU->unmap();
 
     // For each first hit photon track the closest caustic cluster and store the distance to it
     std::vector<size_t> firstHitPhotonClosestClusterIdx(firstHitPhotonCount, std::numeric_limits<size_t>::max());
-    std::vector<size_t> firstHitPhotonClosestClusterSigmaP(firstHitPhotonCount, std::numeric_limits<size_t>::max());
+    std::vector<float> firstHitPhotonClosestClusterSigmaP(firstHitPhotonCount, 0.0f);
 
     std::vector<size_t> indices(firstHitPhotonCount);
     std::iota(indices.begin(), indices.end(), 0);
@@ -403,7 +415,11 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     {
         const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
         const size_t lightClusterIdx = info.lightIdx * clusterCount + firstHitPhotonClosestClusterIdx[firstHitPhotonIdx];
-        sigmaPSortBuffers[lightClusterIdx].push_back(firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx]);
+        const size_t collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
+        for (size_t idx = 0; idx < collectionCount; ++idx)
+        {
+            sigmaPSortBuffers[lightClusterIdx].push_back(firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx]);
+        }
     }
 
     // Find the median for each light cluster

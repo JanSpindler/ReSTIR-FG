@@ -1763,7 +1763,8 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     pRenderContext->uavBarrier(mpPhotonData[1].get());
 
     // First hit photon count
-    if (m_GaussianPhotonGuiding.IsActive())
+    if (m_GaussianPhotonGuiding.IsActive() or
+        (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization()))
     {
         m_GaussianPhotonGuiding.TrackActualFirstHitPhotonCount(pRenderContext);
     }

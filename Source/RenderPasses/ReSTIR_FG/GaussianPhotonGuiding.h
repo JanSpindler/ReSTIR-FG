@@ -125,6 +125,7 @@ private:
     InteropBuffer m_FirstHitPhotonInfoBuf;
     ref<Buffer> m_FirstHitPhotonInfoBufCPU;
     InteropBuffer m_FirstHitCollectionCountsBuf;
+    ref<Buffer> m_FirstHitCollectionCountsBufCPU;
     std::array<ref<Buffer>, 2> m_PhotonFirstHitMapBufs;
     ref<Buffer> m_LightFirstHitCountsBuf;
     InteropBuffer m_GradientBuf;
