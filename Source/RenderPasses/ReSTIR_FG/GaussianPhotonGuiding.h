@@ -62,7 +62,6 @@ private:
     static inline const std::string m_CalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
     static inline const std::string m_OptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
     static inline const std::string m_CalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
-    static inline const std::string m_CountCausticClustersShader = "RenderPasses/ReSTIR_FG/Shader/CountCausticClusters.cs.slang";
 
     static inline const Gui::DropdownList m_OptimizerList{{static_cast<uint>(Optimizer::SGD), "SGD"}, {static_cast<uint>(Optimizer::Adam), "Adam"}};
     static inline const Gui::DropdownList m_InitializationList{
@@ -76,7 +75,6 @@ private:
 
     // General
     bool m_Active = false;
-    bool m_CopyToCPU = false;
     uint m_GaussianCount = 16; // Number of gaussians per light
     uint m_MaxFirstHitPhotonCount = 100000;
     uint m_ActualFirstHitPhotonCount = 0;
@@ -101,7 +99,8 @@ private:
     Initialization m_Initialization = Initialization::Robust;
     uint m_CausticClusterCount = 8;
     uint m_GenCausticPointCount = 1000;
-    std::vector<float3> m_CausticClusters;
+    std::vector<float3> m_CausticClustersPos;
+    std::vector<float> m_CausticClustersPSigma;
 
     // Optimization
     bool m_Optimize = true;
@@ -124,6 +123,7 @@ private:
     InteropBuffer m_FirstHitPhotonCountBuf;
     ref<Buffer> m_FirstHitPhotonCountBufCPU;
     InteropBuffer m_FirstHitPhotonInfoBuf;
+    ref<Buffer> m_FirstHitPhotonInfoBufCPU;
     InteropBuffer m_FirstHitCollectionCountsBuf;
     std::array<ref<Buffer>, 2> m_PhotonFirstHitMapBufs;
     ref<Buffer> m_LightFirstHitCountsBuf;
@@ -132,13 +132,8 @@ private:
     ref<Buffer> m_OptimizationResetBuf;
     ref<Buffer> m_OptimizationResetBufWriteCPU;
     InteropBuffer m_SoftmaxBuf;
-    ref<Buffer> m_CausticClusterBuf;
-    ref<Buffer> m_CausticClusterBufCPU;
-    ref<Buffer> m_CausticClusterCountsBuf;
-    ref<Buffer> m_CausticClusterCountsBufCPU;
 
     // Passes
-    ref<ComputePass> m_CountCausticClustersPass;
     ref<ComputePass> m_OptimizeGaussiansPass;
     ref<ComputePass> m_CalculateSoftmaxPass;
 

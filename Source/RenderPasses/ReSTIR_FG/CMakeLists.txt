@@ -45,7 +45,6 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/GaussianHelper.slang
     Shader/OptimizeGaussians.cs.slang
 	Shader/CalculateSoftmaxWeights.cs.slang
-    Shader/CountCausticClusters.cs.slang
 
     Shader/PrefixPathReservoir.slang
     Shader/PrefixPathResampling.rt.slang

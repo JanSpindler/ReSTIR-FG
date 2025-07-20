@@ -132,6 +132,9 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
     if (!m_FirstHitPhotonInfoBuf.buffer)
     {
         m_FirstHitPhotonInfoBuf = CreateStructuredInteropBuffer<FirstHitPhotonInfo>(m_Device, m_MaxFirstHitPhotonCount);
+        m_FirstHitPhotonInfoBufCPU = Buffer::createStructured(
+            m_Device, sizeof(FirstHitPhotonInfo), m_MaxFirstHitPhotonCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
+        );
     }
 
     if (!m_FirstHitCollectionCountsBuf.buffer)
@@ -185,27 +188,6 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
         const std::vector<float> softmaxWeights(totalGaussianCount, 1.0f / static_cast<float>(m_GaussianCount));
         m_SoftmaxBuf = CreateInteropBuffer(m_Device, sizeof(float) * totalGaussianCount, Buffer::CpuAccess::None, softmaxWeights.data());
     }
-
-    const size_t totalCausticClusterCount = GetTotalCausticClusterCount();
-    if (!m_CausticClusterBuf)
-    {
-        m_CausticClusterBuf = Buffer::createStructured(
-            m_Device, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        m_CausticClusterBufCPU =
-            Buffer::createStructured(m_Device, sizeof(float3), totalCausticClusterCount, ResourceBindFlags::None, Buffer::CpuAccess::Write);
-    }
-
-    if (!m_CausticClusterCountsBuf)
-    {
-        m_CausticClusterCountsBuf = Buffer::create(
-            m_Device, sizeof(uint) * totalCausticClusterCount * lightCount,
-            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource
-        );
-        m_CausticClusterCountsBufCPU = Buffer::create(
-            m_Device, sizeof(uint) * totalCausticClusterCount * lightCount, ResourceBindFlags::None, Buffer::CpuAccess::Read
-        );
-    }
 }
 
 bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
@@ -216,8 +198,6 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
     {
         changed |= group.checkbox("Use 3D Gaussian Photon Guiding", m_Active);
         group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
-
-        changed |= group.checkbox("Copy Info to CPU", m_CopyToCPU);
 
         if (group.var("Gaussians per Light", m_GaussianCount))
         {
@@ -257,16 +237,13 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
             }
         }
 
-        if (m_CopyToCPU)
-        {
-            group.text(
-                "First Hit Photons: " + std::to_string(m_ActualFirstHitPhotonCount) + " / " +
-                std::to_string(m_MaxFirstHitPhotonCount) + " (" +
-                std::to_string(static_cast<float>(m_ActualFirstHitPhotonCount) / static_cast<float>(m_MaxFirstHitPhotonCount)) +
-                ")"
-            );
-        }
-
+        group.text(
+            "First Hit Photons: " + std::to_string(m_ActualFirstHitPhotonCount) + " / " +
+            std::to_string(m_MaxFirstHitPhotonCount) + " (" +
+            std::to_string(static_cast<float>(m_ActualFirstHitPhotonCount) / static_cast<float>(m_MaxFirstHitPhotonCount)) +
+            ")"
+        );
+        
         // Optimizer
         changed |= group.checkbox("Optimize Gaussians", m_Optimize);
         const bool changedOptimizer = group.dropdown("Optimizer", m_OptimizerList, reinterpret_cast<uint&>(m_Optimizer));
@@ -338,7 +315,7 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
 
     // Calculate caustic clusters
     const size_t totalCausticClusterCount = GetTotalCausticClusterCount();
-    m_CausticClusters.resize(totalCausticClusterCount);
+    m_CausticClustersPos.resize(totalCausticClusterCount);
 
     std::vector<size_t> indices(m_CausticGeometryInstanceIDs.size());
     std::iota(indices.begin(), indices.end(), 0);
@@ -350,34 +327,18 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
     // Unmap buffers
     vbo->unmap();
     ibo->unmap();
-
-    // Write to CPU buffer
-    std::span<float3> cpuCausticClusters(
-        reinterpret_cast<float3*>(m_CausticClusterBufCPU->map(Buffer::MapType::WriteDiscard)), m_CausticClusters.size()
-    );
-    std::copy(m_CausticClusters.begin(), m_CausticClusters.end(), cpuCausticClusters.begin());
-    m_CausticClusterBufCPU->unmap();
-
-    // Copy to GPU buffer
-    renderContext->copyBufferRegion(
-        m_CausticClusterBuf.get(), 0, m_CausticClusterBufCPU.get(), 0, sizeof(float3) * totalCausticClusterCount
-    );
-    renderContext->uavBarrier(m_CausticClusterBuf.get());
 }
 
 void GaussianPhotonGuiding::TrackActualFirstHitPhotonCount(RenderContext* renderContext)
 {
-    if (m_CopyToCPU)
-    {
-        // Barrier
-        renderContext->uavBarrier(m_FirstHitPhotonCountBuf.buffer.get());
+    // Barrier
+    renderContext->uavBarrier(m_FirstHitPhotonCountBuf.buffer.get());
 
-        // Copy the first hit photon count to a CPU buffer
-        renderContext->copyBufferRegion(m_FirstHitPhotonCountBufCPU.get(), 0, m_FirstHitPhotonCountBuf.buffer.get(), 0, sizeof(uint));
-        void* data = m_FirstHitPhotonCountBufCPU->map(Buffer::MapType::Read);
-        std::memcpy(&m_ActualFirstHitPhotonCount, data, sizeof(uint));
-        m_FirstHitPhotonCountBufCPU->unmap();
-    }
+    // Copy the first hit photon count to a CPU buffer
+    renderContext->copyBufferRegion(m_FirstHitPhotonCountBufCPU.get(), 0, m_FirstHitPhotonCountBuf.buffer.get(), 0, sizeof(uint));
+    void* data = m_FirstHitPhotonCountBufCPU->map(Buffer::MapType::Read);
+    std::memcpy(&m_ActualFirstHitPhotonCount, data, sizeof(uint));
+    m_FirstHitPhotonCountBufCPU->unmap();
 }
 
 void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderContext)
@@ -385,57 +346,89 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
     // Profile
     FALCOR_PROFILE(pRenderContext, "CountCausticClusters");
 
-    // Init shader
-    if (!m_CountCausticClustersPass)
-    {
-        Program::Desc desc;
-        desc.addShaderModules(m_Scene->getShaderModules());
-        desc.addShaderLibrary(m_CountCausticClustersShader).csEntry("main").setShaderModel(m_ShaderModel);
-        desc.addTypeConformances(m_Scene->getTypeConformances());
-
-        m_CountCausticClustersPass = ComputePass::create(m_Device, desc, m_Defines, true);
-    }
-    FALCOR_ASSERT(m_CountCausticClustersPass);
-
-    // Clear
-    pRenderContext->clearUAV(m_CausticClusterCountsBuf->getUAV().get(), uint4(0));
-
     // Set variables
     const size_t lightCount = GetTotalLightCount();
     const size_t clusterCount = GetTotalCausticClusterCount();
+    const size_t lightClusterCount = clusterCount * lightCount;
+    const size_t firstHitPhotonCount = std::min<size_t>(m_MaxFirstHitPhotonCount, m_ActualFirstHitPhotonCount);
 
-    auto var = m_CountCausticClustersPass->getRootVar();
-    var["Constants"]["gTotalLightCount"] = lightCount;
-    var["Constants"]["gCausticClusterCount"] = clusterCount;
-    var["Constants"]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
-
-    // Buffers
-    var["gCausticClusters"] = m_CausticClusterBuf;
-    var["gCausticClusterCounters"] = m_CausticClusterCountsBuf;
-    var["gFirstHitCollectionCounts"] = m_FirstHitCollectionCountsBuf.buffer;
-    var["gFirstHitPhotonInfos"] = m_FirstHitPhotonInfoBuf.buffer;
-
-    // Execute
-    m_CountCausticClustersPass->execute(pRenderContext, uint3(m_MaxFirstHitPhotonCount, 1, 1));
-
-    // Barrier
-    pRenderContext->uavBarrier(m_CausticClusterCountsBuf.get());
-
-    // Copy the caustic cluster counts to a CPU buffer
+    // TODO: Count
+    // Copy first hit photon info to CPU
+    pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
     pRenderContext->copyBufferRegion(
-        m_CausticClusterCountsBufCPU.get(), 0, m_CausticClusterCountsBuf.get(), 0, sizeof(uint) * clusterCount * lightCount
+        m_FirstHitPhotonInfoBufCPU.get(), 0, m_FirstHitPhotonInfoBuf.buffer.get(), 0, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
     );
+    std::vector<FirstHitPhotonInfo> firstHitPhotonInfos(firstHitPhotonCount);
+    std::memcpy(
+        firstHitPhotonInfos.data(), m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read), sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
+    );
+
+    // For each first hit photon track the closest caustic cluster and store the distance to it
+    std::vector<size_t> firstHitPhotonClosestClusterIdx(firstHitPhotonCount, std::numeric_limits<size_t>::max());
+    std::vector<size_t> firstHitPhotonClosestClusterSigmaP(firstHitPhotonCount, std::numeric_limits<size_t>::max());
+
+    std::vector<size_t> indices(firstHitPhotonCount);
+    std::iota(indices.begin(), indices.end(), 0);
+    std::for_each(
+        std::execution::par_unseq, indices.begin(), indices.end(),
+        [&](const size_t firstHitPhotonIdx)
+        {
+            // Get first hit photon info
+            const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
+
+            // Select closest caustic cluster
+            const float3& photonPos = info.pos;
+            size_t closestClusterIdx = 0;
+            float closestDistance = std::numeric_limits<float>::max();
+            for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
+            {
+                const float3 clusterPos = m_CausticClustersPos[clusterIdx];
+                const float distance = length(photonPos - clusterPos);
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestClusterIdx = clusterIdx;
+                }
+            }
+
+            // Store closest cluster info
+            firstHitPhotonClosestClusterIdx[firstHitPhotonIdx] = closestClusterIdx;
+            firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx] = Gaussian3D::PSigmaFromDistance(closestDistance, m_Cs);
+        }
+    );
+
+    // Store p sigmas in buffers
+    std::vector<std::vector<float>> sigmaPSortBuffers(lightClusterCount, std::vector<float>(0));
+    for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
+    {
+        const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
+        const size_t lightClusterIdx = info.lightIdx * clusterCount + firstHitPhotonClosestClusterIdx[firstHitPhotonIdx];
+        sigmaPSortBuffers[lightClusterIdx].push_back(firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx]);
+    }
+
+    // Find the median for each light cluster
+    m_CausticClustersPSigma.resize(lightClusterCount);
+    for (size_t lightClusterIdx = 0; lightClusterIdx < lightClusterCount; ++lightClusterIdx)
+    {
+        // Get p sigma buffer
+        std::vector<float>& sigmaPBuffer = sigmaPSortBuffers[lightClusterIdx];
+        if (sigmaPBuffer.empty())
+        {
+            m_CausticClustersPSigma[lightClusterIdx] = 0.0f;
+            continue;
+        }
+
+        // Sort and find median
+        std::sort(sigmaPBuffer.begin(), sigmaPBuffer.end());
+        const size_t medianIndex = sigmaPBuffer.size() / 2;
+        m_CausticClustersPSigma[lightClusterIdx] = sigmaPBuffer[medianIndex];
+    }
 
     // Weird logic
     if (m_FrameCountAfterOptimReset < 1)
     {
         return;
     }
-
-    // Access caustic cluster counters on CPU
-    const std::span<uint> causticClusterCounts(
-        reinterpret_cast<uint*>(m_CausticClusterCountsBufCPU->map(Buffer::MapType::Read)), clusterCount * lightCount
-    );
 
     // Sort and select gaussian
     const size_t totalGaussianCount = m_GaussianCount * lightCount;
@@ -454,8 +447,8 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
         // Sort
         const size_t baseIdx = lightIdx * clusterCount;
         std::sort(
-            clusterIndices.begin(), clusterIndices.end(),
-            [&](const uint idx1, const uint idx2) { return causticClusterCounts[baseIdx + idx1] > causticClusterCounts[baseIdx + idx2]; }
+            clusterIndices.begin(), clusterIndices.end(), [&](const uint idx1, const uint idx2)
+            { return sigmaPSortBuffers[baseIdx + idx1].size() > sigmaPSortBuffers[baseIdx + idx2].size(); }
         );
 
         // Update gaussians
@@ -464,12 +457,11 @@ void GaussianPhotonGuiding::CountCausticClustersPass(RenderContext* pRenderConte
         {
             Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
             gaussian.mean =
-                gaussianIdx < clusterCount ? m_CausticClusters[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
-            gaussian.pSigma = RandomGenerator::Float();
+                gaussianIdx < clusterCount ? m_CausticClustersPos[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
+            gaussian.pSigma = m_CausticClustersPSigma[clusterIndices[gaussianIdx]];
             gaussian.weight = 1.0f;
         }
     }
-    m_CausticClusterCountsBufCPU->unmap();
 
     // Copy gaussians to GPU
     ref<Buffer> gaussianBufferCPU = Buffer::createStructured(
@@ -847,6 +839,6 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
     for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
     {
         const std::array<float, 3>&cluster = clusters[clusterIdx];
-        m_CausticClusters[geomInstanceIdx * m_CausticClusterCount + clusterIdx] = {cluster[0], cluster[1], cluster[2]};
+        m_CausticClustersPos[geomInstanceIdx * m_CausticClusterCount + clusterIdx] = {cluster[0], cluster[1], cluster[2]};
     }
 }
