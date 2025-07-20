@@ -325,8 +325,8 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
     );
 
     // Unmap buffers
-    vbo->unmap();
-    ibo->unmap();
+    vboCpu->unmap();
+    iboCpu->unmap();
 }
 
 void GaussianPhotonGuiding::TrackActualFirstHitPhotonCount(RenderContext* renderContext)
