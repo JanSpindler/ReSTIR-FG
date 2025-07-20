@@ -35,7 +35,7 @@ public:
 
     void GenerateCausticClusters(RenderContext* renderContext);
     void TrackActualFirstHitPhotonCount(RenderContext* renderContext);
-    void CountCausticClustersPass(RenderContext* renderContext);
+    void RobustInitialization(RenderContext* renderContext);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void RandomReplacePass(RenderContext* renderContext);
@@ -151,4 +151,6 @@ private:
         const std::span<PackedStaticVertexData>& vertexData,
         const std::span<uint32_t>& indexData
     );
+
+    void HandleCausticClusterCollection(RenderContext* pRenderContext, std::vector<std::vector<float>>& pSigmaSortBuffers);
 };

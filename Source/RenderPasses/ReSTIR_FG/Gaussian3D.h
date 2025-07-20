@@ -10,7 +10,7 @@ struct Gaussian3D
 
     static float PSigmaFromDistance(const float distance, const float cS)
     {
-        constexpr float saturation = 1e3f;
+        constexpr float saturation = 10.0f;
         if (distance > DistanceFromPSigma(saturation, cS))
         {
             return saturation;

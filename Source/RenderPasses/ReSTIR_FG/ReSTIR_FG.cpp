@@ -414,7 +414,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         if (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() <= 1 and m_GaussianPhotonGuiding.IsRobustInitialization())
         {
-            m_GaussianPhotonGuiding.CountCausticClustersPass(pRenderContext);
+            m_GaussianPhotonGuiding.RobustInitialization(pRenderContext);
         }
         // Calculate gaussian gradient and optimize
         else if (m_GaussianPhotonGuiding.IsActive() and m_GaussianPhotonGuiding.IsOptimizing())
