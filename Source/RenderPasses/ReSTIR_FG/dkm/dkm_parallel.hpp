@@ -13,6 +13,7 @@
 #include <tuple>
 #include <type_traits>
 #include <vector>
+#include <execution>
 
 #include "dkm.hpp"
 
@@ -37,22 +38,58 @@ using point_data_size_t = typename std::vector<std::array<T, N>>::size_type;
 /*
 Calculate the smallest distance between each of the data points and any of the input means.
 */
-template <typename T, size_t N>
-std::vector<T> closest_distance_parallel(
-	const std::vector<std::array<T, N>>& means, const std::vector<std::array<T, N>>& data) {
-	std::vector<T> distances(data.size(), T());
-	#pragma omp parallel for
-	for (int i = 0; i < static_cast<int>(data.size()); ++i) {
-		T closest = distance_squared(data[i], means[0]);
-		for (const auto& m : means) {
-			T distance = distance_squared(data[i], m);
-			if (distance < closest)
-				closest = distance;
-		}
-		distances[i] = closest;
-	}
-	return distances;
+#if 1
+
+template<typename T, size_t N>
+std::vector<T> closest_distance_parallel(const std::vector<std::array<T, N>>& means, const std::vector<std::array<T, N>>& data)
+{
+    std::vector<T> distances(data.size());
+
+    // Create index vector for std::transform
+    std::vector<size_t> indices(data.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    // Use C++20 parallel execution to compute closest distances
+    std::transform(
+        std::execution::par_unseq, indices.begin(), indices.end(), distances.begin(),
+        [&data, &means](size_t i)
+        {
+            T closest = distance_squared(data[i], means[0]);
+            for (const auto& m : means)
+            {
+                T distance = distance_squared(data[i], m);
+                if (distance < closest)
+                    closest = distance;
+            }
+            return closest;
+        }
+    );
+
+    return distances;
 }
+
+#else
+
+template <typename T, size_t N>
+std::vector<T> closest_distance_parallel(const std::vector<std::array<T, N>>& means, const std::vector<std::array<T, N>>& data)
+{
+    std::vector<T> distances(data.size(), T());
+#pragma omp parallel for
+    for (int i = 0; i < static_cast<int>(data.size()); ++i)
+    {
+        T closest = distance_squared(data[i], means[0]);
+        for (const auto& m : means)
+        {
+            T distance = distance_squared(data[i], m);
+            if (distance < closest)
+                closest = distance;
+        }
+        distances[i] = closest;
+    }
+    return distances;
+}
+
+#endif
 
 /*
 This is an alternate initialization method based on the [kmeans++](https://en.wikipedia.org/wiki/K-means%2B%2B)
@@ -105,16 +142,38 @@ std::vector<std::array<T, N>> random_plusplus_parallel(const std::vector<std::ar
 /*
 Calculate the index of the mean each data point is closest to (euclidean distance).
 */
-template <typename T, size_t N>
-std::vector<uint32_t> calculate_clusters_parallel(
-	const std::vector<std::array<T, N>>& data, const std::vector<std::array<T, N>>& means) {
-	std::vector<uint32_t> clusters(data.size(), 0);
-	#pragma omp parallel for
-	for (int i = 0; i < static_cast<int>(data.size()); ++i) {
-		clusters[i] = closest_mean(data[i], means);
-	}
-	return clusters;
+#if 1
+
+template<typename T, size_t N>
+std::vector<uint32_t> calculate_clusters_parallel(const std::vector<std::array<T, N>>& data, const std::vector<std::array<T, N>>& means)
+{
+    std::vector<uint32_t> clusters(data.size());
+
+    std::vector<size_t> indices(data.size());
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::transform(
+        std::execution::par_unseq, indices.begin(), indices.end(), clusters.begin(),
+        [&data, &means](size_t i) { return closest_mean(data[i], means); }
+    );
+    return clusters;
 }
+
+#else
+
+template <typename T, size_t N>
+std::vector<uint32_t> calculate_clusters_parallel(const std::vector<std::array<T, N>>& data, const std::vector<std::array<T, N>>& means)
+{
+    std::vector<uint32_t> clusters(data.size(), 0);
+#pragma omp parallel for
+    for (int i = 0; i < static_cast<int>(data.size()); ++i)
+    {
+        clusters[i] = closest_mean(data[i], means);
+    }
+    return clusters;
+}
+
+#endif
 
 } // namespace details
 

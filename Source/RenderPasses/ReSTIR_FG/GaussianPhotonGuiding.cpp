@@ -1,7 +1,6 @@
 #include "GaussianPhotonGuiding.h"
 #include "Gaussian3D.h"
 #include "RandomGenerator.h"
-#include "FirstHitPhotonInfo.h"
 #include "calc_gradient.h"
 #include "dkm/dkm_parallel.hpp"
 #include <execution>
@@ -347,9 +346,35 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
     // Profile
     FALCOR_PROFILE(pRenderContext, "RobustInitialization");
 
+    // Get first hit photon information from GPU
+    const size_t firstHitPhotonCount = std::min<size_t>(m_MaxFirstHitPhotonCount, m_ActualFirstHitPhotonCount);
+
+    pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
+    pRenderContext->copyBufferRegion(
+        m_FirstHitPhotonInfoBufCPU.get(), 0, m_FirstHitPhotonInfoBuf.buffer.get(), 0, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
+    );
+    std::vector<FirstHitPhotonInfo> firstHitPhotonInfos(firstHitPhotonCount);
+    std::memcpy(
+        firstHitPhotonInfos.data(), m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read), sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
+    );
+    m_FirstHitPhotonInfoBufCPU->unmap();
+
+    pRenderContext->uavBarrier(m_FirstHitCollectionCountsBuf.buffer.get());
+    pRenderContext->copyBufferRegion(
+        m_FirstHitCollectionCountsBufCPU.get(), 0, m_FirstHitCollectionCountsBuf.buffer.get(), 0, sizeof(uint) * firstHitPhotonCount
+    );
+    std::vector<uint> firstHitCollectionCounts(firstHitPhotonCount);
+    std::memcpy(
+        firstHitCollectionCounts.data(), m_FirstHitCollectionCountsBufCPU->map(Buffer::MapType::Read), sizeof(uint) * firstHitPhotonCount
+    );
+    m_FirstHitCollectionCountsBufCPU->unmap();
+
     // Handle caustic cluster collection
     std::vector<std::vector<float>> pSigmaSortBuffers;
-    HandleCausticClusterCollection(pRenderContext, pSigmaSortBuffers);
+    HandleCausticClusterCollection(pRenderContext, pSigmaSortBuffers, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount);
+
+    // Generate first hit clusters
+    GenerateFirstHitClusters(pRenderContext, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount);
 
     // Weird logic
     if (m_FrameCountAfterOptimReset < 1)
@@ -772,35 +797,20 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
     }
 }
 
-void GaussianPhotonGuiding::HandleCausticClusterCollection(RenderContext* pRenderContext, std::vector<std::vector<float>>& pSigmaSortBuffers)
+void GaussianPhotonGuiding::HandleCausticClusterCollection(
+    RenderContext* pRenderContext,
+    std::vector<std::vector<float>>& pSigmaSortBuffers,
+    const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
+    const std::vector<uint>& firstHitCollectionCounts,
+    const size_t firstHitPhotonCount
+)
 {
+    FALCOR_PROFILE(pRenderContext, "HandleCausticClusterCollection");
+
     // Set variables
     const size_t lightCount = GetTotalLightCount();
     const size_t clusterCount = GetTotalCausticClusterCount();
     const size_t lightClusterCount = clusterCount * lightCount;
-    const size_t firstHitPhotonCount = std::min<size_t>(m_MaxFirstHitPhotonCount, m_ActualFirstHitPhotonCount);
-
-    // Copy first hit photon info to CPU
-    pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
-    pRenderContext->copyBufferRegion(
-        m_FirstHitPhotonInfoBufCPU.get(), 0, m_FirstHitPhotonInfoBuf.buffer.get(), 0, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
-    );
-    std::vector<FirstHitPhotonInfo> firstHitPhotonInfos(firstHitPhotonCount);
-    std::memcpy(
-        firstHitPhotonInfos.data(), m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read), sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
-    );
-    m_FirstHitPhotonInfoBufCPU->unmap();
-
-    // Copy first hit collection counts to CPU
-    pRenderContext->uavBarrier(m_FirstHitCollectionCountsBuf.buffer.get());
-    pRenderContext->copyBufferRegion(
-        m_FirstHitCollectionCountsBufCPU.get(), 0, m_FirstHitCollectionCountsBuf.buffer.get(), 0, sizeof(uint) * firstHitPhotonCount
-    );
-    std::vector<uint> firstHitCollectionCounts(firstHitPhotonCount);
-    std::memcpy(
-        firstHitCollectionCounts.data(), m_FirstHitCollectionCountsBufCPU->map(Buffer::MapType::Read), sizeof(uint) * firstHitPhotonCount
-    );
-    m_FirstHitCollectionCountsBufCPU->unmap();
 
     // For each first hit photon track the closest caustic cluster and store the distance to it
     std::vector<size_t> firstHitPhotonClosestClusterIdx(firstHitPhotonCount, std::numeric_limits<size_t>::max());
@@ -865,5 +875,52 @@ void GaussianPhotonGuiding::HandleCausticClusterCollection(RenderContext* pRende
         std::sort(sigmaPBuffer.begin(), sigmaPBuffer.end());
         const size_t medianIndex = sigmaPBuffer.size() / 2;
         m_CausticClustersPSigma[lightClusterIdx] = sigmaPBuffer[medianIndex];
+    }
+}
+
+void GaussianPhotonGuiding::GenerateFirstHitClusters(
+    RenderContext* pRenderContext,
+    const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
+    const std::vector<uint>& firstHitCollectionCounts,
+    const size_t firstHitPhotonCount
+)
+{
+    FALCOR_PROFILE(pRenderContext, "GenerateFirstHitClusters");
+
+    // Collect first hit photon positions weighted by collection counts per light
+    const size_t lightCount = GetTotalLightCount();
+    std::vector<std::vector<std::array<float, 3>>> lightFirstHitPoints(lightCount);
+    for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
+    {
+        const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
+        const uint collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
+        for (size_t idx = 0; idx < collectionCount; ++idx)
+        {
+            lightFirstHitPoints[info.lightIdx].push_back({info.pos.x, info.pos.y, info.pos.z});
+        }
+    }
+
+    // Cluster first hit points
+    std::vector<float3> firstHitClustersPos;
+    std::vector<float> firstHitClustersPSigma;
+    for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
+    {
+        // Skip empty
+        const std::vector<std::array<float, 3>>& points = lightFirstHitPoints[lightIdx];
+        if (points.empty())
+        {
+            continue;
+        }
+
+        // Cluster points
+        // TODO: Make K a changeable parameter
+        const std::set<std::array<float, 3>> uniquePoints(points.begin(), points.end());
+        const size_t clusterCount = std::min<size_t>(uniquePoints.size(), 8);
+        const auto [clusters, _] = dkm::kmeans_lloyd_parallel(points, dkm::clustering_parameters<float>(clusterCount));
+        for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
+        {
+            const std::array<float, 3>& cluster = clusters[clusterIdx];
+            //firstHitPoints.push_back({cluster[0], cluster[1], cluster[2]});
+        }
     }
 }

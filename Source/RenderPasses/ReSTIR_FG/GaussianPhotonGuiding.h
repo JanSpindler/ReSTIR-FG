@@ -3,6 +3,7 @@
 #include <Falcor.h>
 #include <Utils/CudaUtils.h>
 #include <Utils/Math/VectorMath.h>
+#include "FirstHitPhotonInfo.h"
 
 using namespace Falcor;
 
@@ -151,6 +152,17 @@ private:
         const std::span<PackedStaticVertexData>& vertexData,
         const std::span<uint32_t>& indexData
     );
-
-    void HandleCausticClusterCollection(RenderContext* pRenderContext, std::vector<std::vector<float>>& pSigmaSortBuffers);
+    void HandleCausticClusterCollection(
+        RenderContext* pRenderContext,
+        std::vector<std::vector<float>>& pSigmaSortBuffers,
+        const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
+        const std::vector<uint>& firstHitCollectionCounts,
+        const size_t firstHitPhotonCount
+    );
+    void GenerateFirstHitClusters(
+        RenderContext* pRenderContext,
+        const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
+        const std::vector<uint>& firstHitCollectionCounts,
+        const size_t firstHitPhotonCount
+    );
 };
