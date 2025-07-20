@@ -163,6 +163,7 @@ private:
         RenderContext* pRenderContext,
         const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
         const std::vector<uint>& firstHitCollectionCounts,
-        const size_t firstHitPhotonCount
+        const size_t firstHitPhotonCount,
+        std::vector<std::vector<float3>>& lightFirstHitClusterPos
     );
 };

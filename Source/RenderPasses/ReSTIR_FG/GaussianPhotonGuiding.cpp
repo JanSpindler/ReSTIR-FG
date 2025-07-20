@@ -374,7 +374,8 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
     HandleCausticClusterCollection(pRenderContext, pSigmaSortBuffers, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount);
 
     // Generate first hit clusters
-    GenerateFirstHitClusters(pRenderContext, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount);
+    std::vector<std::vector<float3>> lightFirstHitClusterPos;
+    GenerateFirstHitClusters(pRenderContext, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount, lightFirstHitClusterPos);
 
     // Weird logic
     if (m_FrameCountAfterOptimReset < 1)
@@ -410,9 +411,32 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
         for (size_t gaussianIdx = 0; gaussianIdx < m_GaussianCount; ++gaussianIdx)
         {
             Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
-            gaussian.mean =
-                gaussianIdx < clusterCount ? m_CausticClustersPos[clusterIndices[gaussianIdx]] * positionScaling : RandomGenerator::Float3();
-            gaussian.pSigma = m_CausticClustersPSigma[clusterIndices[gaussianIdx]];
+            if (gaussianIdx < m_GaussianCount / 2)
+            {
+                if (gaussianIdx < clusterCount)
+                {
+                    gaussian.mean = m_CausticClustersPos[clusterIndices[gaussianIdx]] * positionScaling;
+                    gaussian.pSigma = m_CausticClustersPSigma[clusterIndices[gaussianIdx]];
+                }
+                else
+                {
+                    gaussian.mean = RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling;
+                    gaussian.pSigma = 1.0f;
+                }
+            }
+            else
+            {
+                if (gaussianIdx - m_GaussianCount / 2 < lightFirstHitClusterPos[lightIdx].size())
+                {
+                    gaussian.mean = lightFirstHitClusterPos[lightIdx][gaussianIdx - m_GaussianCount / 2] * positionScaling;
+                    gaussian.pSigma = 1.0f;
+                }
+                else
+                {
+                    gaussian.mean = RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling;
+                    gaussian.pSigma = 1.0f;
+                }
+            }
             gaussian.weight = 1.0f;
         }
     }
@@ -882,7 +906,8 @@ void GaussianPhotonGuiding::GenerateFirstHitClusters(
     RenderContext* pRenderContext,
     const std::vector<FirstHitPhotonInfo>& firstHitPhotonInfos,
     const std::vector<uint>& firstHitCollectionCounts,
-    const size_t firstHitPhotonCount
+    const size_t firstHitPhotonCount,
+    std::vector<std::vector<float3>>& lightFirstHitClusterPos
 )
 {
     FALCOR_PROFILE(pRenderContext, "GenerateFirstHitClusters");
@@ -901,8 +926,7 @@ void GaussianPhotonGuiding::GenerateFirstHitClusters(
     }
 
     // Cluster first hit points
-    std::vector<float3> firstHitClustersPos;
-    std::vector<float> firstHitClustersPSigma;
+    lightFirstHitClusterPos.resize(lightCount);
     for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
     {
         // Skip empty
@@ -920,7 +944,7 @@ void GaussianPhotonGuiding::GenerateFirstHitClusters(
         for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
         {
             const std::array<float, 3>& cluster = clusters[clusterIdx];
-            //firstHitPoints.push_back({cluster[0], cluster[1], cluster[2]});
+            lightFirstHitClusterPos[lightIdx].push_back({cluster[0], cluster[1], cluster[2]});
         }
     }
 }
