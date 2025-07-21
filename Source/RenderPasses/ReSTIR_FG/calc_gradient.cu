@@ -93,6 +93,37 @@ static __forceinline__ __device__ void NumericAtomicAdd(float* dest, const float
     }
 }
 
+// Warp-level reduction for float values
+static __forceinline__ __device__ float WarpReduceSum(float val)
+{
+    for (int offset = warpSize / 2; offset > 0; offset /= 2)
+    {
+        val += __shfl_down_sync(0xFFFFFFFF, val, offset);
+    }
+    return val;
+}
+
+// Optimized version using warp-level reduction
+static __forceinline__ __device__ void WarpAtomicAdd(float* dest, float value)
+{
+    if (!CheckNumeric(value))
+    {
+        value = 0.0f;
+    }
+
+    // Get the lane ID and warp size
+    const int laneId = threadIdx.x & 31;
+
+    // Reduce within the warp
+    value = WarpReduceSum(value);
+
+    // Only the first thread in the warp performs the atomic add
+    if (laneId == 0 && value != 0.0f)
+    {
+        atomicAdd(dest, value);
+    }
+}
+
 static __forceinline__ __device__ void DerivGmm(
     const Gaussian3D* gaussians,
     Gaussian3D* gradients,
@@ -101,7 +132,8 @@ static __forceinline__ __device__ void DerivGmm(
     const uint lightIdx,
     const float3& position,
     const float pdfFactor,
-    const float cS)
+    const float cS
+)
 {
     // Get first gaussian index
     const uint firstGaussianIdx = lightIdx * gaussianCount;
@@ -118,7 +150,8 @@ static __forceinline__ __device__ void DerivGmm(
         const float3 meanDeriv = pdfFactor * softmaxWeight * DerivNormGaussianWrtMean(gaussian, position, cS);
 
         // Sigma
-        const float pSigmaDeriv = pdfFactor * softmaxWeight * DerivNormGaussianWrtSigma(gaussian, position, cS) * gaussian.GetSigmaDeriv(cS);
+        const float pSigmaDeriv =
+            pdfFactor * softmaxWeight * DerivNormGaussianWrtSigma(gaussian, position, cS) * gaussian.GetSigmaDeriv(cS);
 
         // Weight
         float weightDeriv = 0.0f;
@@ -127,19 +160,26 @@ static __forceinline__ __device__ void DerivGmm(
             const Gaussian3D& otherGaussian = gaussians[firstGaussianIdx + otherIdx];
 
             const float gaussianFactor = EvalUnormGaussian3D(otherGaussian, position, cS) * GaussianNormTerm(otherGaussian.GetSigma(cS));
-            const float softmaxDerivFactor = idx == otherIdx ?
-                softmaxWeights[idx] * (1.0f - softmaxWeights[idx]) :
-                -softmaxWeights[otherIdx] * softmaxWeights[idx];
+            const float softmaxDerivFactor =
+                idx == otherIdx ? softmaxWeights[idx] * (1.0f - softmaxWeights[idx]) : -softmaxWeights[otherIdx] * softmaxWeights[idx];
             weightDeriv += softmaxDerivFactor * gaussianFactor;
         }
         weightDeriv *= pdfFactor;
 
-        // Add gradient safely
+        // Add gradient using warp-level reduction for better performance
+#if 1
+        WarpAtomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
+        WarpAtomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
+        WarpAtomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
+        WarpAtomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
+        WarpAtomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+#else
         NumericAtomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
         NumericAtomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
         NumericAtomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
         NumericAtomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
         NumericAtomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+#endif
     }
 }
 
@@ -153,7 +193,8 @@ __global__ void CalculateGaussianGradientKernel(
     const float* softmaxWeights,
     Gaussian3D* gradients,
     const float positionScaling,
-    const float cS)
+    const float cS
+)
 {
     // Get first hit photon index
     const uint firstHitPhotonIdx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -178,15 +219,7 @@ __global__ void CalculateGaussianGradientKernel(
     // Calculate gradient wrt. parameters of gaussian
     const uint lightIdx = firstHitPhotonInfo[firstHitPhotonIdx].lightIdx;
     const float3 position = firstHitPhotonInfo[firstHitPhotonIdx].pos * positionScaling;
-    DerivGmm(
-        gaussians,
-        gradients,
-        softmaxWeights,
-        gaussianCount,
-        lightIdx,
-        position,
-        pdfFactor,
-        cS);
+    DerivGmm(gaussians, gradients, softmaxWeights, gaussianCount, lightIdx, position, pdfFactor, cS);
 }
 
 void CalculateGaussianGradient(
@@ -199,17 +232,12 @@ void CalculateGaussianGradient(
     const float* softmaxWeights,
     Gaussian3D* gradients,
     const float positionScaling,
-    const float cS)
+    const float cS
+)
 {
-    CalculateGaussianGradientKernel<<<(maxFistHitPhotonCount + 127) / 128, 128>>>(
-        gaussianCount,
-        maxFistHitPhotonCount,
-        gaussians,
-        firstHitCollectionCounts,
-        firstHitPhotonInfo,
-        firstHitPhotonCount,
-        softmaxWeights,
-        gradients,
-        positionScaling,
-        cS);
+    static constexpr size_t blockSize = 128;
+    CalculateGaussianGradientKernel<<<(maxFistHitPhotonCount + blockSize - 1) / blockSize, blockSize>>>(
+        gaussianCount, maxFistHitPhotonCount, gaussians, firstHitCollectionCounts, firstHitPhotonInfo, firstHitPhotonCount, softmaxWeights,
+        gradients, positionScaling, cS
+    );
 }
