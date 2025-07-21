@@ -109,10 +109,12 @@ static __forceinline__ __device__ void DerivGmm(
     // Add to gradient
     for (uint idx = 0; idx < gaussianCount; ++idx)
     {
-        // Mean
+        // Overall
         const uint gaussianIdx = firstGaussianIdx + idx;
         const Gaussian3D& gaussian = gaussians[gaussianIdx];
         const float softmaxWeight = softmaxWeights[gaussianIdx];
+
+        // Mean
         const float3 meanDeriv = pdfFactor * softmaxWeight * DerivNormGaussianWrtMean(gaussian, position, cS);
 
         // Sigma

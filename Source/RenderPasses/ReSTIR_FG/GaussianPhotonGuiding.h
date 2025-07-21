@@ -38,6 +38,7 @@ public:
     void TrackActualFirstHitPhotonCount(RenderContext* renderContext);
     void RobustInitialization(RenderContext* renderContext);
     void CalculateGaussianGradientCuda(RenderContext* renderContext);
+    void GaussianRepulsionPass(RenderContext* renderContext);
     void OptimizeGaussiansPass(RenderContext* renderContext);
     void RandomReplacePass(RenderContext* renderContext);
     void CalculateSoftmaxWeightsPass(RenderContext* renderContext);
@@ -60,9 +61,9 @@ private:
     // Constants
     static inline const std::string m_ShaderModel = "6_5";
 
-    static inline const std::string m_CalculateGaussainGradiantShader = "RenderPasses/ReSTIR_FG/Shader/CalculateGaussianGradient.cs.slang";
     static inline const std::string m_OptimizeGaussiansShader = "RenderPasses/ReSTIR_FG/Shader/OptimizeGaussians.cs.slang";
     static inline const std::string m_CalculateSoftmaxWeightsShader = "RenderPasses/ReSTIR_FG/Shader/CalculateSoftmaxWeights.cs.slang";
+    static inline const std::string m_GaussianRepulsionShader = "RenderPasses/ReSTIR_FG/Shader/GaussianRepulsion.cs.slang";
 
     static inline const Gui::DropdownList m_OptimizerList{{static_cast<uint>(Optimizer::SGD), "SGD"}, {static_cast<uint>(Optimizer::Adam), "Adam"}};
     static inline const Gui::DropdownList m_InitializationList{
@@ -111,9 +112,13 @@ private:
     float m_Beta2 = 0.999f;
     uint m_FrameCountAfterOptimReset = 0;
 
+    // Repulsion
+    float m_RepulsiveForce = 0.01f;
+    float m_RepulsiveDistance = 1.0f;
+
     // Random replace
-    bool m_RandomReplace = false;
-    uint m_RandomReplaceCount = 4;
+    bool m_RandomReplace = true;
+    uint m_RandomReplaceCount = 2;
     uint m_RandomReplaceFrequency = 256;
 
     // Buffers
@@ -138,6 +143,7 @@ private:
     // Passes
     ref<ComputePass> m_OptimizeGaussiansPass;
     ref<ComputePass> m_CalculateSoftmaxPass;
+    ref<ComputePass> m_GaussianRepulsionPass;
 
     // Functions
     constexpr uint GetTotalLightCount() const { return m_AnalyticLightCount + m_GeometricLightCount; }

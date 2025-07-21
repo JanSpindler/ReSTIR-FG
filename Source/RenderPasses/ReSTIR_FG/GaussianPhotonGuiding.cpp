@@ -262,6 +262,10 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
             changed |= group.var("Adam Beta2", m_Beta2, 0.0f, 1.0f);
         }
 
+        // Repulsion
+        group.var("Repulsive Force", m_RepulsiveForce, 0.0f);
+        group.var("Repulsive Distance", m_RepulsiveDistance, 0.01f);
+
         // Random replace
         changed |= group.checkbox("Enable Random Replace", m_RandomReplace);
         changed |= group.var("Random Replace Count", m_RandomReplaceCount, 0u, m_GaussianCount);
@@ -502,6 +506,41 @@ void GaussianPhotonGuiding::CalculateGaussianGradientCuda(RenderContext* pRender
 
     __nop();
 #endif
+}
+
+void GaussianPhotonGuiding::GaussianRepulsionPass(RenderContext* renderContext)
+{
+    // Profile
+    FALCOR_PROFILE(renderContext, "GaussianRepulsion");
+
+    // Init shader
+    if (!m_GaussianRepulsionPass)
+    {
+        Program::Desc desc;
+        desc.addShaderModules(m_Scene->getShaderModules());
+        desc.addShaderLibrary(m_GaussianRepulsionShader).csEntry("main").setShaderModel(m_ShaderModel);
+        desc.addTypeConformances(m_Scene->getTypeConformances());
+
+        DefineList defines;
+        defines.add(m_Defines);
+
+        m_GaussianRepulsionPass = ComputePass::create(m_Device, desc, defines, true);
+    }
+    FALCOR_ASSERT(m_GaussianRepulsionPass);
+
+    // Set variables
+    auto var = m_GaussianRepulsionPass->getRootVar();
+    var["Constants"]["gGaussianCount"] = m_GaussianCount;
+    var["Constants"]["gLightCount"] = GetTotalLightCount();
+    var["Constants"]["gPositionScaling"] = GetPositionScaling();
+    var["Constants"]["gRepulsiveForce"] = m_RepulsiveForce;
+    var["Constants"]["gRepulsiveDistance"] = m_RepulsiveDistance;
+
+    var["gGaussians"] = m_GaussianBuf.buffer;
+    var["gGaussianGradients"] = m_GradientBuf.buffer;
+
+    // Execute
+    m_GaussianRepulsionPass->execute(renderContext, uint3(GetTotalGaussianCount(), 1, 1));
 }
 
 void GaussianPhotonGuiding::OptimizeGaussiansPass(RenderContext* pRenderContext)
