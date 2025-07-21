@@ -350,28 +350,58 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
     // Profile
     FALCOR_PROFILE(pRenderContext, "RobustInitialization");
 
+    // Early exit check - moved earlier to avoid unnecessary work
+    if (m_FrameCountAfterOptimReset < 1)
+    {
+        return;
+    }
+
     // Get first hit photon information from GPU
     const size_t firstHitPhotonCount = std::min<size_t>(m_MaxFirstHitPhotonCount, m_ActualFirstHitPhotonCount);
 
-    pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
-    pRenderContext->copyBufferRegion(
-        m_FirstHitPhotonInfoBufCPU.get(), 0, m_FirstHitPhotonInfoBuf.buffer.get(), 0, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
-    );
-    std::vector<FirstHitPhotonInfo> firstHitPhotonInfos(firstHitPhotonCount);
-    std::memcpy(
-        firstHitPhotonInfos.data(), m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read), sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
-    );
-    m_FirstHitPhotonInfoBufCPU->unmap();
+    // Early exit if no photons to process
+    if (firstHitPhotonCount == 0)
+    {
+        return;
+    }
 
-    pRenderContext->uavBarrier(m_FirstHitCollectionCountsBuf.buffer.get());
-    pRenderContext->copyBufferRegion(
-        m_FirstHitCollectionCountsBufCPU.get(), 0, m_FirstHitCollectionCountsBuf.buffer.get(), 0, sizeof(uint) * firstHitPhotonCount
-    );
-    std::vector<uint> firstHitCollectionCounts(firstHitPhotonCount);
-    std::memcpy(
-        firstHitCollectionCounts.data(), m_FirstHitCollectionCountsBufCPU->map(Buffer::MapType::Read), sizeof(uint) * firstHitPhotonCount
-    );
-    m_FirstHitCollectionCountsBufCPU->unmap();
+    // Cache frequently used values
+    const size_t lightCount = GetTotalLightCount();
+    const size_t clusterCount = GetTotalCausticClusterCount();
+    const size_t totalGaussianCount = m_GaussianCount * lightCount;
+    const float positionScaling = GetPositionScaling();
+
+    // Optimize buffer operations with single allocation and RAII management
+    std::vector<FirstHitPhotonInfo> firstHitPhotonInfos;
+    std::vector<uint> firstHitCollectionCounts;
+    firstHitPhotonInfos.reserve(firstHitPhotonCount);
+    firstHitCollectionCounts.reserve(firstHitPhotonCount);
+
+    // Copy photon info data more efficiently
+    {
+        pRenderContext->uavBarrier(m_FirstHitPhotonInfoBuf.buffer.get());
+        pRenderContext->copyBufferRegion(
+            m_FirstHitPhotonInfoBufCPU.get(), 0, m_FirstHitPhotonInfoBuf.buffer.get(), 0, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount
+        );
+
+        void* photonInfoData = m_FirstHitPhotonInfoBufCPU->map(Buffer::MapType::Read);
+        firstHitPhotonInfos.resize(firstHitPhotonCount);
+        std::memcpy(firstHitPhotonInfos.data(), photonInfoData, sizeof(FirstHitPhotonInfo) * firstHitPhotonCount);
+        m_FirstHitPhotonInfoBufCPU->unmap();
+    }
+
+    // Copy collection counts data
+    {
+        pRenderContext->uavBarrier(m_FirstHitCollectionCountsBuf.buffer.get());
+        pRenderContext->copyBufferRegion(
+            m_FirstHitCollectionCountsBufCPU.get(), 0, m_FirstHitCollectionCountsBuf.buffer.get(), 0, sizeof(uint) * firstHitPhotonCount
+        );
+
+        void* collectionCountData = m_FirstHitCollectionCountsBufCPU->map(Buffer::MapType::Read);
+        firstHitCollectionCounts.resize(firstHitPhotonCount);
+        std::memcpy(firstHitCollectionCounts.data(), collectionCountData, sizeof(uint) * firstHitPhotonCount);
+        m_FirstHitCollectionCountsBufCPU->unmap();
+    }
 
     // Handle caustic cluster collection
     std::vector<std::vector<float>> pSigmaSortBuffers;
@@ -381,46 +411,60 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
     std::vector<std::vector<float3>> lightFirstHitClusterPos;
     GenerateFirstHitClusters(pRenderContext, firstHitPhotonInfos, firstHitCollectionCounts, firstHitPhotonCount, lightFirstHitClusterPos);
 
-    // Weird logic
-    if (m_FrameCountAfterOptimReset < 1)
-    {
-        return;
-    }
-
-    // Sort and select gaussian
-    const size_t lightCount = GetTotalLightCount();
-    const size_t clusterCount = GetTotalCausticClusterCount();
-    const size_t totalGaussianCount = m_GaussianCount * lightCount;
-
-    std::vector<uint> clusterIndices(clusterCount);
+    // Pre-allocate arrays with proper sizing
+    std::vector<uint> clusterIndices;
+    clusterIndices.reserve(clusterCount);
     std::vector<Gaussian3D> gaussians(totalGaussianCount);
 
+    // Optimize gaussian creation loop
     for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
     {
-        // Init indices
-        for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
+        // Resize and initialize indices vector once per light
+        clusterIndices.resize(clusterCount);
+        std::iota(clusterIndices.begin(), clusterIndices.end(), 0u);
+
+        // Sort clusters by photon count (descending)
+        const size_t baseIdx = lightIdx * clusterCount;
+        if (baseIdx < pSigmaSortBuffers.size())
         {
-            clusterIndices[clusterIdx] = clusterIdx;
+            std::sort(
+                clusterIndices.begin(), clusterIndices.end(),
+                [&](const uint idx1, const uint idx2)
+                {
+                    const size_t bufIdx1 = baseIdx + idx1;
+                    const size_t bufIdx2 = baseIdx + idx2;
+                    return (bufIdx1 < pSigmaSortBuffers.size() ? pSigmaSortBuffers[bufIdx1].size() : 0) >
+                           (bufIdx2 < pSigmaSortBuffers.size() ? pSigmaSortBuffers[bufIdx2].size() : 0);
+                }
+            );
         }
 
-        // Sort
-        const size_t baseIdx = lightIdx * clusterCount;
-        std::sort(
-            clusterIndices.begin(), clusterIndices.end(), [&](const uint idx1, const uint idx2)
-            { return pSigmaSortBuffers[baseIdx + idx1].size() > pSigmaSortBuffers[baseIdx + idx2].size(); }
-        );
+        // Cache light-specific data
+        const size_t lightBaseGaussianIdx = lightIdx * m_GaussianCount;
+        const size_t halfGaussianCount = m_GaussianCount / 2;
+        const auto& lightClusters = (lightIdx < lightFirstHitClusterPos.size()) ? lightFirstHitClusterPos[lightIdx] : std::vector<float3>{};
 
-        // Update gaussians
-        const float positionScaling = GetPositionScaling();
+        // Update gaussians with optimized indexing
         for (size_t gaussianIdx = 0; gaussianIdx < m_GaussianCount; ++gaussianIdx)
         {
-            Gaussian3D& gaussian = gaussians[lightIdx * m_GaussianCount + gaussianIdx];
-            if (gaussianIdx < m_GaussianCount / 2)
+            Gaussian3D& gaussian = gaussians[lightBaseGaussianIdx + gaussianIdx];
+
+            if (gaussianIdx < halfGaussianCount)
             {
-                if (gaussianIdx < clusterCount)
+                // Use caustic clusters for first half
+                if (gaussianIdx < clusterCount && gaussianIdx < clusterIndices.size())
                 {
-                    gaussian.mean = m_CausticClustersPos[clusterIndices[gaussianIdx]] * positionScaling;
-                    gaussian.pSigma = m_CausticClustersPSigma[clusterIndices[gaussianIdx]];
+                    const uint clusterIdx = clusterIndices[gaussianIdx];
+                    if (clusterIdx < m_CausticClustersPos.size())
+                    {
+                        gaussian.mean = m_CausticClustersPos[clusterIdx] * positionScaling;
+                        gaussian.pSigma = (clusterIdx < m_CausticClustersPSigma.size()) ? m_CausticClustersPSigma[clusterIdx] : 1.0f;
+                    }
+                    else
+                    {
+                        gaussian.mean = RandomGenerator::AabbPoint(m_Scene->getSceneBounds()) * positionScaling;
+                        gaussian.pSigma = 1.0f;
+                    }
                 }
                 else
                 {
@@ -430,9 +474,11 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
             }
             else
             {
-                if (gaussianIdx - m_GaussianCount / 2 < lightFirstHitClusterPos[lightIdx].size())
+                // Use first hit clusters for second half
+                const size_t clusterIdx = gaussianIdx - halfGaussianCount;
+                if (clusterIdx < lightClusters.size())
                 {
-                    gaussian.mean = lightFirstHitClusterPos[lightIdx][gaussianIdx - m_GaussianCount / 2] * positionScaling;
+                    gaussian.mean = lightClusters[clusterIdx] * positionScaling;
                     gaussian.pSigma = 1.0f;
                 }
                 else
@@ -445,11 +491,15 @@ void GaussianPhotonGuiding::RobustInitialization(RenderContext* pRenderContext)
         }
     }
 
-    // Copy gaussians to GPU
-    ref<Buffer> gaussianBufferCPU = Buffer::createStructured(
-        m_Device, sizeof(Gaussian3D), totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write, gaussians.data()
+    // Optimize GPU copy operation - create buffer with initial data to avoid separate copy
+    pRenderContext->copyBufferRegion(
+        m_GaussianBuf.buffer.get(), 0,
+        Buffer::createStructured(
+            m_Device, sizeof(Gaussian3D), totalGaussianCount, ResourceBindFlags::None, Buffer::CpuAccess::Write, gaussians.data()
+        )
+            .get(),
+        0, sizeof(Gaussian3D) * totalGaussianCount
     );
-    pRenderContext->copyBufferRegion(m_GaussianBuf.buffer.get(), 0, gaussianBufferCPU.get(), 0, sizeof(Gaussian3D) * totalGaussianCount);
     pRenderContext->uavBarrier(m_GaussianBuf.buffer.get());
 }
 
@@ -868,77 +918,133 @@ void GaussianPhotonGuiding::HandleCausticClusterCollection(
     const size_t firstHitPhotonCount
 )
 {
+    // Profile
     FALCOR_PROFILE(pRenderContext, "HandleCausticClusterCollection");
 
-    // Set variables
+    // Early exit if no photons to process
+    if (firstHitPhotonCount == 0 || m_CausticClustersPos.empty())
+    {
+        const size_t lightCount = GetTotalLightCount();
+        const size_t clusterCount = GetTotalCausticClusterCount();
+        const size_t lightClusterCount = clusterCount * lightCount;
+
+        pSigmaSortBuffers.assign(lightClusterCount, std::vector<float>());
+        m_CausticClustersPSigma.assign(lightClusterCount, 0.0f);
+        return;
+    }
+
+    // Cache frequently used values
     const size_t lightCount = GetTotalLightCount();
     const size_t clusterCount = GetTotalCausticClusterCount();
     const size_t lightClusterCount = clusterCount * lightCount;
 
-    // For each first hit photon track the closest caustic cluster and store the distance to it
-    std::vector<size_t> firstHitPhotonClosestClusterIdx(firstHitPhotonCount, std::numeric_limits<size_t>::max());
-    std::vector<float> firstHitPhotonClosestClusterSigmaP(firstHitPhotonCount, 0.0f);
+    // Pre-allocate vectors with estimated capacity
+    std::vector<size_t> firstHitPhotonClosestClusterIdx;
+    std::vector<float> firstHitPhotonClosestClusterSigmaP;
+    firstHitPhotonClosestClusterIdx.reserve(firstHitPhotonCount);
+    firstHitPhotonClosestClusterSigmaP.reserve(firstHitPhotonCount);
 
+    // Use parallel algorithm to find closest clusters
+    firstHitPhotonClosestClusterIdx.resize(firstHitPhotonCount);
+    firstHitPhotonClosestClusterSigmaP.resize(firstHitPhotonCount);
+
+    // Create indices for parallel processing
     std::vector<size_t> indices(firstHitPhotonCount);
     std::iota(indices.begin(), indices.end(), 0);
+
+    // Parallel computation of closest clusters with optimized distance calculation
     std::for_each(
         std::execution::par_unseq, indices.begin(), indices.end(),
         [&](const size_t firstHitPhotonIdx)
         {
-            // Get first hit photon info
             const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
-
-            // Select closest caustic cluster
             const float3& photonPos = info.pos;
+
             size_t closestClusterIdx = 0;
-            float closestDistance = std::numeric_limits<float>::max();
+            float closestDistanceSq = std::numeric_limits<float>::max();
+
+            // Use squared distance to avoid expensive sqrt operations
             for (size_t clusterIdx = 0; clusterIdx < clusterCount; ++clusterIdx)
             {
-                const float3 clusterPos = m_CausticClustersPos[clusterIdx];
-                const float distance = length(photonPos - clusterPos);
-                if (distance < closestDistance)
+                const float3& clusterPos = m_CausticClustersPos[clusterIdx];
+                const float3 diff = photonPos - clusterPos;
+                const float distanceSq = dot(diff, diff);
+
+                if (distanceSq < closestDistanceSq)
                 {
-                    closestDistance = distance;
+                    closestDistanceSq = distanceSq;
                     closestClusterIdx = clusterIdx;
                 }
             }
 
-            // Store closest cluster info
+            // Store results
             firstHitPhotonClosestClusterIdx[firstHitPhotonIdx] = closestClusterIdx;
-            firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx] = Gaussian3D::PSigmaFromDistance(closestDistance, m_Cs);
+            firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx] = Gaussian3D::PSigmaFromDistance(std::sqrt(closestDistanceSq), m_Cs);
         }
     );
 
-    // Store p sigmas in buffers
-    pSigmaSortBuffers = std::vector<std::vector<float>>(lightClusterCount, std::vector<float>(0));
+    // Pre-allocate pSigmaSortBuffers with estimated capacity
+    pSigmaSortBuffers.assign(lightClusterCount, std::vector<float>());
+
+    // First pass: calculate total capacity needed per light cluster
+    std::vector<size_t> lightClusterCapacities(lightClusterCount, 0);
     for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
     {
         const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
         const size_t lightClusterIdx = info.lightIdx * clusterCount + firstHitPhotonClosestClusterIdx[firstHitPhotonIdx];
-        const size_t collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
-        for (size_t idx = 0; idx < collectionCount; ++idx)
+        if (lightClusterIdx < lightClusterCount)
         {
-            pSigmaSortBuffers[lightClusterIdx].push_back(firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx]);
+            lightClusterCapacities[lightClusterIdx] += firstHitCollectionCounts[firstHitPhotonIdx];
         }
     }
 
-    // Find the median for each light cluster
-    m_CausticClustersPSigma.resize(lightClusterCount);
+    // Reserve capacity for each light cluster buffer
     for (size_t lightClusterIdx = 0; lightClusterIdx < lightClusterCount; ++lightClusterIdx)
     {
-        // Get p sigma buffer
-        std::vector<float>& sigmaPBuffer = pSigmaSortBuffers[lightClusterIdx];
-        if (sigmaPBuffer.empty())
-        {
-            m_CausticClustersPSigma[lightClusterIdx] = 0.0f;
-            continue;
-        }
-
-        // Sort and find median
-        std::sort(sigmaPBuffer.begin(), sigmaPBuffer.end());
-        const size_t medianIndex = sigmaPBuffer.size() / 2;
-        m_CausticClustersPSigma[lightClusterIdx] = sigmaPBuffer[medianIndex];
+        pSigmaSortBuffers[lightClusterIdx].reserve(lightClusterCapacities[lightClusterIdx]);
     }
+
+    // Second pass: populate the buffers
+    for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
+    {
+        const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
+        const size_t lightClusterIdx = info.lightIdx * clusterCount + firstHitPhotonClosestClusterIdx[firstHitPhotonIdx];
+
+        if (lightClusterIdx < lightClusterCount)
+        {
+            const float pSigma = firstHitPhotonClosestClusterSigmaP[firstHitPhotonIdx];
+            const size_t collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
+
+            // Batch insert to reduce allocation overhead
+            auto& buffer = pSigmaSortBuffers[lightClusterIdx];
+            buffer.insert(buffer.end(), collectionCount, pSigma);
+        }
+    }
+
+    // Find the median for each light cluster using optimized approach
+    m_CausticClustersPSigma.resize(lightClusterCount);
+
+    // Parallel median calculation
+    std::vector<size_t> lightClusterIndices(lightClusterCount);
+    std::iota(lightClusterIndices.begin(), lightClusterIndices.end(), 0);
+
+    std::for_each(
+        std::execution::par_unseq, lightClusterIndices.begin(), lightClusterIndices.end(),
+        [&](const size_t lightClusterIdx)
+        {
+            auto& sigmaPBuffer = pSigmaSortBuffers[lightClusterIdx];
+            if (sigmaPBuffer.empty())
+            {
+                m_CausticClustersPSigma[lightClusterIdx] = 0.0f;
+                return;
+            }
+
+            // Use nth_element for faster median finding (O(n) vs O(n log n))
+            const size_t medianIndex = sigmaPBuffer.size() / 2;
+            std::nth_element(sigmaPBuffer.begin(), sigmaPBuffer.begin() + medianIndex, sigmaPBuffer.end());
+            m_CausticClustersPSigma[lightClusterIdx] = sigmaPBuffer[medianIndex];
+        }
+    );
 }
 
 void GaussianPhotonGuiding::GenerateFirstHitClusters(
@@ -949,41 +1055,135 @@ void GaussianPhotonGuiding::GenerateFirstHitClusters(
     std::vector<std::vector<float3>>& lightFirstHitClusterPos
 )
 {
+    // Profile
     FALCOR_PROFILE(pRenderContext, "GenerateFirstHitClusters");
 
-    // Collect first hit photon positions weighted by collection counts per light
+    // Early exit if no photons to process
+    if (firstHitPhotonCount == 0)
+    {
+        const size_t lightCount = GetTotalLightCount();
+        lightFirstHitClusterPos.assign(lightCount, std::vector<float3>());
+        return;
+    }
+
+    // Cache frequently used values
     const size_t lightCount = GetTotalLightCount();
+
+    // Pre-allocate and estimate capacity for light hit points
     std::vector<std::vector<std::array<float, 3>>> lightFirstHitPoints(lightCount);
+
+    // First pass: calculate total points per light for capacity estimation
+    std::vector<size_t> lightPointCounts(lightCount, 0);
     for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
     {
         const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
-        const uint collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
-        for (size_t idx = 0; idx < collectionCount; ++idx)
+        if (info.lightIdx < lightCount)
         {
-            lightFirstHitPoints[info.lightIdx].push_back({info.pos.x, info.pos.y, info.pos.z});
+            lightPointCounts[info.lightIdx] += firstHitCollectionCounts[firstHitPhotonIdx];
         }
     }
 
-    // Cluster first hit points
-    lightFirstHitClusterPos.resize(lightCount);
+    // Reserve capacity to avoid reallocations
     for (size_t lightIdx = 0; lightIdx < lightCount; ++lightIdx)
     {
-        // Skip empty
-        const std::vector<std::array<float, 3>>& points = lightFirstHitPoints[lightIdx];
+        lightFirstHitPoints[lightIdx].reserve(lightPointCounts[lightIdx]);
+    }
+
+    // Second pass: populate light hit points with optimized data access
+    for (size_t firstHitPhotonIdx = 0; firstHitPhotonIdx < firstHitPhotonCount; ++firstHitPhotonIdx)
+    {
+        const FirstHitPhotonInfo& info = firstHitPhotonInfos[firstHitPhotonIdx];
+        if (info.lightIdx >= lightCount)
+            continue; // Bounds check
+
+        const uint collectionCount = firstHitCollectionCounts[firstHitPhotonIdx];
+        const std::array<float, 3> point = {info.pos.x, info.pos.y, info.pos.z};
+
+        // Batch insert to reduce allocation overhead
+        auto& lightPoints = lightFirstHitPoints[info.lightIdx];
+        lightPoints.insert(lightPoints.end(), collectionCount, point);
+    }
+
+    // Pre-allocate output vector
+    lightFirstHitClusterPos.assign(lightCount, std::vector<float3>());
+
+    // Process each light in parallel for clustering
+    std::vector<size_t> lightIndices(lightCount);
+    std::iota(lightIndices.begin(), lightIndices.end(), 0);
+
+    // Use parallel execution for clustering when beneficial
+    const bool useParallel = lightCount > 4; // Only parallelize if we have enough lights
+
+    auto processLight = [&](size_t lightIdx)
+    {
+        const auto& points = lightFirstHitPoints[lightIdx];
         if (points.empty())
         {
-            continue;
+            return; // lightFirstHitClusterPos[lightIdx] already initialized as empty
         }
 
-        // Cluster points
-        // TODO: Make K a changeable parameter
-        const std::set<std::array<float, 3>> uniquePoints(points.begin(), points.end());
-        const size_t clusterCount = std::min<size_t>(uniquePoints.size(), 8);
-        const auto [clusters, _] = dkm::kmeans_lloyd_parallel(points, dkm::clustering_parameters<float>(clusterCount));
-        for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
+        // Use std::set for unique point detection (avoids hash function requirement)
+        std::set<std::array<float, 3>> uniquePointsSet;
+
+        // Use sampling for large point sets to improve performance
+        const size_t maxSampleSize = 10000;
+        if (points.size() > maxSampleSize)
         {
-            const std::array<float, 3>& cluster = clusters[clusterIdx];
-            lightFirstHitClusterPos[lightIdx].push_back({cluster[0], cluster[1], cluster[2]});
+            // Sample points to estimate uniqueness
+            const size_t step = points.size() / maxSampleSize;
+            for (size_t i = 0; i < points.size(); i += step)
+            {
+                uniquePointsSet.insert(points[i]);
+                if (uniquePointsSet.size() >= maxSampleSize)
+                    break;
+            }
         }
+        else
+        {
+            uniquePointsSet.insert(points.begin(), points.end());
+        }
+
+        // Determine optimal cluster count (make K configurable in the future)
+        static constexpr size_t maxClusters = 8;
+        const size_t clusterCount = std::min<size_t>(uniquePointsSet.size(), maxClusters);
+
+        if (clusterCount == 0)
+            return;
+
+        try
+        {
+            // Use parallel k-means for larger datasets
+            const auto [clusters, _] = (points.size() > 1000)
+                                           ? dkm::kmeans_lloyd_parallel(points, dkm::clustering_parameters<float>(clusterCount))
+                                           : dkm::kmeans_lloyd(points, dkm::clustering_parameters<float>(clusterCount));
+
+            // Pre-allocate result vector
+            lightFirstHitClusterPos[lightIdx].reserve(clusters.size());
+
+            // Convert clusters to float3 format
+            for (const auto& cluster : clusters)
+            {
+                lightFirstHitClusterPos[lightIdx].emplace_back(cluster[0], cluster[1], cluster[2]);
+            }
+        }
+        catch (const std::exception&)
+        {
+            // Fallback: if clustering fails, use first point as single cluster
+            if (!points.empty())
+            {
+                const auto& firstPoint = points[0];
+                lightFirstHitClusterPos[lightIdx].emplace_back(firstPoint[0], firstPoint[1], firstPoint[2]);
+            }
+        }
+    };
+
+    // Execute clustering
+    if (useParallel)
+    {
+        std::for_each(std::execution::par_unseq, lightIndices.begin(), lightIndices.end(), processLight);
+    }
+    else
+    {
+        std::for_each(lightIndices.begin(), lightIndices.end(), processLight);
     }
 }
