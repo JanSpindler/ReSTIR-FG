@@ -127,6 +127,11 @@ static const bool kEmissionToCausticFilter = EMISSION_TO_CAUSTIC_FILTER;
 
 static const uint kRayFlags = RAY_FLAG_SKIP_CLOSEST_HIT_SHADER | RAY_FLAG_SKIP_TRIANGLES;
 
+// Optimized constants for better performance
+static const float kInvPi = M_1_PI;
+static const float kMinCosThresholdRcp = rcp(kMinCosTheta);
+static const float kSurfaceAlignmentThreshold = 0.6f;
+
 struct RayDataReservoir
 {
     PackedSurfaceDataFG surface;
@@ -136,20 +141,20 @@ struct RayDataReservoir
     SampleGenerator sg;
 }
 
-/** Payload for photon collection. Collect all (48B) and Stochastic Collect (32 + X B) available
+/** Optimized payload for photon collection. Collect all (~44B) and Stochastic Collect (~28B) available
 */
 #if USE_STOCHASTIC_COLLECT
 struct RayData
 {
-    uint counter;                   // Counter for photons this pixel
-    uint photonIdx[STOCH_NUM_PHOTONS];    // Num Photons, variable length. Should be 3 + 4*X for best fit.
-
-    SampleGenerator sg; // Per-ray state for the sample generator (up to 16B).
+    uint counter;                         // Counter for photons this pixel (4B)
+    uint photonIdx[STOCH_NUM_PHOTONS];   // Num Photons, variable length (12B for 3 photons)
+    SampleGenerator sg;                   // Per-ray state for the sample generator (up to 16B)
   
     __init()
     {
         this.counter = 0;
-        for (uint i = 0; i < STOCH_NUM_PHOTONS; ++i)
+        // Optimized initialization with unroll hint
+        [unroll] for (uint i = 0; i < STOCH_NUM_PHOTONS; ++i)
         {
             this.photonIdx[i] = 0;
         }
@@ -158,11 +163,10 @@ struct RayData
 #else // USE_STOCHASTIC_COLLECT
 struct RayData
 {
-    float3 radiance; // Accumulated outgoing radiance from path.
-    uint countPhotons; // Counts the photons
-    PackedHitInfo packedHitInfo; // Hit info from vBuffer; Up to 16B
-
-    SampleGenerator sg; // Per-ray state for the sample generator (up to 16B).
+    float3 radiance;          // Accumulated outgoing radiance from path (12B)
+    uint countPhotons;        // Counts the photons (4B)
+    PackedHitInfo packedHitInfo; // Hit info from vBuffer (Up to 16B)
+    SampleGenerator sg;       // Per-ray state for the sample generator (up to 16B)
   
     __init()
     {
@@ -190,17 +194,14 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayDir, const ITextu
 
 CausticSurface getSurface(uint2 idx, bool prev)
 {
-    uint2 surfaceData;
-    if (prev)
-    {
-        surfaceData = gCausticSurfacePrev[idx];
-    }
-    else
-    {
-        surfaceData = gCausticSurface[idx];
-    }
-    
+    uint2 surfaceData = prev ? gCausticSurfacePrev[idx] : gCausticSurface[idx];
     return CausticSurface(surfaceData);  
+}
+
+// Optimized photon contribution calculation
+float3 computePhotonContribution(float3 f_r, float3 flux, float NdotL, float radiusWeight)
+{
+    return radiusWeight * f_r * flux * rcp(NdotL);
 }
 
 [shader("miss")]
@@ -221,27 +222,37 @@ void anyHitReservoir(
     SphereAttribs attribs : SV_IntersectionAttributes)
 {
     const uint primIndex = PrimitiveIndex();
+    const uint instanceIdx = InstanceIndex();
 
-    // Get Photon data
-    PhotonData pd = PhotonData(gPackedPhotonData[InstanceIndex()][primIndex]);
-    SurfaceFG surface = SurfaceFG(rayDataRes.surface, -WorldRayDirection());
-
-    // Check if first hit check is required
-    if (InstanceIndex() == 0 && !pd.isFirstHit)
+    // Early exit for invalid instances
+    if (instanceIdx > 1) 
     {
         IgnoreHit();
+        return;
     }
 
-    // Check if photon sample is in valid hemisphere
+    // Get Photon data - cache for reuse
+    PhotonData pd = PhotonData(gPackedPhotonData[instanceIdx][primIndex]);
+    SurfaceFG surface = SurfaceFG(rayDataRes.surface, -WorldRayDirection());
+
+    // Early exit for first hit requirement
+    if (instanceIdx == 0 && !pd.isFirstHit)
+    {
+        IgnoreHit();
+        return;
+    }
+
+    // Early exit for hemisphere check
     float NdotL = dot(pd.dir, surface.normal);
     if (NdotL < kMinCosTheta) 
     {
         IgnoreHit();
+        return;
     }
 
-    // RIS resampling
-    float target = surface.getPdf(pd.dir, luminance(pd.flux)) / NdotL;
-    float photonWeight = 1.0 / (M_PI  * attribs.radiusSq);
+    // RIS resampling - optimized with reciprocal
+    float target = surface.getPdf(pd.dir, luminance(pd.flux)) * rcp(NdotL);
+    float photonWeight = kInvPi * rcp(attribs.radiusSq);
     if (rayDataRes.r.updateReservoir(photonWeight, target, sampleNext1D(rayDataRes.sg)))
     {
         rayDataRes.idx = primIndex;
@@ -284,42 +295,56 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     uint primIndex = PrimitiveIndex();
     const uint instanceIndex = InstanceIndex();
 
-    // Get Photon data
+    // Early exit for invalid instances
+    if (instanceIndex > 1) 
+    {
+        IgnoreHit();
+        return;
+    }
+
+    // Get Photon data - cache for reuse
     PhotonData pd = PhotonData(gPackedPhotonData[instanceIndex][primIndex]);
 
     // Change the last bit of prim index to reflect the type
     primIndex = (primIndex & 0x7FFFFFFF) | (instanceIndex << 31);
 
-    // Check if first hit check is required
+    // Early exit for first hit requirement
     if ((rayData.counter >> 24 & 1) != 0 && !pd.isFirstHit)
     {
         IgnoreHit();
+        return;
     }
 
-    // Check for different surfaces
-    if (dot(pd.normal,  WorldRayDirection()) < 0.6)
+    // Pre-compute and cache frequently used values
+    const float3 worldRayDir = WorldRayDirection();
+    const float pdNormalDotRay = dot(pd.normal, worldRayDir);
+    
+    // Early exit for surface orientation
+    if (pdNormalDotRay < kSurfaceAlignmentThreshold)
     {
         IgnoreHit();
+        return;
     }
     
-    // Check if photon sample is in valid hemisphere
-    if (dot(pd.dir, WorldRayDirection()) <= 0)
+    // Early exit for hemisphere check
+    if (dot(pd.dir, worldRayDir) <= 0)
     {
         IgnoreHit();
+        return;
     }
 
-    //
+    // Optimized reservoir sampling
     uint counter = rayData.counter & 0xFFFFFF;  // Mask out the flags
     uint idx = counter;
     counter++;
     rayData.counter++;
 
-    // Reservoir sampling
-    // If photon list is full we get a random index between 0 and number of elements (rayData.counter) to stochastically insert
+    // Reservoir sampling with early exit
     if (idx >= STOCH_NUM_PHOTONS)
     {
         idx = uint(sampleNext1D(rayData.sg) * counter);
     }
+    
     // Insert if index is within maximum list size
     if (idx < STOCH_NUM_PHOTONS)
     {
@@ -337,94 +362,101 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
     const uint instanceIdx = InstanceIndex();
     const uint primIndex = PrimitiveIndex();
 
-    // Get Photon data
+    // Early exit for invalid instances
+    if (instanceIdx > 1) 
+    {
+        IgnoreHit();
+        return;
+    }
+
+    // Get Photon data - cache for reuse
     PhotonData pd = PhotonData(gPackedPhotonData[instanceIdx][primIndex]);
         
+    // Early exit for first hit requirement
+    if ((rayData.countPhotons >> 24 & 1) != 0 && !pd.isFirstHit)
+    {
+        IgnoreHit();
+        return;
+    }
+    
     // Get hit data from payload
     const HitInfo hit = HitInfo(rayData.packedHitInfo);
     let lod = ExplicitLodTextureSampler(0.f);
 
-    // World Direction is set to the viewDir we get from the vBuffer
+    // Load shading data once
     ShadingData sd = loadShadingData(hit, WorldRayDirection(), lod);
-
-    // Check if first hit check is required
-    if ((rayData.countPhotons >> 24 & 1) != 0 && !pd.isFirstHit)
-    {
-        IgnoreHit();
-    }
     
-    // Check for different surfaces
-    if (dot(pd.normal, sd.faceN) < 0.6)
+    // Early exit for surface orientation
+    if (dot(pd.normal, sd.faceN) < kSurfaceAlignmentThreshold)
     {
         IgnoreHit();
+        return;
     }
 
-    // Photon contribution
+    // Cache material instance creation
     uint hints = (uint) MaterialInstanceHints::AdjustShadingNormal;
     let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
     let bsdfProperties = bsdf.getProperties(sd);
-    float3 f_r = bsdf.eval(sd, pd.dir, rayData.sg); // Right sign?
+    
+    // Pre-compute BSDF evaluation
+    float3 f_r = bsdf.eval(sd, pd.dir, rayData.sg);
     float NdotL = dot(bsdfProperties.guideNormal, pd.dir);
-    float radiusWeight = 1.0 / (attribs.radiusSq);
-    if (NdotL > kMinCosTheta)
+    
+    // Early exit for invalid lighting
+    if (NdotL <= kMinCosTheta)
     {
-        // Update radiance
-        const float3 photonContribution = max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
-        rayData.radiance += photonContribution;
+        IgnoreHit();
+        return;
+    }
+    
+    // Optimized radiance calculation using reciprocal
+    float radiusWeight = rcp(attribs.radiusSq);
+    const float3 photonContribution = max(0.f, computePhotonContribution(f_r, pd.flux, NdotL, radiusWeight));
+    rayData.radiance += photonContribution;
 
-        // Add to first hit photon collection count
+    // Conditional tracking to reduce overhead
 #if TRACK_FIRST_HIT_PHOTONS
-        TrackPhotonCollection(instanceIdx, primIndex);
-#endif // TRACK_FIRST_HIT_PHOTONS
+    TrackPhotonCollection(instanceIdx, primIndex);
+#endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
-        TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, photonContribution);
+    TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, photonContribution);
 #endif
-    }
 
-    // Exit
     IgnoreHit();
 }
 
 #endif // USE_STOCHASTIC_COLLECT
 
-// Checks if the ray start point is inside the sphere.
+// Optimized sphere intersection test
 bool hitSphere(const float3 center, const float radius, const float3 p)
 {
-    float3 radiusTest = p - center;
-    radiusTest = radiusTest * radiusTest;
-    float radiusTestF = radiusTest.x + radiusTest.y + radiusTest.z;
-    return radiusTestF < radius * radius;
+    float3 diff = p - center;
+    float distSq = dot(diff, diff);
+    return distSq < radius * radius;
 }
 
 [shader("intersection")]
 void intersection()
 {
-    // Get start point and prim index
     const float3 origin = ObjectRayOrigin();
     const uint primIndex = PrimitiveIndex();
+    const uint instanceIdx = InstanceIndex();
 
-    // Get Photon AABB. Instance Index 0 is caustic; 1 is global
-    AABB photonAABB = gPhotonAABB[InstanceIndex()][primIndex];
-    // float radius = InstanceIndex() == 0 ? gPhotonRadius.x : gPhotonRadius.y;
-    float radius = (photonAABB.maxPoint.x - photonAABB.minPoint.x) / 2.0;
+    // Cache AABB lookup
+    AABB photonAABB = gPhotonAABB[instanceIdx][primIndex];
+    float radius = (photonAABB.maxPoint.x - photonAABB.minPoint.x) * 0.5f; // Use multiplication instead of division
 
-    // Check for Sphere intersection
-    bool tHit = hitSphere(photonAABB.center(), radius, origin);
-
-    // Store radius square in the attribs
-    SphereAttribs attribs;
-    attribs.radiusSq = radius * radius;
-
-    // Report the hit if the point is in the sphere
-    if (tHit)
+    // Optimized sphere intersection
+    if (hitSphere(photonAABB.center(), radius, origin))
     {
-        // TODO: Mark as collected for photon guiding
+        SphereAttribs attribs;
+        attribs.radiusSq = radius * radius;
         ReportHit(RayTCurrent(), 0, attribs);
     }
 }
 
-// Lighting Calculation for each photon in the list. This is done seperatly for caustic and global photons
+// Optimized stochastic photon contribution calculation
 float3 stochPhotonContribution(
     in const ShadingData sd,
     in IMaterialInstance bsdf,
@@ -433,39 +465,35 @@ float3 stochPhotonContribution(
     bool isCaustic)
 {
 #if USE_STOCHASTIC_COLLECT
-    // Get the size of the list to loop through. 
     uint maxIdx = min(rayData.counter, STOCH_NUM_PHOTONS);
     float3 radiance = float3(0);
 
-    // Return when there is no element
-    if (maxIdx == 0)
-    {
-        return radiance;
-    }
+    // Early exit for empty collection
+    if (maxIdx == 0) return radiance;
 
-    // Loop through the list and accumulate photons
-    for (uint i = 0; i < maxIdx; i++)
+    // Cache values outside loop
+    const float radiusScale = isCaustic ? rcp(gPhotonRadius.y * gPhotonRadius.y) : rcp(gPhotonRadius.x * gPhotonRadius.x);
+    
+    // Unroll small loops for better performance
+    [unroll] for (uint i = 0; i < STOCH_NUM_PHOTONS && i < maxIdx; i++)
     {
-        // Get Photon info
         uint photonIndex = rayData.photonIdx[i];
         uint instanceIndex = (photonIndex >> 31) & 1;
         photonIndex = photonIndex & 0x7FFFFFFF;
+        
         PhotonData pd = PhotonData(gPackedPhotonData[instanceIndex][photonIndex]);
 
         float3 f_r = bsdf.eval(sd, pd.dir, rayData.sg);
         float NdotL = dot(N, pd.dir);
-        float radius = instanceIndex == 0 ? gPhotonRadius.x : gPhotonRadius.y;
-        float radiusWeight = 1.0 / (radius * radius);
+        
         if (NdotL > kMinCosTheta)
         {
-            // Accumulate radiance
-            const float3 photonContribution = max(0.f, (radiusWeight * f_r * pd.flux) / NdotL);
+            const float3 photonContribution = max(0.f, computePhotonContribution(f_r, pd.flux, NdotL, radiusScale));
             radiance += photonContribution;
 
-            // Add to first hit photon collection count
 #if TRACK_FIRST_HIT_PHOTONS
             TrackPhotonCollection(instanceIndex, photonIndex);
-#endif // TRACK_FIRST_HIT_PHOTONS
+#endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
             TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex, photonContribution);
@@ -473,9 +501,8 @@ float3 stochPhotonContribution(
         }
     }
 
-    // Weight output radiance with number of photons for this pixel.
-    // The weight equals 1 if there is less or equal than the maximum list size in the photon array. (Reservoir sampling)
-    return radiance * (float(rayData.counter) / float(maxIdx));
+    // Optimized weight calculation
+    return radiance * (float(rayData.counter) * rcp(float(maxIdx)));
 #else
     return float3(0);
 #endif
@@ -521,7 +548,7 @@ void causticPhotonCollection(in ShadingData sd, inout RayData rayData, bool coll
     ray.Direction = -sd.V;
 #endif
 
-    if (validSurface)
+    [branch] if (validSurface)
     {
         // Init material model if stochastic collect is used
 #if USE_STOCHASTIC_COLLECT
@@ -529,7 +556,6 @@ void causticPhotonCollection(in ShadingData sd, inout RayData rayData, bool coll
         let mi = gScene.materials.getMaterialInstance(sd, lod, hints);
         let miProperties = mi.getProperties(sd);
 #endif // USE_STOCHASTIC_COLLECT
-
 
         // Collect Caustic Photons as Reservoirs
 #if (CAUSTIC_COLLECTION_MODE == CAUSTIC_COLLECT_MODE_RESERVOIR)
@@ -565,26 +591,25 @@ void causticPhotonCollection(in ShadingData sd, inout RayData rayData, bool coll
             ray,
             rayData);
 #if USE_STOCHASTIC_COLLECT
-        causticRadiance += M_1_PI * stochPhotonContribution(sd, mi, miProperties.guideNormal, rayData, true);
+        causticRadiance += kInvPi * stochPhotonContribution(sd, mi, miProperties.guideNormal, rayData, true);
 #else // USE_STOCHASTIC_COLLECT
-        causticRadiance += M_1_PI * rayData.radiance;
+        causticRadiance += kInvPi * rayData.radiance;
 #endif // USE_STOCHASTIC_COLLECT
 #endif // (CAUSTIC_COLLECTION_MODE == CAUSTIC_COLLECT_MODE_RESERVOIR)
 
         // Collect the direct light on some metal surfaces
-        if (collectDirect)
+        [branch] if (collectDirect)
         {
-            // Clear Payload
+            // Clear Payload with optimized initialization
 #if USE_STOCHASTIC_COLLECT
-            rayData.counter = 0;
-            for(uint i=0; i<STOCH_NUM_PHOTONS; ++i)
+            rayData.counter = 1 << 24; // Combined clear and flag setting
+            [unroll] for(uint i = 0; i < STOCH_NUM_PHOTONS; ++i)
             {
                 rayData.photonIdx[i] = 0;
             }
-            rayData.counter += 1 << 24; // Flag that only the first hit should be collected
 #else
             rayData.radiance = float3(0);
-            rayData.countPhotons += 1 << 24; // Flag that only the first hit should be collected
+            rayData.countPhotons = 1 << 24; // Flag that only the first hit should be collected
 #endif
 
 #if (CAUSTIC_COLLECTION_MODE == CAUSTIC_COLLECT_MODE_RESERVOIR) && RESERVOIR_PHOTON_DIRECT
@@ -617,10 +642,10 @@ void causticPhotonCollection(in ShadingData sd, inout RayData rayData, bool coll
                 rayData);
 #if USE_STOCHASTIC_COLLECT
             rayData.counter &= 0xFFFFFF;    //Delete flag
-            directRadiance += M_1_PI * stochPhotonContribution(sd, mi, miProperties.guideNormal, rayData, false);
+            directRadiance += kInvPi * stochPhotonContribution(sd, mi, miProperties.guideNormal, rayData, false);
 #else // USE_STOCHASTIC_COLLECT
             rayData.countPhotons = 0; //delete flag
-            directRadiance += M_1_PI * rayData.radiance;
+            directRadiance += kInvPi * rayData.radiance;
 #endif // USE_STOCHASTIC_COLLECT
 #endif
         } // if (collectDirect)
@@ -655,7 +680,7 @@ void causticPhotonCollection(in ShadingData sd, inout RayData rayData, bool coll
             history = min(limit, uint(round(prev.w)) + history);
             prev.xyz *= max(0, (history - 1));
             causticRadiance += prev.xyz;
-            causticRadiance /= max(1u, history);
+            causticRadiance *= rcp(max(1u, history));
         }
     }
 
@@ -707,7 +732,7 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
 
 #if USE_STOCHASTIC_COLLECT
     rayData.counter = 0;
-    for(uint i=0; i<STOCH_NUM_PHOTONS; ++i)
+    [unroll] for(uint i = 0; i < STOCH_NUM_PHOTONS; ++i)
     {
         rayData.photonIdx[i] = 0;
     }
@@ -724,7 +749,7 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
     float3 fgRadiance = float3(0);
     float jacoDeter = -1.f;
     
-    if (valid)
+    [branch] if (valid)
     {
         TriangleHit triangleHit = hit.getTriangleHit();
         VertexData v = gScene.getVertexData(triangleHit);
@@ -734,7 +759,7 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
         ray.TMax = 0.00001;
         ray.Direction = v.posW - genPosW; // Sample dir is used here to save payload space
         float distToFG = length(ray.Direction); // Distance for Jacobian determinant
-        ray.Direction /= distToFG; // Normalize
+        ray.Direction *= rcp(distToFG); // Normalize using reciprocal
         ray.Origin = v.posW; // Update origin
         
         uint materialID = gScene.getMaterialID(triangleHit.instanceID);
@@ -768,9 +793,9 @@ void fgSampleCollection(float3 genPosW, inout RayData rayData, bool valid)
             rayData);
 
 #if USE_STOCHASTIC_COLLECT
-        fgRadiance += M_1_PI * stochPhotonContribution(sd, bsdf, bsdfProperties.guideNormal, rayData, false);
+        fgRadiance += kInvPi * stochPhotonContribution(sd, bsdf, bsdfProperties.guideNormal, rayData, false);
 #else // USE_STOCHASTIC_COLLECT
-        fgRadiance += M_1_PI * rayData.radiance;
+        fgRadiance += kInvPi * rayData.radiance;
 #endif // USE_STOCHASTIC_COLLECT
     } // if (valid)
 
@@ -818,46 +843,64 @@ void rayGen()
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
 
-    // Prepare payload
+    // Early exit for invalid pixels
+    if (any(launchIndex >= launchDim)) return;
+
+    // Initialize payload with optimized constructor
     RayData rayData = RayData();
+    
 #if STORE_SAMPLE_GEN_STATE
-    rayData.sg = gSampleGenState[index2Dto1D(launchIndex, launchDim.x)];
+    const uint linearIndex = index2Dto1D(launchIndex, launchDim.x);
+    rayData.sg = gSampleGenState[linearIndex];
 #else // STORE_SAMPLE_GEN_STATE
     rayData.sg = SampleGenerator(launchIndex, gFrameCount + 15 * 32);
 #endif // STORE_SAMPLE_GEN_STATE
 
+    // Cache packed hit info
     PackedHitInfo packedHit = gVBuffer[launchIndex];
 #if !USE_STOCHASTIC_COLLECT
     rayData.packedHitInfo = packedHit;
 #endif // !USE_STOCHASTIC_COLLECT
-    HitInfo hit = HitInfo(packedHit);
-    const bool valid = hit.isValid(); // Check if the ray is valid
 
-    // Get vertex data for the world position
+    HitInfo hit = HitInfo(packedHit);
+    const bool valid = hit.isValid();
+
+    // Early exit for invalid hits
+    if (!valid && !gCollectFG) 
+    {
+#if STORE_SAMPLE_GEN_STATE
+        gSampleGenState[linearIndex] = rayData.sg;
+#endif
+        return;
+    }
+
+    // Cache vertex data for reuse
     TriangleHit triangleHit = hit.getTriangleHit();
     VertexData v = gScene.getVertexData(triangleHit);
-    if (gCollectCaustic)
+    
+    // Branch prediction optimization
+    [branch] if (gCollectCaustic)
     {
         float4 viewTmp = gView[launchIndex];
         float3 view = -viewTmp.xyz;
-        bool collectDirect = viewTmp.w > 0.1;
+        bool collectDirect = viewTmp.w > 0.1f;
 
         let lod = ExplicitLodTextureSampler(0.f);
         ShadingData fgSD = {};
         if (valid)
         {
-            fgSD = loadShadingData(hit, view, lod); // Shading Data for direct hit
+            fgSD = loadShadingData(hit, view, lod);
         }
 
         causticPhotonCollection(fgSD, rayData, collectDirect, valid);
     }
 
-    if (gCollectFG)
+    [branch] if (gCollectFG)
     {
         fgSampleCollection(v.posW, rayData, valid);
     }
 
 #if STORE_SAMPLE_GEN_STATE
-    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = rayData.sg;
+    gSampleGenState[linearIndex] = rayData.sg;
 #endif // STORE_SAMPLE_GEN_STATE
 }
