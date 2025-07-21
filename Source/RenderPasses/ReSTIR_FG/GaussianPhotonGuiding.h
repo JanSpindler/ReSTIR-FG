@@ -153,8 +153,7 @@ private:
     constexpr float GetPositionScaling() const { return m_Cb / GetSceneSize(); }
 
     void GenerateCausticPoints(
-        RenderContext* pRenderContext,
-        const uint geometryInstanceID,
+        const size_t geomInstanceIdx,
         const std::span<PackedStaticVertexData>& vertexData,
         const std::span<uint32_t>& indexData
     );

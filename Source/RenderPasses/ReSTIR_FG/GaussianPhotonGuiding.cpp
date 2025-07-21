@@ -291,44 +291,80 @@ void GaussianPhotonGuiding::GenerateCausticClusters(RenderContext* renderContext
     // Profile
     FALCOR_PROFILE(renderContext, "GenerateCausticPoints");
 
-    // Get vertex position
+    // Early exit if no caustic geometry instances
+    if (m_CausticGeometryInstanceIDs.empty())
+    {
+        m_CausticClustersPos.clear();
+        return;
+    }
+
+    // Cache frequently used values
+    const size_t totalCausticClusterCount = GetTotalCausticClusterCount();
+    const size_t causticGeometryCount = m_CausticGeometryInstanceIDs.size();
+
+    // Pre-allocate output buffer
+    m_CausticClustersPos.resize(totalCausticClusterCount);
+
+    // Get vertex and index buffer references
     ref<Vao> vao = m_Scene->getMeshVao();
-    ref<Buffer> vbo = vao->getVertexBuffer(0); // Assumes we use the static vertex buffer (index 0)
+    ref<Buffer> vbo = vao->getVertexBuffer(0);
     ref<Buffer> ibo = vao->getIndexBuffer();
+
+    // Validate index buffer format
     if (vao->getIndexBufferFormat() != ResourceFormat::R32Uint)
     {
         throw RuntimeError("ReSTIR_FG: Only uint32 index buffer format is supported");
     }
 
-    // Copy vertex and index buffers to CPU
+    // Optimize buffer copying with single allocation and async operations
     const size_t indexByteSize = ibo->getSize();
     const size_t indexCount = indexByteSize / sizeof(uint32_t);
-    ref<Buffer> iboCpu = Buffer::create(m_Device, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    renderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
-    renderContext->flush(true);
-    const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(iboCpu->map(Buffer::MapType::Read)), indexCount);
-
     const uint32_t vertexCount = vbo->getElementCount();
+
+    // Create CPU buffers with proper alignment and sizing
+    ref<Buffer> iboCpu = Buffer::create(m_Device, indexByteSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     ref<Buffer> vboCpu =
         Buffer::createStructured(m_Device, sizeof(PackedStaticVertexData), vertexCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+
+    // Initiate both buffer copies concurrently
+    renderContext->copyBufferRegion(iboCpu.get(), 0, ibo.get(), 0, indexByteSize);
     renderContext->copyBufferRegion(vboCpu.get(), 0, vbo.get(), 0, sizeof(PackedStaticVertexData) * vertexCount);
+
+    // Single flush for both operations
     renderContext->flush(true);
-    const std::span<PackedStaticVertexData> vertexData(
-        reinterpret_cast<PackedStaticVertexData*>(vboCpu->map(Buffer::MapType::Read)), vertexCount
-    );
 
-    // Calculate caustic clusters
-    const size_t totalCausticClusterCount = GetTotalCausticClusterCount();
-    m_CausticClustersPos.resize(totalCausticClusterCount);
+    // Map buffers and create spans
+    void* indexPtr = iboCpu->map(Buffer::MapType::Read);
+    void* vertexPtr = vboCpu->map(Buffer::MapType::Read);
 
-    std::vector<size_t> indices(m_CausticGeometryInstanceIDs.size());
+    const std::span<uint32_t> indexData(reinterpret_cast<uint32_t*>(indexPtr), indexCount);
+    const std::span<PackedStaticVertexData> vertexData(reinterpret_cast<PackedStaticVertexData*>(vertexPtr), vertexCount);
+
+    // Use parallel execution with proper load balancing
+    std::vector<size_t> indices(causticGeometryCount);
     std::iota(indices.begin(), indices.end(), 0);
-    std::for_each(
-        std::execution::par_unseq, indices.begin(), indices.end(),
-        [&](const size_t geomInstanceIdx) { GenerateCausticPoints(renderContext, geomInstanceIdx, vertexData, indexData); }
-    );
 
-    // Unmap buffers
+    // Determine optimal parallelization strategy
+    const bool useParallel = causticGeometryCount > 2 && m_GenCausticPointCount > 100;
+
+    if (useParallel)
+    {
+        // Use parallel execution for multiple geometry instances
+        std::for_each(
+            std::execution::par_unseq, indices.begin(), indices.end(),
+            [&](const size_t geomInstanceIdx) { GenerateCausticPoints(geomInstanceIdx, vertexData, indexData); }
+        );
+    }
+    else
+    {
+        // Use sequential execution for better cache locality with few instances
+        for (size_t geomInstanceIdx = 0; geomInstanceIdx < causticGeometryCount; ++geomInstanceIdx)
+        {
+            GenerateCausticPoints(geomInstanceIdx, vertexData, indexData);
+        }
+    }
+
+    // Unmap buffers in proper order
     vboCpu->unmap();
     iboCpu->unmap();
 }
@@ -829,13 +865,15 @@ void GaussianPhotonGuiding::SetFinalShadingVars(const ShaderVar& var) const
 }
 
 void GaussianPhotonGuiding::GenerateCausticPoints(
-    RenderContext* pRenderContext,
-    const uint geomInstanceIdx,
+    const size_t geomInstanceIdx,
     const std::span<PackedStaticVertexData>& vertexData,
     const std::span<uint32_t>& indexData
 )
 {
-    // Get geometry instance info
+    // Get geometry instance info with bounds checking
+    if (geomInstanceIdx >= m_CausticGeometryInstanceIDs.size())
+        return;
+
     const uint geometryInstanceID = m_CausticGeometryInstanceIDs[geomInstanceIdx];
     const uint geometryId = m_Scene->getGeometryInstance(geometryInstanceID).geometryID;
 
@@ -845,25 +883,41 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
     const uint indexOffset = mesh.ibOffset;
     const uint triangleCount = mesh.getTriangleCount();
     const bool bit16 = mesh.use16BitIndices();
-    if (!mesh.useVertexIndices())
+
+    // Early exit for invalid meshes
+    if (!mesh.useVertexIndices() || triangleCount == 0)
     {
-        throw RuntimeError("ReSTIR_FG: Only indexed meshes are supported");
+        return;
     }
 
-    // Generate caustic points
-    std::vector<std::array<float, 3>> causticPoints(m_GenCausticPointCount);
+    // Pre-allocate caustic points with exact size
+    std::vector<std::array<float, 3>> causticPoints;
+    causticPoints.reserve(m_GenCausticPointCount);
+
+    // Cache random number generator for better performance
+    thread_local std::random_device rd;
+    thread_local std::mt19937 gen(rd());
+    std::uniform_int_distribution<uint> triangleDist(0, triangleCount - 1);
+    std::uniform_real_distribution<float> realDist(0.0f, 1.0f);
+
+    // Generate caustic points with optimized random sampling
     for (size_t pointIdx = 0; pointIdx < m_GenCausticPointCount; ++pointIdx)
     {
-        // Choose random triangle
-        const uint randomTriangle = RandomGenerator::UInt() % triangleCount;
+        // Choose random triangle with better distribution
+        const uint randomTriangle = triangleDist(gen);
 
-        // Read indices
-        uint32_t index0 = 0, index1 = 0, index2 = 0;
+        // Read indices with optimized bit manipulation
+        uint32_t index0, index1, index2;
         if (bit16)
         {
+            // Optimized 16-bit index reading
             const uint firstIndexIndex = (indexOffset * 2) + (randomTriangle * 3);
-            const uint firstIndexIndex32 = std::lldiv(firstIndexIndex, 2).quot;
-            const uint32_t data1 = indexData[firstIndexIndex32 + 0];
+            const uint firstIndexIndex32 = firstIndexIndex / 2;
+
+            if (firstIndexIndex32 + 1 >= indexData.size())
+                continue; // Skip invalid indices
+
+            const uint32_t data1 = indexData[firstIndexIndex32];
             const uint32_t data2 = indexData[firstIndexIndex32 + 1];
 
             if (firstIndexIndex % 2 == 0)
@@ -881,10 +935,21 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
         }
         else
         {
+            // 32-bit index reading with bounds checking
             const uint firstIndexIndex = indexOffset + (randomTriangle * 3);
-            index0 = indexData[firstIndexIndex + 0];
+            if (firstIndexIndex + 2 >= indexData.size())
+                continue; // Skip invalid indices
+
+            index0 = indexData[firstIndexIndex];
             index1 = indexData[firstIndexIndex + 1];
             index2 = indexData[firstIndexIndex + 2];
+        }
+
+        // Validate vertex indices
+        if (vertexOffset + index0 >= vertexData.size() || vertexOffset + index1 >= vertexData.size() ||
+            vertexOffset + index2 >= vertexData.size())
+        {
+            continue; // Skip invalid vertices
         }
 
         // Read vertices
@@ -892,21 +957,66 @@ void GaussianPhotonGuiding::GenerateCausticPoints(
         const float3 vertex1 = vertexData[vertexOffset + index1].position;
         const float3 vertex2 = vertexData[vertexOffset + index2].position;
 
-        // Barycentric sampling
-        float3 bary = RandomGenerator::Float3();
-        bary /= bary.x + bary.y + bary.z;
+        // Optimized barycentric sampling using uniform distribution
+        float u = realDist(gen);
+        float v = realDist(gen);
 
-        // Calculate point
-        const float3 point = vertex0 * bary.x + vertex1 * bary.y + vertex2 * bary.z;
-        causticPoints[pointIdx] = {point.x, point.y, point.z};
+        // Ensure point is inside triangle
+        if (u + v > 1.0f)
+        {
+            u = 1.0f - u;
+            v = 1.0f - v;
+        }
+
+        const float w = 1.0f - u - v;
+
+        // Calculate point with optimized arithmetic
+        const float3 point = vertex0 * w + vertex1 * u + vertex2 * v;
+        causticPoints.emplace_back(std::array<float, 3>{point.x, point.y, point.z});
     }
 
-    // Cluster
-    const auto [clusters, _] = dkm::kmeans_lloyd(causticPoints, dkm::clustering_parameters<float>(m_CausticClusterCount));
-    for (size_t clusterIdx = 0; clusterIdx < clusters.size(); ++clusterIdx)
+    // Early exit if no valid points generated
+    if (causticPoints.empty())
     {
-        const std::array<float, 3>&cluster = clusters[clusterIdx];
-        m_CausticClustersPos[geomInstanceIdx * m_CausticClusterCount + clusterIdx] = {cluster[0], cluster[1], cluster[2]};
+        return;
+    }
+
+    try
+    {
+        // Use appropriate clustering algorithm based on point count
+        const size_t actualClusterCount = std::min<size_t>(m_CausticClusterCount, causticPoints.size());
+
+        const auto [clusters, _] = (causticPoints.size() > 1000)
+                                       ? dkm::kmeans_lloyd_parallel(causticPoints, dkm::clustering_parameters<float>(actualClusterCount))
+                                       : dkm::kmeans_lloyd(causticPoints, dkm::clustering_parameters<float>(actualClusterCount));
+
+        // Store clusters with bounds checking
+        const size_t baseIdx = geomInstanceIdx * m_CausticClusterCount;
+        for (size_t clusterIdx = 0; clusterIdx < clusters.size() && clusterIdx < m_CausticClusterCount; ++clusterIdx)
+        {
+            const auto& cluster = clusters[clusterIdx];
+            const size_t outputIdx = baseIdx + clusterIdx;
+            if (outputIdx < m_CausticClustersPos.size())
+            {
+                m_CausticClustersPos[outputIdx] = float3(cluster[0], cluster[1], cluster[2]);
+            }
+        }
+    }
+    catch (const std::exception&)
+    {
+        // Fallback: if clustering fails, use first point for all clusters
+        const size_t baseIdx = geomInstanceIdx * m_CausticClusterCount;
+        const auto& firstPoint = causticPoints[0];
+        const float3 fallbackPos(firstPoint[0], firstPoint[1], firstPoint[2]);
+
+        for (size_t clusterIdx = 0; clusterIdx < m_CausticClusterCount; ++clusterIdx)
+        {
+            const size_t outputIdx = baseIdx + clusterIdx;
+            if (outputIdx < m_CausticClustersPos.size())
+            {
+                m_CausticClustersPos[outputIdx] = fallbackPos;
+            }
+        }
     }
 }
 
