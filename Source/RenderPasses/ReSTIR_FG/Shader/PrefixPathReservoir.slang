@@ -1,160 +1,112 @@
 import Utils.Sampling.SampleGenerator;
 import Utils.Color.ColorHelpers;
+import Scene.HitInfo;
+
+static const float MAX_CONFIDENCE = 20.0f;
+
+struct PrefixPath
+{
+    float3 throughput;
+    PackedHitInfo hitInfo;
+    float4 viewDir;
+    float rayDist;
+    float hitT;
+    uint seed;
+    uint length;
+
+    __init()
+    {
+        throughput = float3(0.0f, 0.0f, 0.0f);
+        hitInfo = {};
+        viewDir = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        rayDist = 0.0f;
+        hitT = 0.0f;
+        seed = 0;
+        length = 0;
+    }
+
+    float GetLuminance()
+    {
+        return luminance(throughput);
+    }
+};
 
 struct PrefixPathReservoir
 {
-    // Jacobian is always 1 because we only perform random replay
+    PrefixPath path;
+    float weightSum;
+    float confidence;
 
-    // Path data
-    float3 F;
-    uint length; // Number of vertices inlcuding primary hit.
-    uint sgSeed; // State of sample generator right before generating this path
-
-    // Resampling data
-    float M;
-    float weight;
-    
-    // Empty init
-    [mutating]
     __init()
     {
-        F = float3(0.0f, 0.0f, 0.0f);
-        length = 0;
-        sgSeed = 0;
-        M = 0.0f;
-        weight = 0.0f;
+        path = PrefixPath();
+        weightSum = 0.0f;
+        confidence = 0.0f;
     }
 
-    [mutating]
-    bool Add(const float3 inF, const float p, inout SampleGenerator sg)
+    __init(const in PrefixPath initialPath, const float samplingPdf)
     {
-        M += 1.0f;
-
-        const float w = luminance(inF) / p;
-        if (isnan(w) || w <= 0.0f)
+        path = initialPath;
+        weightSum = initialPath.GetLuminance() / samplingPdf;
+        if (isnan(weightSum) || isinf(weightSum))
         {
-            return false;
+            weightSum = 0.0f;
         }
-        weight += w;
-
-        if (sampleNext1D(sg) * weight <= w)
-        {
-            F = inF;
-            // PHat = pHat but we are using PSS
-            return true;
-        }
-        return false;
+        confidence = 1.0f;
     }
 
-    [mutating]
-    bool Merge(
-        const float3 inF,
-        const float inJacobian,
-        const in PrefixPathReservoir inRes,
-        inout SampleGenerator sg,
-        const float misWeight = 1.0f,
-        const bool forceAdd = false)
+    float GetW()
     {
-        M += inRes.M;
-
-        const float w = luminance(inF) * inJacobian * inRes.M * inRes.weight * misWeight;
-        if (isnan(w) || w <= 0.0f)
+        const float pHat = path.GetLuminance();
+        if (isnan(pHat) || isinf(pHat) || pHat <= 0.0f)
         {
-            return false;
+            return 0.0f;
         }
-        weight += w;
-
-        if (forceAdd || sampleNext1D(sg) * weight <= w)
-        {
-            F = inF;
-            length = inRes.length;
-            sgSeed = inRes.sgSeed;
-            return true;
-        }
-        return false;
+        return weightSum / pHat;
     }
 
-    [mutating]
-    bool MergeWithResamplingMIS(
-        const float3 inF,
-        const float inJacobian,
-        const in PrefixPathReservoir inRes,
-        inout SampleGenerator sg,
-        const float misWeight = 1.0f,
-        const bool forceAdd = false)
+    [mutating] void Update(const in PrefixPath otherPath, const float samplingPdf, inout SampleGenerator sg)
     {
-        M += inRes.M;
-
-        const float w = luminance(inF) * inJacobian * inRes.weight * misWeight;
-        if (isnan(w) || w <= 0.0f)
-        {
-            return false;
-        }
-        weight += w;
-
-        if (forceAdd || sampleNext1D(sg) * weight <= w)
-        {
-            F = inF;
-            length = inRes.length;
-            sgSeed = inRes.sgSeed;
-            return true;
-        }
-        return false;
-    }
-
-    [mutating]
-    bool MergeInSamplePixel(const in PrefixPathReservoir inRes, inout SampleGenerator sg)
-    {
-        M += inRes.M;
-
-        const float w = inRes.weight;
-        if (isnan(w) || w <= 0.0f)
-        {
-            return false;
-        }
-        weight += w;
-
-        if (sampleNext1D(sg) * weight <= w)
-        {
-            F = inRes.F;
-            length = inRes.length;
-            sgSeed = inRes.sgSeed;
-            return true;
-        }
-        return false;
-    }
-
-    [mutating]
-    void PrepareMerging()
-    {
-        weight *= luminance(F) * M;
-    }
-
-    [mutating]
-    void FinalizeRIS()
-    {
-        const float pHat = luminance(F);
-        if (pHat <= 0.0f || M <= 0.0f)
+        float weight = otherPath.GetLuminance() / samplingPdf;
+        if (isnan(weight) || isinf(weight))
         {
             weight = 0.0f;
         }
-        else
+
+        confidence += 1.0f;
+        confidence = max(confidence, MAX_CONFIDENCE);
+
+        weightSum += weight;
+        if (sampleNext1D(sg) < weight / weightSum)
         {
-            weight /= pHat * M;
+            path = otherPath;
         }
     }
 
-    [mutating]
-    void FinalizeGRIS()
+    [mutating] void Merge(
+        const in PrefixPathReservoir otherRes,
+        const float3 shiftedThroughput,
+        const float misWeight,
+        const float jacobian,
+        inout SampleGenerator sg)
     {
-        const float pHat = luminance(F);
-        if (pHat <= 0.0f)
+        float weight = misWeight * luminance(shiftedThroughput) * otherRes.GetW() * jacobian;
+        if (isnan(weight) || isinf(weight))
         {
             weight = 0.0f;
         }
-        else
+
+        confidence += otherRes.confidence;
+        confidence = max(confidence, MAX_CONFIDENCE);
+
+        weightSum += weight;
+        if (sampleNext1D(sg) < (weight * otherRes.confidence) / (weightSum * confidence))
         {
-            weight /= pHat;
+            path.throughput = shiftedThroughput;
+            path.hitInfo = otherRes.path.hitInfo;
+            path.viewDir = otherRes.path.viewDir;
+            path.rayDist = otherRes.path.rayDist;
+            path.hitT = otherRes.path.hitT;
         }
     }
 };

@@ -171,10 +171,9 @@ void rayGen()
 #endif
 
 #if PREFIX_RESTIR
-    PrefixPathReservoir prefixRes;
-    prefixRes.sgSeed = sg.rng.state;
-    prefixRes.weight = 1.0f;
-    prefixRes.M = 1.0f;
+    PrefixPath prefixPath;
+    prefixPath.seed = sg.rng.state;
+    float prefixPathSamplingPdf = 1.0f;
 #endif
     
     // Get first valid(diffuse) Surface
@@ -253,8 +252,8 @@ void rayGen()
         isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
 
 #if PREFIX_RESTIR
-        ++prefixRes.length;
-        prefixRes.weight *= bsdfSample.pdf;
+        ++prefixPath.length;
+        prefixPathSamplingPdf *= bsdfSample.pdf;
 #endif
 
         // If the BSDF sample is invalid or the surface is diffuse, exit
@@ -369,8 +368,12 @@ void rayGen()
 
     // Finalize prefix restir
 #if PREFIX_RESTIR
-    prefixRes.F = thp;
-    gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = prefixRes;
+    prefixPath.throughput = thp;
+    prefixPath.hitInfo = gOutVBuffer[launchIndex];
+    prefixPath.viewDir = gOutViewDir[launchIndex];
+    prefixPath.rayDist = gOutRayDist[launchIndex];
+    prefixPath.hitT = hitT;
+    gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = PrefixPathReservoir(prefixPath, prefixPathSamplingPdf);
 #endif
 
     // Debug
