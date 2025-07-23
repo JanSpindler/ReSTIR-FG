@@ -1,6 +1,7 @@
 import Utils.Sampling.SampleGenerator;
 import Utils.Color.ColorHelpers;
 import Scene.HitInfo;
+import Scene.RaytracingInline;
 
 static const float MAX_CONFIDENCE = 20.0f;
 
@@ -13,6 +14,7 @@ struct PrefixPath
     float hitT;
     uint seed;
     uint length;
+    uint deltaFlags;
 
     __init()
     {
@@ -23,11 +25,22 @@ struct PrefixPath
         hitT = 0.0f;
         seed = 0;
         length = 0;
+        deltaFlags = 0;
     }
 
     float GetLuminance()
     {
         return luminance(throughput);
+    }
+
+    [mutating] void SetDeltaEvent(const uint idx)
+    {
+        deltaFlags |= (1u << idx);
+    }
+
+    bool IsDeltaEvent(const uint idx)
+    {
+        return (deltaFlags & (1u << idx)) != 0;
     }
 };
 
@@ -110,3 +123,20 @@ struct PrefixPathReservoir
         }
     }
 };
+
+bool ShiftPrefixPath(
+    const in PrefixPath currentPath,
+    const in HitInfo currentHit,
+    const in PrefixPath otherPath,
+    const in HitInfo otherHit,
+    out float3 shiftedThroughput,
+    out float jacobian)
+{
+    // Trace shifted path using random replay
+
+    // Check if the shifted path is actually shiftable (delta events, etc.)
+
+    shiftedThroughput = float3(0.0f);
+    jacobian = 1.0f;
+    return true;
+}

@@ -357,7 +357,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     // Prefix restir
     if (mRenderMode == RenderMode::ReSTIRFG and m_PrefixRestir.IsActive())
     {
-        m_PrefixRestir.Run(pRenderContext, renderData);
+        m_PrefixRestir.Run(pRenderContext, renderData, mpViewDirRayDistDI);
     }
 
     // Output the debug mask directly after the specular trace pass

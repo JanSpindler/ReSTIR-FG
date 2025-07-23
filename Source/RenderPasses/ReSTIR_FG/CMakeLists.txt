@@ -48,7 +48,7 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/GaussianRepulsion.cs.slang
 
     Shader/PrefixPathReservoir.slang
-    Shader/PrefixPathResampling.rt.slang
+    Shader/PrefixPathResampling.cs.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

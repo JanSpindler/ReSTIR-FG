@@ -1,7 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-
 #include "Utils/Sampling/SampleGeneratorType.slangh"
+
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;

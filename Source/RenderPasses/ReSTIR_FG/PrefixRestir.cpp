@@ -23,18 +23,22 @@ static const std::string kPrefixPathResamplingPassFile = "RenderPasses/ReSTIR_FG
 
 static const uint32_t kNeighborOffsetCount = 8192;
 
+struct PrefixPath
+{
+    float3 throughput;
+    uint4 hitInfo; // PackedHitInfo
+    float4 viewDir;
+    float rayDist;
+    float hitT;
+    uint seed;
+    uint length;
+};
+
 struct PrefixPathReservoir
 {
-    // Jacobian is always 1 because we only perform random replay
-
-    // Path data
-    float3 F;
-    uint length; // Number of vertices inlcuding primary hit.
-    uint sgSeed; // State of sample generator right before generating this path
-
-    // Resampling data
-    float M;
-    float weight;
+    PrefixPath path;
+    float weightSum;
+    float confidence;
 };
 
 PrefixRestir::PrefixRestir(ref<Device> pDevice, DefineList defines) : m_Device(pDevice), m_Defines(defines)
@@ -82,8 +86,17 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
 
 void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
+    // Check if all materials are instances of Falcor::StandardMaterial
+    for (auto material : pScene->getMaterials())
+    {
+        const StandardMaterial* standardMaterial = dynamic_cast<StandardMaterial*>(material.get());
+        FALCOR_ASSERT(standardMaterial);
+    }
+
+    // Store and check if frostbite brdf is used
     m_Scene = pScene;
     m_Defines.add(m_Scene->getSceneDefines());
+    FALCOR_ASSERT(m_Defines["DiffuseBrdf"] == "DiffuseBrdfFrostbite");
     m_FrameCount = 0;
 }
 
@@ -100,15 +113,42 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
     return changed;
 }
 
-void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData)
+void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData, ref<Texture> viewDirBuf)
 {
+    FALCOR_PROFILE(pRenderContext, "PrefixRestir");
+
     if (m_FrameCount > 0)
     {
+        // Init shader
+        if (!m_PrefixResamplingPass)
+        {
+            Program::Desc desc;
+            desc.addShaderModules(m_Scene->getShaderModules());
+            desc.addShaderLibrary("RenderPasses/ReSTIR_FG/Shader/PrefixPathResampling.cs.slang").csEntry("main").setShaderModel("6_5");
+            desc.addTypeConformances(m_Scene->getTypeConformances());
+
+            m_PrefixResamplingPass = ComputePass::create(m_Device, desc, m_Defines, true);
+        }
+        FALCOR_ASSERT(m_PrefixResamplingPass);
+
+        // Set variables
+        auto var = m_PrefixResamplingPass->getRootVar();
+
+        var["CB"]["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
+
+        var["gVBuffer"] = renderData[kInputVBuffer]->asTexture();
+        var["gVBufferPrev"] = m_TemporalVBuffer;
+        var["gViewDirRayDistDI"] = viewDirBuf;
+        var["gMotionVectors"] = renderData[kInputVBuffer]->asTexture();
+        var["gCurrentReservoirs"] = m_OutputReservoirs;
+        var["gTemporalReservoirs"] = m_TemporalReservoirs;
+
+        // Execute
+        m_PrefixResamplingPass->execute(pRenderContext, uint3(m_ScreenSize, 1));
     }
 
     pRenderContext->copyResource(m_TemporalReservoirs.get(), m_OutputReservoirs.get());
     pRenderContext->copyResource(m_TemporalVBuffer.get(), renderData[kInputVBuffer].get());
-
     ++m_FrameCount;
 }
 

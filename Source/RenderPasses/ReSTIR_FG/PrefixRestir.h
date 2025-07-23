@@ -14,7 +14,7 @@ public:
     void PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize);
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     bool RenderUI(Gui::Widgets& widget);
-    void Run(RenderContext* pRenderContext, const RenderData& renderData);
+    void Run(RenderContext* pRenderContext, const RenderData& renderData, ref<Texture> viewDirBuf);
 
     DefineList GetDefines() const;
 
@@ -39,9 +39,7 @@ private:
     bool m_UseMaxHistory = true;
     uint m_TemporalHistoryLength = 20;
 
-    ref<ComputePass> m_TracePass;
-    ref<ComputePass> m_TemporalPathRetracePass;
-    ref<ComputePass> m_TemporalReusePass;
+    ref<ComputePass> m_PrefixResamplingPass;
 
     void PrefixResampling(RenderContext* pRenderContext, const RenderData& renderData);
 };
