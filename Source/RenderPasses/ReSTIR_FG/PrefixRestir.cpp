@@ -107,13 +107,21 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Prefix ReSTIR"))
     {
         // Active
-        changed |= group.checkbox("Adaptive Light Sampler", m_Active);
+        changed |= group.checkbox("Prefix ReSTIR", m_Active);
     }
 
     return changed;
 }
 
-void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderData, ref<Texture> viewDirBuf)
+void PrefixRestir::Run(
+    RenderContext* pRenderContext,
+    const RenderData& renderData,
+    ref<Texture> viewDirBuf,
+    const bool alphaTest,
+    const float2 roughnessCutoff,
+    const float diffuseCutoff,
+    const bool requireDiffuseMat
+)
 {
     FALCOR_PROFILE(pRenderContext, "PrefixRestir");
 
@@ -127,14 +135,28 @@ void PrefixRestir::Run(RenderContext* pRenderContext, const RenderData& renderDa
             desc.addShaderLibrary("RenderPasses/ReSTIR_FG/Shader/PrefixPathResampling.cs.slang").csEntry("main").setShaderModel("6_5");
             desc.addTypeConformances(m_Scene->getTypeConformances());
 
-            m_PrefixResamplingPass = ComputePass::create(m_Device, desc, m_Defines, true);
+            DefineList defines = m_Defines;
+            defines.add("USE_ALPHA_TEST", alphaTest ? "1" : "0");
+            defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN", std::to_string(roughnessCutoff.x));
+            defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MAX", std::to_string(roughnessCutoff.y));
+            defines.add("TRACE_TRANS_SPEC_DIFFUSEPART_CUTOFF", std::to_string(diffuseCutoff));
+            m_PrefixResamplingPass = ComputePass::create(m_Device, desc, defines, true);
         }
         FALCOR_ASSERT(m_PrefixResamplingPass);
+
+        // Defines
+        m_PrefixResamplingPass->addDefine("USE_ALPHA_TEST", alphaTest ? "1" : "0");
+        m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN", std::to_string(roughnessCutoff.x));
+        m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MAX", std::to_string(roughnessCutoff.y));
+        m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_DIFFUSEPART_CUTOFF", std::to_string(diffuseCutoff));
 
         // Set variables
         auto var = m_PrefixResamplingPass->getRootVar();
 
         var["CB"]["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
+        var["CB"]["gFrameDim"] = m_ScreenSize;
+        var["CB"]["gFrameCount"] = m_FrameCount;
+        var["CB"]["gRequDiffParts"] = requireDiffuseMat;
 
         var["gVBuffer"] = renderData[kInputVBuffer]->asTexture();
         var["gVBufferPrev"] = m_TemporalVBuffer;

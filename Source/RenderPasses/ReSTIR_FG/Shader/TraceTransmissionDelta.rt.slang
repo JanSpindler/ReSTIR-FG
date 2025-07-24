@@ -253,6 +253,10 @@ void rayGen()
 
 #if PREFIX_RESTIR
         ++prefixPath.length;
+        if (bsdfSample.isLobe(LobeType::Delta))
+        {
+            prefixPath.SetDeltaEvent(i);
+        }
         prefixPathSamplingPdf *= bsdfSample.pdf;
 #endif
 
@@ -368,11 +372,11 @@ void rayGen()
 
     // Finalize prefix restir
 #if PREFIX_RESTIR
-    prefixPath.throughput = thp;
-    prefixPath.hitInfo = gOutVBuffer[launchIndex];
-    prefixPath.viewDir = gOutViewDir[launchIndex];
-    prefixPath.rayDist = gOutRayDist[launchIndex];
-    prefixPath.hitT = hitT;
+    prefixPath.throughput = thp * prefixPathSamplingPdf;
+    prefixPath.endHitInfo = gOutVBuffer[launchIndex];
+    prefixPath.endViewDir = gOutViewDir[launchIndex];
+    prefixPath.endRayDist = gOutRayDist[launchIndex];
+    prefixPath.endHitT = hitT;
     gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = PrefixPathReservoir(prefixPath, prefixPathSamplingPdf);
 #endif
 

@@ -8,10 +8,10 @@ static const float MAX_CONFIDENCE = 20.0f;
 struct PrefixPath
 {
     float3 throughput;
-    PackedHitInfo hitInfo;
-    float4 viewDir;
-    float rayDist;
-    float hitT;
+    PackedHitInfo endHitInfo;
+    float4 endViewDir;
+    float endRayDist;
+    float endHitT;
     uint seed;
     uint length;
     uint deltaFlags;
@@ -19,10 +19,10 @@ struct PrefixPath
     __init()
     {
         throughput = float3(0.0f, 0.0f, 0.0f);
-        hitInfo = {};
-        viewDir = float4(0.0f, 0.0f, 0.0f, 0.0f);
-        rayDist = 0.0f;
-        hitT = 0.0f;
+        endHitInfo = {};
+        endViewDir = float4(0.0f, 0.0f, 0.0f, 0.0f);
+        endRayDist = 0.0f;
+        endHitT = 0.0f;
         seed = 0;
         length = 0;
         deltaFlags = 0;
@@ -116,27 +116,10 @@ struct PrefixPathReservoir
         if (sampleNext1D(sg) < (weight * otherRes.confidence) / (weightSum * confidence))
         {
             path.throughput = shiftedThroughput;
-            path.hitInfo = otherRes.path.hitInfo;
-            path.viewDir = otherRes.path.viewDir;
-            path.rayDist = otherRes.path.rayDist;
-            path.hitT = otherRes.path.hitT;
+            path.endHitInfo = otherRes.path.endHitInfo;
+            path.endViewDir = otherRes.path.endViewDir;
+            path.endRayDist = otherRes.path.endRayDist;
+            path.endHitT = otherRes.path.endHitT;
         }
     }
 };
-
-bool ShiftPrefixPath(
-    const in PrefixPath currentPath,
-    const in HitInfo currentHit,
-    const in PrefixPath otherPath,
-    const in HitInfo otherHit,
-    out float3 shiftedThroughput,
-    out float jacobian)
-{
-    // Trace shifted path using random replay
-
-    // Check if the shifted path is actually shiftable (delta events, etc.)
-
-    shiftedThroughput = float3(0.0f);
-    jacobian = 1.0f;
-    return true;
-}

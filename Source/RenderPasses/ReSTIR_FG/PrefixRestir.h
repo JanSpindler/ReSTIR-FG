@@ -14,7 +14,15 @@ public:
     void PrepareBuffers(RenderContext* pRenderContext, const uint2 screenSize);
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     bool RenderUI(Gui::Widgets& widget);
-    void Run(RenderContext* pRenderContext, const RenderData& renderData, ref<Texture> viewDirBuf);
+    void Run(
+        RenderContext* pRenderContext,
+        const RenderData& renderData,
+        ref<Texture> viewDirBuf,
+        const bool alphaTest,
+        const float2 roughnessCutoff,
+        const float diffuseCutoff,
+        const bool requireDiffuseMat
+    );
 
     DefineList GetDefines() const;
 
