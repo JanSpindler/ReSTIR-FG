@@ -94,6 +94,52 @@ static __forceinline__ __device__ GaussianTerms ComputeGaussianTerms(const Gauss
     return terms;
 }
 
+// Common gradient computation logic (extracted to eliminate duplication)
+struct GradientComponents
+{
+    float3 meanDeriv;
+    float pSigmaDeriv;
+};
+
+static __forceinline__ __device__ GradientComponents
+ComputeGradientComponents(const GaussianTerms& terms, const float3& positionDiff, const float pdfFactor, const float softmaxWeight)
+{
+    GradientComponents components;
+
+    // Mean gradient - optimized computation
+    components.meanDeriv = (pdfFactor * softmaxWeight * terms.normTerm * terms.unormGaussian * terms.invSigma2) * positionDiff;
+
+    // Sigma gradient - combine terms efficiently
+    const float distanceSquared = lengthSquared(positionDiff);
+    const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
+    const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
+    const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
+    components.pSigmaDeriv =
+        pdfFactor * softmaxWeight * (terms.normTerm * derivUnormGaussian + normTermDeriv * terms.unormGaussian) * terms.sigmaDeriv;
+
+    return components;
+}
+
+// Common atomic gradient accumulation (extracted to eliminate duplication)
+static __forceinline__ __device__ void AccumulateGradients(
+    Gaussian3D* __restrict__ gradients,
+    const uint gaussianIdx,
+    const GradientComponents& components,
+    const float weightDeriv
+)
+{
+    if (CheckNumeric(components.meanDeriv.x))
+        atomicAdd(&gradients[gaussianIdx].mean.x, -components.meanDeriv.x);
+    if (CheckNumeric(components.meanDeriv.y))
+        atomicAdd(&gradients[gaussianIdx].mean.y, -components.meanDeriv.y);
+    if (CheckNumeric(components.meanDeriv.z))
+        atomicAdd(&gradients[gaussianIdx].mean.z, -components.meanDeriv.z);
+    if (CheckNumeric(components.pSigmaDeriv))
+        atomicAdd(&gradients[gaussianIdx].pSigma, -components.pSigmaDeriv);
+    if (CheckNumeric(weightDeriv))
+        atomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+}
+
 // Optimized DerivGmm for better register usage
 static __forceinline__ __device__ void DerivGmm_Optimized(
     const Gaussian3D* __restrict__ gaussians,
@@ -129,17 +175,9 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             const float softmaxWeight = softmaxWeights[gaussianIdx];
             const GaussianTerms& terms = allTerms[idx];
 
-            // Mean gradient - optimized computation
+            // Compute gradient components using common function
             const float3 positionDiff = position - gaussian.mean;
-            const float3 meanDeriv = (pdfFactor * softmaxWeight * terms.normTerm * terms.unormGaussian * terms.invSigma2) * positionDiff;
-
-            // Sigma gradient - combine terms efficiently
-            const float distanceSquared = lengthSquared(positionDiff);
-            const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
-            const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
-            const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
-            const float pSigmaDeriv =
-                pdfFactor * softmaxWeight * (terms.normTerm * derivUnormGaussian + normTermDeriv * terms.unormGaussian) * terms.sigmaDeriv;
+            const GradientComponents components = ComputeGradientComponents(terms, positionDiff, pdfFactor, softmaxWeight);
 
             // Weight gradient using cached terms
             float weightDeriv = 0.0f;
@@ -152,17 +190,8 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             }
             weightDeriv *= pdfFactor;
 
-            // Accumulate gradients using atomic operations (no warp reduction since each thread handles different light sources)
-            if (CheckNumeric(meanDeriv.x))
-                atomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
-            if (CheckNumeric(meanDeriv.y))
-                atomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
-            if (CheckNumeric(meanDeriv.z))
-                atomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
-            if (CheckNumeric(pSigmaDeriv))
-                atomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
-            if (CheckNumeric(weightDeriv))
-                atomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+            // Accumulate gradients using common function
+            AccumulateGradients(gradients, gaussianIdx, components, weightDeriv);
         }
     }
     else
@@ -175,17 +204,9 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             const GaussianTerms terms = ComputeGaussianTerms(gaussian, position, cS);
             const float softmaxWeight = softmaxWeights[gaussianIdx];
 
-            // Mean gradient
+            // Compute gradient components using common function
             const float3 positionDiff = position - gaussian.mean;
-            const float3 meanDeriv = (pdfFactor * softmaxWeight * terms.normTerm * terms.unormGaussian * terms.invSigma2) * positionDiff;
-
-            // Sigma gradient
-            const float distanceSquared = lengthSquared(positionDiff);
-            const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
-            const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
-            const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
-            const float pSigmaDeriv =
-                pdfFactor * softmaxWeight * (terms.normTerm * derivUnormGaussian + normTermDeriv * terms.unormGaussian) * terms.sigmaDeriv;
+            const GradientComponents components = ComputeGradientComponents(terms, positionDiff, pdfFactor, softmaxWeight);
 
             // Weight gradient - compute on demand to save registers
             float weightDeriv = 0.0f;
@@ -199,17 +220,8 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             }
             weightDeriv *= pdfFactor;
 
-            // Accumulate gradients using atomic operations (no warp reduction since each thread handles different light sources)
-            if (CheckNumeric(meanDeriv.x))
-                atomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
-            if (CheckNumeric(meanDeriv.y))
-                atomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
-            if (CheckNumeric(meanDeriv.z))
-                atomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
-            if (CheckNumeric(pSigmaDeriv))
-                atomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
-            if (CheckNumeric(weightDeriv))
-                atomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+            // Accumulate gradients using common function
+            AccumulateGradients(gradients, gaussianIdx, components, weightDeriv);
         }
     }
 }
