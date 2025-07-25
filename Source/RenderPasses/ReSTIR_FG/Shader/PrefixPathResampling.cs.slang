@@ -37,33 +37,61 @@ uint index2Dto1D(uint2 idx, uint width)
     return idx.x + width * idx.y;
 }
 
+bool isValidPixel(int2 pixel, uint2 frameDim)
+{
+    return pixel.x >= 0 && pixel.y >= 0 && 
+           pixel.x < (int)frameDim.x && pixel.y < (int)frameDim.y;
+}
+
 // Temporal resampling using random replay shift
 [numthreads(16, 16, 1)]
 void main(uint3 launchIdx : SV_DispatchThreadID)
 {
     // Out of bounds
     const uint2 pixel = launchIdx.xy;
-    if (any(pixel > gFrameDim))
+    if (any(pixel >= gFrameDim))
     {
         return;
     }
 
-    // Get prev pixel
-    int2 prevPixel = pixel;
+    // Get prev pixel - FIXED motion vector calculation
+    int2 prevPixel = (int2)pixel;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     if (gEnableTemporalReprojection)
     {
-        prevPixel += gMotionVectors[pixel] * gFrameDim + (sampleNext2D(sg) * 1.f - 0.f);
+        float2 motionVec = gMotionVectors[pixel];
+        // Motion vectors are typically in normalized screen space [-1,1] or pixel space
+        // Convert to pixel coordinates properly
+        prevPixel = (int2)pixel + (int2)(motionVec * (float2)gFrameDim);
+        
+        // Add small jitter for temporal sampling
+        float2 jitter = (sampleNext2D(sg) - 0.5f) * 2.0f; // [-1, 1]
+        prevPixel += (int2)jitter;
+    }
+
+    // CRITICAL FIX: Validate previous pixel bounds
+    if (!isValidPixel(prevPixel, gFrameDim))
+    {
+        return; // Skip if previous pixel is out of bounds
     }
 
     // Load the current reservoir
     const uint linearPixelIdx = index2Dto1D(pixel, gFrameDim.x);
-    const uint prevLinearPixelIdx = index2Dto1D(prevPixel, gFrameDim.x);
+    const uint prevLinearPixelIdx = index2Dto1D((uint2)prevPixel, gFrameDim.x);
+    
+    // SAFETY CHECK: Validate buffer indices
+    const uint maxBufferSize = gFrameDim.x * gFrameDim.y;
+    if (linearPixelIdx >= maxBufferSize || prevLinearPixelIdx >= maxBufferSize)
+    {
+        return;
+    }
+    
     PrefixPathReservoir currentReservoir = gCurrentReservoirs[linearPixelIdx];
     PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
 
-    // If the path is invalid or has found diffuse surface on first hit, exit
-    if (currentReservoir.path.length <= 1 || prevReservoir.path.length <= 1)
+    // FIXED: More robust validation - check for reasonable path lengths
+    if (currentReservoir.path.length <= 1 || prevReservoir.path.length <= 1 ||
+        currentReservoir.path.length > 16 || prevReservoir.path.length > 16)
     {
         return;
     }
@@ -84,7 +112,7 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
 
     // Load shading data
     const float3 camViewDir = gViewDirRayDistDI[pixel].xyz;
-    const float3 prevCamViewDir = camViewDir; // TODO
+    const float3 prevCamViewDir = camViewDir; // TODO: Should use proper previous camera view direction
     const ShadingData currentSd = LoadShadingData(currentHit, -camViewDir, ExplicitLodTextureSampler(0.0f));
     const ShadingData prevSd = LoadShadingData(prevHit, -prevCamViewDir, ExplicitLodTextureSampler(0.0f));
 
@@ -101,7 +129,4 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
         shiftedThroughput,
         jacobian
     );
-
-    // Store the updated reservoir back to the buffer
-    //gCurrentReservoirs[pixel.x + pixel.y * gCurrentReservoirs.Length] = currentReservoir;
 }

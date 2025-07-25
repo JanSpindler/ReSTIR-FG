@@ -8,6 +8,12 @@ import Scene.Scene;
 import Scene.HitInfo;
 import Scene.Shading;
 import Rendering.Materials.TexLODTypes;
+import Scene.RaytracingInline;
+import Utils.Math.Ray;
+
+#if !SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
+#error "This file requires SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH) to be true."
+#endif
 
 static const float kDemodulateMinReflectance = 0.01f;
 static const float kRoughnessMin = TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN;
@@ -19,16 +25,27 @@ bool ShiftPrefixPath(
     const in PrefixPath currentPath,
     const in ShadingData currentPrimarySd,
     const in HitInfo currenHit,
-    const in PrefixPath otherPath,
+                     const in PrefixPath otherPath,
     const float3 camPos,
     const bool requDiffParts,
-    out float3 shiftedThroughput,
+                     out float3 shiftedThroughput,
     out float jacobian)
 {
+    // CRITICAL FIX: Validate input path length
+    if (otherPath.length == 0 || otherPath.length > 16)
+    {
+        shiftedThroughput = float3(0.0f);
+        jacobian = 0.0f;
+        return false;
+    }
+
     // Trace shifted path using random replay
     uint newPathLength = 0;
     uint newPathDeltaFlags = 0;
     float rayDist = 0.0f;
+
+    float3 throughput = float3(1.0f);
+    float samplingPdf = 1.0f;
 
     SampleGenerator sg = SampleGenerator(otherPath.seed);
     let lod = ExplicitLodTextureSampler(0.f);
@@ -37,7 +54,10 @@ bool ShiftPrefixPath(
     float3 viewDir = currentPrimarySd.V;
     ShadingData sd = currentPrimarySd;
 
-    for (uint vertexIdx = 0; vertexIdx < otherPath.length; ++vertexIdx)
+    bool validTracing = true;
+
+    // FIXED: Add reasonable loop bounds
+    for (uint vertexIdx = 0; vertexIdx < min(otherPath.length, 16u); ++vertexIdx)
     {
         if (vertexIdx != 0)
         {
@@ -56,30 +76,76 @@ bool ShiftPrefixPath(
         // Sample BSDF
         BSDFSample bsdfSample;
         const bool validBSDF = bsdf.sample(sd, sg, bsdfSample);
+        if (!validBSDF)
+        {
+            validTracing = false;
+            break;
+        }
 
         // Determine if surface is diffuse
         const bool isTransmission = validBSDF ? bsdfSample.isLobe(LobeType::Transmission) : false;
         const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
-            (bsdfProperties.diffuseReflectionAlbedo +
-            bsdfProperties.specularReflectionAlbedo +
-             bsdfProperties.diffuseTransmissionAlbedo +
-            bsdfProperties.specularTransmissionAlbedo);
+            max(bsdfProperties.diffuseReflectionAlbedo +
+                bsdfProperties.specularReflectionAlbedo +
+                    bsdfProperties.diffuseTransmissionAlbedo +
+                bsdfProperties.specularTransmissionAlbedo, float3(1e-8f));
         const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3.0f;
         const bool hasDiffuseParts = requDiffParts ?
             (meanDiffuseProb > kDiffuseCutoff) || bsdfProperties.roughness > kRoughnessMax :
-            true; // Check if surface is diffuse or above the roughness threshold
-        const bool isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
+            true;
+        const bool isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission;
+
+        ++newPathLength;
+        if (bsdfSample.isLobe(LobeType::Delta))
+        {
+            newPathDeltaFlags |= (1u << vertexIdx);
+        }
+        samplingPdf *= max(bsdfSample.pdf, 1e-8f); // Avoid division by zero
+
+        // Exit if the surface is diffuse
+        if (isDiffuse)
+        {
+            break;
+        }
+
+        // Update throughput
+        throughput *= bsdfSample.weight;
+
+        // Trace next ray, because surface was not diffuse
+        Ray ray;
+        ray.origin = sd.computeNewRayOrigin(!isTransmission);
+        ray.tMin = 0.0001f;
+        ray.tMax = 10000.f;
+        ray.dir = bsdfSample.wo;
+
+        float hitT;
+        SceneRayQuery<kAlphaTest> sceneRayQuery;
+        const bool traceSuccess = sceneRayQuery.traceRay(ray, hitInfo, hitT, RAY_FLAG_NONE, 0xFF);
+
+        // FIXED: Correct logic - break when ray MISSES (doesn't hit anything)
+        if (!traceSuccess)
+        {
+            validTracing = false;
+            break;
+        }
+
+        // FIXED: Update ray parameters for next iteration
+        viewDir = -bsdfSample.wo;
+        rayDist += hitT;
     }
 
+    // Factor out the pdf from the throughput
+    throughput = samplingPdf > 1e-8f ? throughput / samplingPdf : float3(0.0f);
+
     // Check if the shifted path is actually shiftable (delta events, etc.)
-    if (newPathLength != currentPath.length || newPathDeltaFlags != currentPath.deltaFlags)
+    if (newPathLength != currentPath.length || newPathDeltaFlags != currentPath.deltaFlags || !validTracing)
     {
         shiftedThroughput = float3(0.0f);
         jacobian = 0.0f;
         return false;
     }
 
-    shiftedThroughput = float3(0.0f);
+    shiftedThroughput = throughput;
     jacobian = 1.0f;
     return true;
 }

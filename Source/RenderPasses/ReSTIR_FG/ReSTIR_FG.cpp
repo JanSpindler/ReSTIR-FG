@@ -359,7 +359,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         m_PrefixRestir.Run(
             pRenderContext, renderData, mpViewDirRayDistDI, mPhotonUseAlphaTest, mTraceRoughnessCutoff, mTraceDiffuseCutoff,
-            mTraceRequireDiffuseMat
+            mTraceRequireDiffuseMat, mpSampleGenerator
         );
     }
 

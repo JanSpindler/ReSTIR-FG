@@ -26,12 +26,13 @@ static const uint32_t kNeighborOffsetCount = 8192;
 struct PrefixPath
 {
     float3 throughput;
-    uint4 hitInfo; // PackedHitInfo
-    float4 viewDir;
-    float rayDist;
-    float hitT;
+    uint4 endHitInfo; // Assume no HIT_INFO_USE_COMPRESSION
+    float4 endViewDir;
+    float endRayDist;
+    float endHitT;
     uint seed;
     uint length;
+    uint deltaFlags;
 };
 
 struct PrefixPathReservoir
@@ -68,6 +69,7 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
             m_Device, sizeof(PrefixPathReservoir), pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
+        pRenderContext->clearUAV(m_OutputReservoirs->getUAV().get(), uint4(0));
     }
 
     if (!m_TemporalReservoirs)
@@ -76,6 +78,7 @@ void PrefixRestir::PrepareBuffers(RenderContext* pRenderContext, const uint2 scr
             m_Device, sizeof(PrefixPathReservoir), pixelCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
             Buffer::CpuAccess::None, nullptr, false
         );
+        pRenderContext->clearUAV(m_TemporalReservoirs->getUAV().get(), uint4(0));
     }
 
     if (!m_TemporalVBuffer)
@@ -120,7 +123,8 @@ void PrefixRestir::Run(
     const bool alphaTest,
     const float2 roughnessCutoff,
     const float diffuseCutoff,
-    const bool requireDiffuseMat
+    const bool requireDiffuseMat,
+    ref<SampleGenerator> sampleGenerator
 )
 {
     FALCOR_PROFILE(pRenderContext, "PrefixRestir");
@@ -140,6 +144,7 @@ void PrefixRestir::Run(
             defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN", std::to_string(roughnessCutoff.x));
             defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MAX", std::to_string(roughnessCutoff.y));
             defines.add("TRACE_TRANS_SPEC_DIFFUSEPART_CUTOFF", std::to_string(diffuseCutoff));
+            defines.add(m_Scene->getSceneDefines());
             m_PrefixResamplingPass = ComputePass::create(m_Device, desc, defines, true);
         }
         FALCOR_ASSERT(m_PrefixResamplingPass);
@@ -152,6 +157,8 @@ void PrefixRestir::Run(
 
         // Set variables
         auto var = m_PrefixResamplingPass->getRootVar();
+        m_Scene->setRaytracingShaderData(pRenderContext, var);
+        sampleGenerator->setShaderData(var);
 
         var["CB"]["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
         var["CB"]["gFrameDim"] = m_ScreenSize;
@@ -161,7 +168,7 @@ void PrefixRestir::Run(
         var["gVBuffer"] = renderData[kInputVBuffer]->asTexture();
         var["gVBufferPrev"] = m_TemporalVBuffer;
         var["gViewDirRayDistDI"] = viewDirBuf;
-        var["gMotionVectors"] = renderData[kInputVBuffer]->asTexture();
+        var["gMotionVectors"] = renderData[kInputMotionVectors]->asTexture();
         var["gCurrentReservoirs"] = m_OutputReservoirs;
         var["gTemporalReservoirs"] = m_TemporalReservoirs;
 
