@@ -32,12 +32,12 @@ Texture2D<float2> gMotionVectors;
 RWStructuredBuffer<PrefixPathReservoir> gCurrentReservoirs;
 StructuredBuffer<PrefixPathReservoir> gTemporalReservoirs;
 
-uint index2Dto1D(uint2 idx, uint width)
+uint Index2Dto1D(uint2 idx, uint width)
 {
     return idx.x + width * idx.y;
 }
 
-bool isValidPixel(int2 pixel, uint2 frameDim)
+bool IsValidPixel(int2 pixel, uint2 frameDim)
 {
     return pixel.x >= 0 && pixel.y >= 0 && 
            pixel.x < (int)frameDim.x && pixel.y < (int)frameDim.y;
@@ -59,25 +59,20 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     if (gEnableTemporalReprojection)
     {
-        float2 motionVec = gMotionVectors[pixel];
-        // Motion vectors are typically in normalized screen space [-1,1] or pixel space
-        // Convert to pixel coordinates properly
-        prevPixel = (int2)pixel + (int2)(motionVec * (float2)gFrameDim);
-        
-        // Add small jitter for temporal sampling
-        float2 jitter = (sampleNext2D(sg) - 0.5f) * 2.0f; // [-1, 1]
+        prevPixel = (int2)pixel + (int2)(gMotionVectors[pixel] * (float2)gFrameDim);
+        const float2 jitter = (sampleNext2D(sg) - 0.5f) * 2.0f; // [-1, 1]
         prevPixel += (int2)jitter;
     }
 
-    // CRITICAL FIX: Validate previous pixel bounds
-    if (!isValidPixel(prevPixel, gFrameDim))
+    // Skip if previous pixel is out of bounds
+    if (!IsValidPixel(prevPixel, gFrameDim))
     {
-        return; // Skip if previous pixel is out of bounds
+        return;
     }
 
     // Load the current reservoir
-    const uint linearPixelIdx = index2Dto1D(pixel, gFrameDim.x);
-    const uint prevLinearPixelIdx = index2Dto1D((uint2)prevPixel, gFrameDim.x);
+    const uint linearPixelIdx = Index2Dto1D(pixel, gFrameDim.x);
+    const uint prevLinearPixelIdx = Index2Dto1D((uint2)prevPixel, gFrameDim.x);
     
     // SAFETY CHECK: Validate buffer indices
     const uint maxBufferSize = gFrameDim.x * gFrameDim.y;
@@ -89,9 +84,8 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     PrefixPathReservoir currentReservoir = gCurrentReservoirs[linearPixelIdx];
     PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
 
-    // FIXED: More robust validation - check for reasonable path lengths
-    if (currentReservoir.path.length <= 1 || prevReservoir.path.length <= 1 ||
-        currentReservoir.path.length > 16 || prevReservoir.path.length > 16)
+    // Check for reasonable path lengths
+    if (currentReservoir.path.length <= 1 || prevReservoir.path.length <= 1)
     {
         return;
     }

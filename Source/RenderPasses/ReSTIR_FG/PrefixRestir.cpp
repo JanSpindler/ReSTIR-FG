@@ -123,8 +123,7 @@ void PrefixRestir::Run(
     const bool alphaTest,
     const float2 roughnessCutoff,
     const float diffuseCutoff,
-    const bool requireDiffuseMat,
-    ref<SampleGenerator> sampleGenerator
+    const bool requireDiffuseMat
 )
 {
     FALCOR_PROFILE(pRenderContext, "PrefixRestir");
@@ -158,7 +157,6 @@ void PrefixRestir::Run(
         // Set variables
         auto var = m_PrefixResamplingPass->getRootVar();
         m_Scene->setRaytracingShaderData(pRenderContext, var);
-        sampleGenerator->setShaderData(var);
 
         var["CB"]["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
         var["CB"]["gFrameDim"] = m_ScreenSize;

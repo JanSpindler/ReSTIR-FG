@@ -25,14 +25,14 @@ bool ShiftPrefixPath(
     const in PrefixPath currentPath,
     const in ShadingData currentPrimarySd,
     const in HitInfo currenHit,
-                     const in PrefixPath otherPath,
+    const in PrefixPath otherPath,
     const float3 camPos,
     const bool requDiffParts,
-                     out float3 shiftedThroughput,
+    out float3 shiftedThroughput,
     out float jacobian)
 {
-    // CRITICAL FIX: Validate input path length
-    if (otherPath.length == 0 || otherPath.length > 16)
+    // Validate input path length
+    if (otherPath.length == 0)
     {
         shiftedThroughput = float3(0.0f);
         jacobian = 0.0f;
@@ -56,7 +56,6 @@ bool ShiftPrefixPath(
 
     bool validTracing = true;
 
-    // FIXED: Add reasonable loop bounds
     for (uint vertexIdx = 0; vertexIdx < min(otherPath.length, 16u); ++vertexIdx)
     {
         if (vertexIdx != 0)
@@ -87,7 +86,7 @@ bool ShiftPrefixPath(
         const float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo /
             max(bsdfProperties.diffuseReflectionAlbedo +
                 bsdfProperties.specularReflectionAlbedo +
-                    bsdfProperties.diffuseTransmissionAlbedo +
+                bsdfProperties.diffuseTransmissionAlbedo +
                 bsdfProperties.specularTransmissionAlbedo, float3(1e-8f));
         const float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3.0f;
         const bool hasDiffuseParts = requDiffParts ?
@@ -100,7 +99,7 @@ bool ShiftPrefixPath(
         {
             newPathDeltaFlags |= (1u << vertexIdx);
         }
-        samplingPdf *= max(bsdfSample.pdf, 1e-8f); // Avoid division by zero
+        samplingPdf *= bsdfSample.pdf;
 
         // Exit if the surface is diffuse
         if (isDiffuse)
@@ -121,15 +120,13 @@ bool ShiftPrefixPath(
         float hitT;
         SceneRayQuery<kAlphaTest> sceneRayQuery;
         const bool traceSuccess = sceneRayQuery.traceRay(ray, hitInfo, hitT, RAY_FLAG_NONE, 0xFF);
-
-        // FIXED: Correct logic - break when ray MISSES (doesn't hit anything)
         if (!traceSuccess)
         {
             validTracing = false;
             break;
         }
 
-        // FIXED: Update ray parameters for next iteration
+        // Update ray parameters for next iteration
         viewDir = -bsdfSample.wo;
         rayDist += hitT;
     }

@@ -21,8 +21,7 @@ public:
         const bool alphaTest,
         const float2 roughnessCutoff,
         const float diffuseCutoff,
-        const bool requireDiffuseMat,
-        ref<SampleGenerator> sampleGenerator
+        const bool requireDiffuseMat
     );
 
     DefineList GetDefines() const;
