@@ -8,10 +8,9 @@
 
 using uint = uint32_t; // For syntax highlighting
 
-static constexpr float SQRT_8_PI3 = 15.7496099457224197f;
 static constexpr float PI = 3.14159265358979323846f;
-static constexpr float INV_SQRT_8_PI3 = 1.0f / SQRT_8_PI3;
-static constexpr float INV_2PI = 1.0f / (2.0f * PI);
+static constexpr float SQRT_2PI_CUBED = 15.74960994572241974429064599; // sqrtf((2.0f * PI) * (2.0f * PI) * (2.0f * PI)); // √((2π)³)
+static constexpr float INV_SQRT_2PI_CUBED = 1.0f / SQRT_2PI_CUBED;
 
 static __forceinline__ __device__ bool CheckNumeric(const float x)
 {
@@ -95,33 +94,7 @@ static __forceinline__ __device__ GaussianTerms ComputeGaussianTerms(const Gauss
     return terms;
 }
 
-// Warp-level reduction for float values with unroll
-static __forceinline__ __device__ float WarpReduceSum(float val)
-{
-#pragma unroll
-    for (int offset = warpSize / 2; offset > 0; offset /= 2)
-    {
-        val += __shfl_down_sync(0xFFFFFFFF, val, offset);
-    }
-    return val;
-}
-
-// Optimized warp atomic add
-static __forceinline__ __device__ void WarpAtomicAdd(float* dest, float value)
-{
-    if (!CheckNumeric(value))
-        value = 0.0f;
-
-    const int laneId = threadIdx.x & 31;
-    value = WarpReduceSum(value);
-
-    if (laneId == 0 && value != 0.0f)
-    {
-        atomicAdd(dest, value);
-    }
-}
-
-// Simplified and optimized DerivGmm for better register usage
+// Optimized DerivGmm for better register usage
 static __forceinline__ __device__ void DerivGmm_Optimized(
     const Gaussian3D* __restrict__ gaussians,
     Gaussian3D* __restrict__ gradients,
@@ -162,9 +135,9 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
 
             // Sigma gradient - combine terms efficiently
             const float distanceSquared = lengthSquared(positionDiff);
-            const float derivUnormGaussian = distanceSquared * terms.unormGaussian * terms.invSigma3;
+            const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
             const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
-            const float normTermDeriv = -3.0f * INV_SQRT_8_PI3 / sigma4;
+            const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
             const float pSigmaDeriv =
                 pdfFactor * softmaxWeight * (terms.normTerm * derivUnormGaussian + normTermDeriv * terms.unormGaussian) * terms.sigmaDeriv;
 
@@ -179,12 +152,17 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             }
             weightDeriv *= pdfFactor;
 
-            // Accumulate gradients using warp reduction
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
-            WarpAtomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
-            WarpAtomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+            // Accumulate gradients using atomic operations (no warp reduction since each thread handles different light sources)
+            if (CheckNumeric(meanDeriv.x))
+                atomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
+            if (CheckNumeric(meanDeriv.y))
+                atomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
+            if (CheckNumeric(meanDeriv.z))
+                atomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
+            if (CheckNumeric(pSigmaDeriv))
+                atomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
+            if (CheckNumeric(weightDeriv))
+                atomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
         }
     }
     else
@@ -203,9 +181,9 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
 
             // Sigma gradient
             const float distanceSquared = lengthSquared(positionDiff);
-            const float derivUnormGaussian = distanceSquared * terms.unormGaussian * terms.invSigma3;
+            const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
             const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
-            const float normTermDeriv = -3.0f * INV_SQRT_8_PI3 / sigma4;
+            const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
             const float pSigmaDeriv =
                 pdfFactor * softmaxWeight * (terms.normTerm * derivUnormGaussian + normTermDeriv * terms.unormGaussian) * terms.sigmaDeriv;
 
@@ -221,12 +199,17 @@ static __forceinline__ __device__ void DerivGmm_Optimized(
             }
             weightDeriv *= pdfFactor;
 
-            // Accumulate gradients
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
-            WarpAtomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
-            WarpAtomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
-            WarpAtomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
+            // Accumulate gradients using atomic operations (no warp reduction since each thread handles different light sources)
+            if (CheckNumeric(meanDeriv.x))
+                atomicAdd(&gradients[gaussianIdx].mean.x, -meanDeriv.x);
+            if (CheckNumeric(meanDeriv.y))
+                atomicAdd(&gradients[gaussianIdx].mean.y, -meanDeriv.y);
+            if (CheckNumeric(meanDeriv.z))
+                atomicAdd(&gradients[gaussianIdx].mean.z, -meanDeriv.z);
+            if (CheckNumeric(pSigmaDeriv))
+                atomicAdd(&gradients[gaussianIdx].pSigma, -pSigmaDeriv);
+            if (CheckNumeric(weightDeriv))
+                atomicAdd(&gradients[gaussianIdx].weight, -weightDeriv);
         }
     }
 }
