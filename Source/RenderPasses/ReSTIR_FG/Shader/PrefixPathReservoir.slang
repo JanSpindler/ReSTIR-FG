@@ -89,6 +89,12 @@ struct PrefixPathReservoir
         confidence = 1.0f;
     }
 
+    [mutating] void Reset()
+    {
+        weightSum = 0.0f;
+        confidence = 0.0f;
+    }
+
     float GetW()
     {
         const float pHat = path.GetLuminance();
@@ -119,12 +125,12 @@ struct PrefixPathReservoir
 
     [mutating] void Merge(
         const in PrefixPathReservoir otherRes,
-        const float3 shiftedThroughput,
+        const PrefixPath shiftedPath,
         const float misWeight,
         const float jacobian,
         inout SampleGenerator sg)
     {
-        float weight = misWeight * luminance(shiftedThroughput) * otherRes.GetW() * jacobian;
+        float weight = misWeight * shiftedPath.GetLuminance() * otherRes.GetW() * jacobian;
         if (isnan(weight) || isinf(weight))
         {
             weight = 0.0f;
@@ -136,11 +142,7 @@ struct PrefixPathReservoir
         weightSum += weight;
         if (sampleNext1D(sg) < (weight * otherRes.confidence) / (weightSum * confidence))
         {
-            path.throughput = shiftedThroughput;
-            path.endHitInfo = otherRes.path.endHitInfo;
-            path.endViewDir = otherRes.path.endViewDir;
-            path.endRayDist = otherRes.path.endRayDist;
-            path.endHitT = otherRes.path.endHitT;
+            path = shiftedPath;
         }
     }
 };

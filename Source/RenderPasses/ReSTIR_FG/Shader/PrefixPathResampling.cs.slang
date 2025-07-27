@@ -80,9 +80,10 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     {
         return;
     }
-    
-    PrefixPathReservoir currentReservoir = gCurrentReservoirs[linearPixelIdx];
-    PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
+
+    // Load reseroirs
+    const PrefixPathReservoir currentReservoir = gCurrentReservoirs[linearPixelIdx];
+    const PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
 
     // Check for reasonable path lengths
     const uint currentLength = currentReservoir.path.GetLength();
@@ -140,4 +141,22 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
         currentIntoPrevPath,
         currentIntoPrevJacobian
     );
+
+    // Calculate Talbot MIS weights
+    const float currentMisWeight = shiftSuccessBackward ?
+        (currentReservoir.path.GetLuminance()) / (
+            (currentReservoir.path.GetLuminance()) +
+            (currentIntoPrevPath.GetLuminance() / currentIntoPrevJacobian)
+        ) : 0.0f;
+    const float prevMisWeight = shiftSuccessForward ?
+        (prevReservoir.path.GetLuminance()) / (
+            (prevReservoir.path.GetLuminance()) +
+            (prevIntoCurrentPath.GetLuminance() / prevIntoCurrentJacobian)
+        ) : 0.0f;
+
+    // RIS
+    // TODO: Optimize RIS process by reducing unnecessary copies
+    gCurrentReservoirs[linearPixelIdx].Reset();
+    gCurrentReservoirs[linearPixelIdx].Merge(currentReservoir, currentReservoir.path, currentMisWeight, 1.0f, sg);
+    gCurrentReservoirs[linearPixelIdx].Merge(prevReservoir, prevIntoCurrentPath, prevMisWeight, prevIntoCurrentJacobian, sg);
 }
