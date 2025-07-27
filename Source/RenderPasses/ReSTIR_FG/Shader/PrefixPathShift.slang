@@ -28,24 +28,24 @@ bool ShiftPrefixPath(
     const in PrefixPath otherPath,
     const float3 camPos,
     const bool requDiffParts,
-    out float3 shiftedThroughput,
+    out PrefixPath shiftedPath,
     out float jacobian)
 {
     // Validate input path length
     if (otherPath.GetLength() != currentPath.GetLength())
     {
-        shiftedThroughput = float3(0.0f);
+        shiftedPath.throughput = float3(0.0f);
         jacobian = 0.0f;
         return false;
     }
 
     // Trace shifted path using random replay
-    uint newPathLength = 0;
-    bool newHasDelta = false;
-    float rayDist = 0.0f;
-
-    float3 throughput = float3(1.0f);
-    float samplingPdf = 1.0f;
+    shiftedPath.throughput = float3(1.0f);
+    shiftedPath.endRayDist = 0.0f;
+    shiftedPath.endHitT = 0.0f;
+    shiftedPath.flags = 0u;
+    shiftedPath.samplingPdf = 1.0f;
+    shiftedPath.seed = otherPath.seed;
 
     SampleGenerator sg = SampleGenerator(otherPath.seed);
     let lod = ExplicitLodTextureSampler(0.f);
@@ -64,7 +64,7 @@ bool ShiftPrefixPath(
         }
         else
         {
-            rayDist = distance(camPos, sd.posW);
+            shiftedPath.endRayDist = distance(camPos, sd.posW);
         }
 
         // Get BSDF
@@ -94,9 +94,12 @@ bool ShiftPrefixPath(
             true;
         const bool isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission;
 
-        ++newPathLength;
-        newHasDelta |= bsdfSample.isLobe(LobeType::Delta);
-        samplingPdf *= bsdfSample.pdf;
+        shiftedPath.SetLength(shiftedPath.GetLength() + 1);
+        if (bsdfSample.isLobe(LobeType::Delta))
+        {
+            shiftedPath.SetDeltaEvent(true);
+        }
+        shiftedPath.samplingPdf *= bsdfSample.pdf;
 
         // Exit if the surface is diffuse
         if (isDiffuse)
@@ -105,7 +108,7 @@ bool ShiftPrefixPath(
         }
 
         // Update throughput
-        throughput *= bsdfSample.weight;
+        shiftedPath.throughput *= bsdfSample.weight;
 
         // Trace next ray, because surface was not diffuse
         Ray ray;
@@ -125,21 +128,23 @@ bool ShiftPrefixPath(
 
         // Update ray parameters for next iteration
         viewDir = -bsdfSample.wo;
-        rayDist += hitT;
+        shiftedPath.endRayDist += hitT;
+        shiftedPath.endHitT += hitT;
     }
 
     // Factor out the pdf from the throughput
-    throughput = samplingPdf > 1e-8f ? throughput / samplingPdf : float3(0.0f);
+    shiftedPath.throughput = shiftedPath.samplingPdf > 0.0f ? shiftedPath.throughput / shiftedPath.samplingPdf : float3(0.0f);
 
     // Check if the shifted path is actually shiftable (delta events, etc.)
-    if (newPathLength != currentPath.GetLength() || newHasDelta != currentPath.HasDeltaEvent() || !validTracing)
+    if (shiftedPath.GetLength() != currentPath.GetLength() || shiftedPath.HasDeltaEvent() != currentPath.HasDeltaEvent() || !validTracing)
     {
-        shiftedThroughput = float3(0.0f);
+        shiftedPath.throughput = float3(0.0f);
         jacobian = 0.0f;
         return false;
     }
 
-    shiftedThroughput = throughput;
-    jacobian = 1.0f;
+    shiftedPath.endHitInfo = hitInfo.getData();
+    shiftedPath.endViewDir = float4(viewDir, 0.0f); // 4th component is unused because we do not reuse direct illumination from other path
+    jacobian = otherPath.samplingPdf / shiftedPath.samplingPdf;
     return true;
 }

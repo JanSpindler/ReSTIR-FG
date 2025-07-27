@@ -27,9 +27,9 @@ struct PrefixPath
         endRayDist = 0.0f;
         endHitT = 0.0f;
 
-        flags = 0;
+        flags = 0u;
         samplingPdf = 0.0f;
-        seed = 0;
+        seed = 0u;
     }
 
     float GetLuminance()

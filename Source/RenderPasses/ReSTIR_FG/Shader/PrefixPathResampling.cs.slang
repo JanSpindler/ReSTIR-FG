@@ -85,7 +85,9 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
 
     // Check for reasonable path lengths
-    if (currentReservoir.path.GetLength() <= 1 || prevReservoir.path.GetLength() <= 1)
+    const uint currentLength = currentReservoir.path.GetLength();
+    const uint prevLength = prevReservoir.path.GetLength();
+    if (currentLength <= 1 || currentLength != prevLength)
     {
         return;
     }
@@ -111,16 +113,31 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     const ShadingData prevSd = LoadShadingData(prevHit, -prevCamViewDir, ExplicitLodTextureSampler(0.0f));
 
     // Shift prev path into current domain
-    float3 shiftedThroughput;
-    float jacobian;
-    bool shiftSuccess = ShiftPrefixPath(
+    const float3 camPos = gScene.camera.getPosition();
+    PrefixPath prevIntoCurrentPath;
+    float prevIntoCurrentJacobian;
+    const bool shiftSuccessForward = ShiftPrefixPath(
         currentReservoir.path,
         currentSd,
         currentHit,
         prevReservoir.path,
-        gScene.camera.getPosition(),
+        camPos,
         gRequDiffParts,
-        shiftedThroughput,
-        jacobian
+        prevIntoCurrentPath,
+        prevIntoCurrentJacobian
+    );
+
+    // Shift current path into previous domain
+    PrefixPath currentIntoPrevPath;
+    float currentIntoPrevJacobian;
+    const bool shiftSuccessBackward = ShiftPrefixPath(
+        prevReservoir.path,
+        prevSd,
+        prevHit,
+        currentReservoir.path,
+        camPos,
+        gRequDiffParts,
+        currentIntoPrevPath,
+        currentIntoPrevJacobian
     );
 }

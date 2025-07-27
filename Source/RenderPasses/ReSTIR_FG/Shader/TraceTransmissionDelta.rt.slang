@@ -156,7 +156,6 @@ void rayGen()
 
     let lod = ExplicitLodTextureSampler(0.f);
     float hitT = 0.f;
-    uint wasTracedMask = 0;
 
     TraceData traceData = TraceData::create();
 
@@ -291,8 +290,7 @@ void rayGen()
         viewDir = -bsdfSample.wo;
         rayDist += traceData.distance;
         hitT += traceData.distance;
-        wasTracedMask = 1;
-
+        
         // Write DirectHit surfaces hits only for transmission or delta reflection hits
         if (validSurfaceForDI)
         {
