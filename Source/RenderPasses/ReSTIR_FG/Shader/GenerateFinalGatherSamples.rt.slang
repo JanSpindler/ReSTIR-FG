@@ -177,6 +177,7 @@ void rayGen()
 
     // Load data and initialize variables
     // Default to invalid state
+    const uint linearIdx = index2Dto1D(launchIndex, launchDim.x);
     HitInfo hitInfo = HitInfo(gVBuffer[launchIndex]);
     SurfaceFG surface = SurfaceFG();
     Reservoir reservoir = Reservoir();
@@ -184,7 +185,7 @@ void rayGen()
 
     // Get sample generator
 #if STORE_SAMPLE_GEN_STATE
-    SampleGenerator sg = gSampleGenState[index2Dto1D(launchIndex,launchDim.x)];
+    SampleGenerator sg = gSampleGenState[linearIdx];
 #else
     SampleGenerator sg = SampleGenerator(launchIndex, gFrameCount + 3 * 32);
 #endif
@@ -192,16 +193,18 @@ void rayGen()
     // Only trace final gather sample if previous ather hit is valid
     if (hitInfo.isValid())
     {
-        TraceFinalGatherSample(launchIndex, sg, hitInfo, surface, reservoir, traceData);
+        const float4 viewTmp = gView[launchIndex];
+        const float viewDepth = gLinZ[launchIndex];
+        TraceFinalGatherSample(viewTmp, viewDepth, sg, hitInfo, surface, reservoir, traceData);
     }
     
     // Final gather data
     gFinalGatherHit[launchIndex] = traceData.packedHitInfo;
-    gSurfaceData[index2Dto1D(launchIndex, launchDim.x)] = surface.pack();
+    gSurfaceData[linearIdx] = surface.pack();
 
     // Store sample generator state
 #if STORE_SAMPLE_GEN_STATE
-    gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
+    gSampleGenState[linearIdx] = sg;
 #endif // STORE_SAMPLE_GEN_STATE
 
     // Store reservoir
@@ -213,19 +216,18 @@ void rayGen()
 }
 
 void TraceFinalGatherSample(
-    const uint2 launchIndex,
+    const float4 viewTmp,
+    const float viewDepth,
     inout SampleGenerator sg,
     inout HitInfo hitInfo,
-                            inout SurfaceFG surface,
+    inout SurfaceFG surface,
     inout Reservoir reservoir,
     inout TraceData traceData)
 {
     // Initialize variables
-    const float4 viewTmp = gView[launchIndex];
     float3 view = -viewTmp.xyz;
     const bool collectDirect = viewTmp.w == 0;
     let lod = ExplicitLodTextureSampler(0.f);
-    const float viewDepth = gLinZ[launchIndex];
 
     // Trace first hit
     // Load shading data

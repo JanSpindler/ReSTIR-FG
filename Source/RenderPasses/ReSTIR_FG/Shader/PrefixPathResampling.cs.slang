@@ -24,10 +24,21 @@ cbuffer CB
     bool gRequDiffParts;
 }
 
-// Input/Output resources
+// Outputs
+RWTexture2D<PackedHitInfo> gOutVBuffer;
+RWTexture2D<float4> gOutViewDir;
+RWTexture2D<float> gOutRayDist;
+RWTexture2D<float4> gOutThp;
+RWTexture2D<uint2> gPackedCausticSurface;
+
+// Outputs RTXDI (ReSTIR)
+RWTexture2D<PackedHitInfo> gOutVBufferDI;
+RWTexture2D<float4> gOutViewDirRayDistDI;
+RWTexture2D<float4> gOutThpDI;
+
+// ReSTIR
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<PackedHitInfo> gVBufferPrev;
-Texture2D<float4> gViewDirRayDistDI;
 Texture2D<float2> gMotionVectors;
 RWStructuredBuffer<PrefixPathReservoir> gCurrentReservoirs;
 StructuredBuffer<PrefixPathReservoir> gTemporalReservoirs;
@@ -108,7 +119,7 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     }
 
     // Load shading data
-    const float3 camViewDir = gViewDirRayDistDI[pixel].xyz;
+    const float3 camViewDir = -gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
     const float3 prevCamViewDir = camViewDir; // TODO: Should use proper previous camera view direction
     const ShadingData currentSd = LoadShadingData(currentHit, -camViewDir, ExplicitLodTextureSampler(0.0f));
     const ShadingData prevSd = LoadShadingData(prevHit, -prevCamViewDir, ExplicitLodTextureSampler(0.0f));
@@ -143,20 +154,59 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     );
 
     // Calculate Talbot MIS weights
-    const float currentMisWeight = shiftSuccessBackward ?
+    float currentMisWeight = shiftSuccessBackward ?
         (currentReservoir.path.GetLuminance()) / (
             (currentReservoir.path.GetLuminance()) +
             (currentIntoPrevPath.GetLuminance() / currentIntoPrevJacobian)
         ) : 0.0f;
-    const float prevMisWeight = shiftSuccessForward ?
+    float prevMisWeight = shiftSuccessForward ?
         (prevReservoir.path.GetLuminance()) / (
             (prevReservoir.path.GetLuminance()) +
             (prevIntoCurrentPath.GetLuminance() / prevIntoCurrentJacobian)
         ) : 0.0f;
+
+    // Reservoir confidence
+    const float totalConfidence = currentReservoir.confidence + prevReservoir.confidence;
+    currentMisWeight *= currentReservoir.confidence / totalConfidence;
+    prevMisWeight *= prevReservoir.confidence / totalConfidence;
 
     // RIS
     // TODO: Optimize RIS process by reducing unnecessary copies
     gCurrentReservoirs[linearPixelIdx].Reset();
     gCurrentReservoirs[linearPixelIdx].Merge(currentReservoir, currentReservoir.path, currentMisWeight, 1.0f, sg);
     gCurrentReservoirs[linearPixelIdx].Merge(prevReservoir, prevIntoCurrentPath, prevMisWeight, prevIntoCurrentJacobian, sg);
+
+    // After RIS write data to buffers
+    const PrefixPath finalPath = gCurrentReservoirs[linearPixelIdx].path;
+    gOutVBuffer[pixel] = finalPath.fgHitInfo;
+    gOutViewDir[pixel] = finalPath.fgViewDir;
+    gOutRayDist[pixel] = finalPath.fgRayDist;
+    gOutThp[pixel] = float4(finalPath.throughput, finalPath.fgHitT);
+
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+    gPackedCausticSurface[pixel] = finalPath.causticSurface;
+#endif
+
+    gOutVBufferDI[pixel] = finalPath.diHitInfo;
+    gOutViewDirRayDistDI[pixel] = finalPath.diViewDir;
+    gOutThpDI[pixel] = finalPath.diThroughput;
+
+    // TODO: Check if this is needed
+    // Fill the RTXDI surface if it is enabled
+//#if USE_RTXDI
+//    if (hitInfoDI.isValid())
+//    {
+//        // Load all needed data
+//        const ShadingData sd = loadShadingData(hitInfoDI, -viewDirDistDI.xyz, lod);
+//        const uint hints = (uint)MaterialInstanceHints::AdjustShadingNormal;
+//        const let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
+//        const let bsdfProperties = bsdf.getProperties(sd);
+
+//        gRTXDI.setSurfaceData(launchIndex, sd.computeNewRayOrigin(), bsdfProperties.guideNormal, bsdfProperties.diffuseReflectionAlbedo, bsdfProperties.specularReflectance, bsdfProperties.roughness, viewDirDistDI.w);
+//    }
+//    else
+//    {
+//        gRTXDI.setInvalidSurfaceData(launchIndex);
+//    }
+//#endif
 }

@@ -251,7 +251,7 @@ void rayGen()
         isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
 
 #if PREFIX_RESTIR
-        prefixPath.SetLength(prefixPath.GetLength() + 1);
+        prefixPath.IncLength();
         if (bsdfSample.isLobe(LobeType::Delta))
         {
             prefixPath.SetDeltaEvent(true);
@@ -371,10 +371,18 @@ void rayGen()
     // Finalize prefix restir
 #if PREFIX_RESTIR
     prefixPath.throughput = thp * prefixPath.samplingPdf;
-    prefixPath.endHitInfo = gOutVBuffer[launchIndex];
-    prefixPath.endViewDir = gOutViewDir[launchIndex];
-    prefixPath.endRayDist = gOutRayDist[launchIndex];
-    prefixPath.endHitT = hitT;
+
+    prefixPath.diHitInfo = gOutVBufferDI[launchIndex];
+    prefixPath.diViewDir = gOutViewDirRayDistDI[launchIndex];
+    prefixPath.diThroughput = gOutThpDI[launchIndex];
+
+    prefixPath.fgHitInfo = gOutVBuffer[launchIndex];
+    prefixPath.fgViewDir = gOutViewDir[launchIndex];
+    prefixPath.fgRayDist = gOutRayDist[launchIndex];
+    prefixPath.fgHitT = hitT;
+
+    prefixPath.causticSurface = gPackedCausticSurface[launchIndex];
+
     gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = PrefixPathReservoir(prefixPath, prefixPath.samplingPdf);
 #endif
 

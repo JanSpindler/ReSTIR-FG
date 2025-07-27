@@ -39,23 +39,39 @@ bool ShiftPrefixPath(
         return false;
     }
 
-    // Trace shifted path using random replay
+    // Init shifted path
     shiftedPath.throughput = float3(1.0f);
-    shiftedPath.endRayDist = 0.0f;
-    shiftedPath.endHitT = 0.0f;
+
+    shiftedPath.fgRayDist = 0.0f;
+    shiftedPath.fgHitT = 0.0f;
+    
     shiftedPath.flags = 0u;
     shiftedPath.samplingPdf = 1.0f;
     shiftedPath.seed = otherPath.seed;
 
+    // Tracing
     SampleGenerator sg = SampleGenerator(otherPath.seed);
     let lod = ExplicitLodTextureSampler(0.f);
 
+    // FG
     HitInfo hitInfo = currenHit;
     float3 viewDir = currentPrimarySd.V;
     ShadingData sd = currentPrimarySd;
 
-    bool validTracing = true;
+    // DI
+    HitInfo hitInfoDI = hitInfo;
+    float4 viewDirDistDI = float4(viewDir, 0.0f);
+    float3 thpDI = float3(1.0f);
+    bool validSurfaceForDI = true;
+    uint bouncesAfterValid = 0;
 
+    // Caustic
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+    CausticSurface causticSurface;
+#endif
+
+    // Trace path
+    bool validTracing = true;
     for (uint vertexIdx = 0; vertexIdx < min(otherPath.GetLength(), 16u); ++vertexIdx)
     {
         if (vertexIdx != 0)
@@ -64,13 +80,21 @@ bool ShiftPrefixPath(
         }
         else
         {
-            shiftedPath.endRayDist = distance(camPos, sd.posW);
+            shiftedPath.fgRayDist = distance(camPos, sd.posW);
         }
 
         // Get BSDF
         const uint hints = (uint)MaterialInstanceHints::AdjustShadingNormal;
         const let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
         const let bsdfProperties = bsdf.getProperties(sd);
+
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+        if (i == 0)
+        {
+            causticSurface.normal = sd.faceN;
+            causticSurface.viewDepth = rayDist;
+        }
+#endif
 
         // Sample BSDF
         BSDFSample bsdfSample;
@@ -94,7 +118,8 @@ bool ShiftPrefixPath(
             true;
         const bool isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission;
 
-        shiftedPath.SetLength(shiftedPath.GetLength() + 1);
+        // Track information for shift
+        shiftedPath.IncLength();
         if (bsdfSample.isLobe(LobeType::Delta))
         {
             shiftedPath.SetDeltaEvent(true);
@@ -126,14 +151,47 @@ bool ShiftPrefixPath(
             break;
         }
 
+        // Set is delta flag on caustic surface
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+        if (i == 0)
+        {
+            causticSurface.isDelta = true;
+        }
+#endif
+
         // Update ray parameters for next iteration
         viewDir = -bsdfSample.wo;
-        shiftedPath.endRayDist += hitT;
-        shiftedPath.endHitT += hitT;
+        shiftedPath.fgRayDist += hitT;
+        shiftedPath.fgHitT += hitT;
+
+        // Write DirectHit surfaces hits only for transmission or delta reflection hits
+        // Here we assume ReSTIR GI is not used
+        if (validSurfaceForDI)
+        {
+            if (isTransmission || bsdfSample.isLobe(LobeType::DeltaReflection))
+            {
+                hitInfoDI = hitInfo;
+                viewDirDistDI = float4(viewDir, shiftedPath.fgRayDist);
+                thpDI = shiftedPath.throughput;
+            }
+            else
+            {
+                validSurfaceForDI = false;
+            }
+        }
+        else
+        {
+            bouncesAfterValid++;
+        }
     }
 
     // Factor out the pdf from the throughput
-    shiftedPath.throughput = shiftedPath.samplingPdf > 0.0f ? shiftedPath.throughput / shiftedPath.samplingPdf : float3(0.0f);
+    shiftedPath.throughput *= shiftedPath.samplingPdf;
+
+    // Store caustic surface if enabled
+#if CAUSTIC_TEMPORAL_FILTER_ENABLED
+    shiftedPath.causticSurface = causticSurface.pack();
+#endif
 
     // Check if the shifted path is actually shiftable (delta events, etc.)
     if (shiftedPath.GetLength() != currentPath.GetLength() || shiftedPath.HasDeltaEvent() != currentPath.HasDeltaEvent() || !validTracing)
@@ -143,8 +201,8 @@ bool ShiftPrefixPath(
         return false;
     }
 
-    shiftedPath.endHitInfo = hitInfo.getData();
-    shiftedPath.endViewDir = float4(viewDir, 0.0f); // 4th component is unused because we do not reuse direct illumination from other path
+    shiftedPath.fgHitInfo = hitInfo.getData();
+    shiftedPath.fgViewDir = float4(viewDir, 0.0f); // 4th component is unused because we do not reuse direct illumination from other path
     jacobian = otherPath.samplingPdf / shiftedPath.samplingPdf;
     return true;
 }

@@ -17,11 +17,12 @@ public:
     void Run(
         RenderContext* pRenderContext,
         const RenderData& renderData,
-        ref<Texture> viewDirBuf,
+        ref<Texture> viewDirRayDistDI,
         const bool alphaTest,
         const float2 roughnessCutoff,
         const float diffuseCutoff,
-        const bool requireDiffuseMat
+        const bool requireDiffuseMat,
+        const bool causticTemporalFilter
     );
 
     DefineList GetDefines() const;
@@ -29,6 +30,7 @@ public:
     constexpr bool IsActive() const { return m_Active; }
 
     void SetTraceTransmissionDeltaVars(const ShaderVar& var) const;
+    void SetGenerateFGSamplesVars(const ShaderVar& var) const;
 
 private:
     ref<Device> m_Device;
@@ -48,6 +50,4 @@ private:
     uint m_TemporalHistoryLength = 20;
 
     ref<ComputePass> m_PrefixResamplingPass;
-
-    void PrefixResampling(RenderContext* pRenderContext, const RenderData& renderData);
 };

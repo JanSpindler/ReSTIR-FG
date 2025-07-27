@@ -359,7 +359,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     {
         m_PrefixRestir.Run(
             pRenderContext, renderData, mpViewDirRayDistDI, mPhotonUseAlphaTest, mTraceRoughnessCutoff, mTraceDiffuseCutoff,
-            mTraceRequireDiffuseMat
+            mTraceRequireDiffuseMat, mCausticCollectMode == CausticCollectionMode::Temporal
         );
     }
 
@@ -1563,7 +1563,7 @@ void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const Rende
     mFinalGatherSamplePass.pProgram->addDefine("USE_CAUSTIC_CULLING", (mCausticCollectMode != CausticCollectionMode::None) && mUseCausticCulling ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefines(getMaterialDefines());
     mFinalGatherSamplePass.pProgram->addDefine("TRACE_FG_UNTIL_DIFFUSE", m_TracenFGUntilDiffuse ? "1" : "0");
-        
+
     if (!mFinalGatherSamplePass.pVars)
     {
         mFinalGatherSamplePass.initProgramVars(mpDevice, mpScene, mpSampleGenerator);

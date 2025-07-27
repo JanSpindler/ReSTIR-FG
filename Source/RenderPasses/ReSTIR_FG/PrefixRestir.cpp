@@ -25,13 +25,24 @@ static const uint32_t kNeighborOffsetCount = 8192;
 
 struct PrefixPath
 {
+    // Target function
     float3 throughput;
 
-    uint4 endHitInfo;
-    float4 endViewDir;
-    float endRayDist;
-    float endHitT;
+    // Direct illumination
+    uint4 diHitInfo;
+    float4 diViewDir;
+    float4 diThroughput;
 
+    // For generating final gather sample
+    uint4 fgHitInfo;
+    float4 fgViewDir;
+    float fgRayDist;
+    float fgHitT;
+
+    // Caustic
+    uint2 causticSurface;
+
+    // For RIS
     uint flags;
     float samplingPdf;
     uint seed;
@@ -121,11 +132,12 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
 void PrefixRestir::Run(
     RenderContext* pRenderContext,
     const RenderData& renderData,
-    ref<Texture> viewDirBuf,
+    ref<Texture> viewDirRayDistDI,
     const bool alphaTest,
     const float2 roughnessCutoff,
     const float diffuseCutoff,
-    const bool requireDiffuseMat
+    const bool requireDiffuseMat,
+    const bool causticTemporalFilter
 )
 {
     FALCOR_PROFILE(pRenderContext, "PrefixRestir");
@@ -145,6 +157,7 @@ void PrefixRestir::Run(
             defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN", std::to_string(roughnessCutoff.x));
             defines.add("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MAX", std::to_string(roughnessCutoff.y));
             defines.add("TRACE_TRANS_SPEC_DIFFUSEPART_CUTOFF", std::to_string(diffuseCutoff));
+            defines.add("CAUSTIC_TEMPORAL_FILTER_ENABLED", causticTemporalFilter ? "1" : "0");
             defines.add(m_Scene->getSceneDefines());
             m_PrefixResamplingPass = ComputePass::create(m_Device, desc, defines, true);
         }
@@ -155,6 +168,7 @@ void PrefixRestir::Run(
         m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MIN", std::to_string(roughnessCutoff.x));
         m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_ROUGH_CUTOFF_MAX", std::to_string(roughnessCutoff.y));
         m_PrefixResamplingPass->addDefine("TRACE_TRANS_SPEC_DIFFUSEPART_CUTOFF", std::to_string(diffuseCutoff));
+        m_PrefixResamplingPass->addDefine("CAUSTIC_TEMPORAL_FILTER_ENABLED", causticTemporalFilter ? "1" : "0");
 
         // Set variables
         auto var = m_PrefixResamplingPass->getRootVar();
@@ -165,9 +179,10 @@ void PrefixRestir::Run(
         var["CB"]["gFrameCount"] = m_FrameCount;
         var["CB"]["gRequDiffParts"] = requireDiffuseMat;
 
+        var["gOutViewDirRayDistDI"] = viewDirRayDistDI;
+
         var["gVBuffer"] = renderData[kInputVBuffer]->asTexture();
         var["gVBufferPrev"] = m_TemporalVBuffer;
-        var["gViewDirRayDistDI"] = viewDirBuf;
         var["gMotionVectors"] = renderData[kInputMotionVectors]->asTexture();
         var["gCurrentReservoirs"] = m_OutputReservoirs;
         var["gTemporalReservoirs"] = m_TemporalReservoirs;
@@ -191,7 +206,7 @@ void PrefixRestir::SetTraceTransmissionDeltaVars(const ShaderVar& var) const
     var["gOutputReservoirs"] = m_OutputReservoirs;
 }
 
-void PrefixRestir::PrefixResampling(RenderContext* pRenderContext, const RenderData& renderData)
+void PrefixRestir::SetGenerateFGSamplesVars(const ShaderVar& var) const
 {
-
+    var["gPrefixReservoirs"] = m_OutputReservoirs;
 }

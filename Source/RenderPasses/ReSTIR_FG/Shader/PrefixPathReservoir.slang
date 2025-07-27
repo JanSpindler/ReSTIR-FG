@@ -4,28 +4,46 @@ import Scene.HitInfo;
 import Scene.RaytracingInline;
 
 static const float MAX_CONFIDENCE = 20.0f;
+//static const float MAX_CONFIDENCE = float ::maxValue;
 
 struct PrefixPath
 {
+    // Target function
     float3 throughput;
 
-    PackedHitInfo endHitInfo;
-    float4 endViewDir;
-    float endRayDist;
-    float endHitT;
+    // Direct illumination
+    PackedHitInfo diHitInfo;
+    float4 diViewDir;
+    float4 diThroughput;
 
+    // For generating final gather sample
+    PackedHitInfo fgHitInfo;
+    float4 fgViewDir;
+    float fgRayDist;
+    float fgHitT;
+
+    // Caustic
+    uint2 causticSurface;
+
+    // For GRIS and shifting
     uint flags;
     float samplingPdf;
     uint seed;
 
     __init()
     {
-        throughput = float3(0.0f, 0.0f, 0.0f);
+        throughput = float3(0.0f);
 
-        endHitInfo = {};
-        endViewDir = float4(0.0f, 0.0f, 0.0f, 0.0f);
-        endRayDist = 0.0f;
-        endHitT = 0.0f;
+        diHitInfo = {};
+        diViewDir = float4(0.0f);
+        diThroughput = float4(0.0f);
+
+        fgHitInfo = {};
+        fgViewDir = float4(0.0f);
+        fgRayDist = 0.0f;
+        fgHitT = 0.0f;
+
+        causticSurface = uint2(0u);
 
         flags = 0u;
         samplingPdf = 0.0f;
@@ -62,6 +80,11 @@ struct PrefixPath
     [mutating] void SetLength(const uint length)
     {
         flags = (flags & 0x80000000u) | (length & 0x7FFFFFFFu);
+    }
+
+    [mutating] void IncLength()
+    {
+        ++flags;
     }
 };
 
@@ -117,7 +140,7 @@ struct PrefixPathReservoir
         confidence = min(confidence, MAX_CONFIDENCE);
 
         weightSum += weight;
-        if (sampleNext1D(sg) < weight / weightSum)
+        if (sampleNext1D(sg) * weightSum < weight)
         {
             path = otherPath;
         }
@@ -140,7 +163,7 @@ struct PrefixPathReservoir
         confidence = min(confidence, MAX_CONFIDENCE);
 
         weightSum += weight;
-        if (sampleNext1D(sg) < (weight * otherRes.confidence) / (weightSum * confidence))
+        if (sampleNext1D(sg) * weightSum < weight)
         {
             path = shiftedPath;
         }
