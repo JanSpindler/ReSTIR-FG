@@ -26,13 +26,15 @@ static const uint32_t kNeighborOffsetCount = 8192;
 struct PrefixPath
 {
     float3 throughput;
-    uint4 endHitInfo; // Assume no HIT_INFO_USE_COMPRESSION
+
+    uint4 endHitInfo;
     float4 endViewDir;
     float endRayDist;
     float endHitT;
+
+    uint flags;
+    float samplingPdf;
     uint seed;
-    uint length;
-    uint deltaFlags;
 };
 
 struct PrefixPathReservoir

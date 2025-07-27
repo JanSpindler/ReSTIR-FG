@@ -8,24 +8,28 @@ static const float MAX_CONFIDENCE = 20.0f;
 struct PrefixPath
 {
     float3 throughput;
+
     PackedHitInfo endHitInfo;
     float4 endViewDir;
     float endRayDist;
     float endHitT;
+
+    uint flags;
+    float samplingPdf;
     uint seed;
-    uint length;
-    uint deltaFlags;
 
     __init()
     {
         throughput = float3(0.0f, 0.0f, 0.0f);
+
         endHitInfo = {};
         endViewDir = float4(0.0f, 0.0f, 0.0f, 0.0f);
         endRayDist = 0.0f;
         endHitT = 0.0f;
+
+        flags = 0;
+        samplingPdf = 0.0f;
         seed = 0;
-        length = 0;
-        deltaFlags = 0;
     }
 
     float GetLuminance()
@@ -33,14 +37,31 @@ struct PrefixPath
         return luminance(throughput);
     }
 
-    [mutating] void SetDeltaEvent(const uint idx)
+    bool HasDeltaEvent()
     {
-        deltaFlags |= (1u << idx);
+        return flags >> 31 != 0;
     }
 
-    bool IsDeltaEvent(const uint idx)
+    [mutating] void SetDeltaEvent(const bool hasDelta)
     {
-        return (deltaFlags & (1u << idx)) != 0;
+        if (hasDelta)
+        {
+            flags |= 0x80000000u; // Set the highest bit to indicate a delta event
+        }
+        else
+        {
+            flags &= 0x7FFFFFFFu; // Clear the highest bit
+        }
+    }
+
+    uint GetLength()
+    {
+        return flags & 0x7FFFFFFFu;
+    }
+
+    [mutating] void SetLength(const uint length)
+    {
+        flags = (flags & 0x80000000u) | (length & 0x7FFFFFFFu);
     }
 };
 

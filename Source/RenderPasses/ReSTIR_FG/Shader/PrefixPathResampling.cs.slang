@@ -85,7 +85,7 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     PrefixPathReservoir prevReservoir = gTemporalReservoirs[prevLinearPixelIdx];
 
     // Check for reasonable path lengths
-    if (currentReservoir.path.length <= 1 || prevReservoir.path.length <= 1)
+    if (currentReservoir.path.GetLength() <= 1 || prevReservoir.path.GetLength() <= 1)
     {
         return;
     }

@@ -32,7 +32,7 @@ bool ShiftPrefixPath(
     out float jacobian)
 {
     // Validate input path length
-    if (otherPath.length == 0)
+    if (otherPath.GetLength() != currentPath.GetLength())
     {
         shiftedThroughput = float3(0.0f);
         jacobian = 0.0f;
@@ -41,7 +41,7 @@ bool ShiftPrefixPath(
 
     // Trace shifted path using random replay
     uint newPathLength = 0;
-    uint newPathDeltaFlags = 0;
+    bool newHasDelta = false;
     float rayDist = 0.0f;
 
     float3 throughput = float3(1.0f);
@@ -56,7 +56,7 @@ bool ShiftPrefixPath(
 
     bool validTracing = true;
 
-    for (uint vertexIdx = 0; vertexIdx < min(otherPath.length, 16u); ++vertexIdx)
+    for (uint vertexIdx = 0; vertexIdx < min(otherPath.GetLength(), 16u); ++vertexIdx)
     {
         if (vertexIdx != 0)
         {
@@ -95,10 +95,7 @@ bool ShiftPrefixPath(
         const bool isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission;
 
         ++newPathLength;
-        if (bsdfSample.isLobe(LobeType::Delta))
-        {
-            newPathDeltaFlags |= (1u << vertexIdx);
-        }
+        newHasDelta |= bsdfSample.isLobe(LobeType::Delta);
         samplingPdf *= bsdfSample.pdf;
 
         // Exit if the surface is diffuse
@@ -135,7 +132,7 @@ bool ShiftPrefixPath(
     throughput = samplingPdf > 1e-8f ? throughput / samplingPdf : float3(0.0f);
 
     // Check if the shifted path is actually shiftable (delta events, etc.)
-    if (newPathLength != currentPath.length || newPathDeltaFlags != currentPath.deltaFlags || !validTracing)
+    if (newPathLength != currentPath.GetLength() || newHasDelta != currentPath.HasDeltaEvent() || !validTracing)
     {
         shiftedThroughput = float3(0.0f);
         jacobian = 0.0f;

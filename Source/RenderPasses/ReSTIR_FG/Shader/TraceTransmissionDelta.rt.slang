@@ -173,7 +173,7 @@ void rayGen()
 #if PREFIX_RESTIR
     PrefixPath prefixPath;
     prefixPath.seed = sg.rng.state;
-    float prefixPathSamplingPdf = 1.0f;
+    prefixPath.samplingPdf = 1.0f;
 #endif
     
     // Get first valid(diffuse) Surface
@@ -252,12 +252,12 @@ void rayGen()
         isDiffuse = hasDiffuseParts && bsdfProperties.roughness > kRoughnessMin && !isTransmission; // Material is only diffuse if it is over the roughness min
 
 #if PREFIX_RESTIR
-        ++prefixPath.length;
+        prefixPath.SetLength(prefixPath.GetLength() + 1);
         if (bsdfSample.isLobe(LobeType::Delta))
         {
-            prefixPath.SetDeltaEvent(i);
+            prefixPath.SetDeltaEvent(true);
         }
-        prefixPathSamplingPdf *= bsdfSample.pdf;
+        prefixPath.samplingPdf *= bsdfSample.pdf;
 #endif
 
         // If the BSDF sample is invalid or the surface is diffuse, exit
@@ -372,12 +372,12 @@ void rayGen()
 
     // Finalize prefix restir
 #if PREFIX_RESTIR
-    prefixPath.throughput = thp * prefixPathSamplingPdf;
+    prefixPath.throughput = thp * prefixPath.samplingPdf;
     prefixPath.endHitInfo = gOutVBuffer[launchIndex];
     prefixPath.endViewDir = gOutViewDir[launchIndex];
     prefixPath.endRayDist = gOutRayDist[launchIndex];
     prefixPath.endHitT = hitT;
-    gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = PrefixPathReservoir(prefixPath, prefixPathSamplingPdf);
+    gOutputReservoirs[index2Dto1D(launchIndex, launchDim.x)] = PrefixPathReservoir(prefixPath, prefixPath.samplingPdf);
 #endif
 
     // Debug
