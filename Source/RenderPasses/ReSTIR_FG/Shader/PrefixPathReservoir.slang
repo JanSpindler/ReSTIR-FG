@@ -114,7 +114,7 @@ struct PrefixPathReservoir
         }
 
         confidence += 1.0f;
-        confidence = max(confidence, MAX_CONFIDENCE);
+        confidence = min(confidence, MAX_CONFIDENCE);
 
         weightSum += weight;
         if (sampleNext1D(sg) < weight / weightSum)
@@ -137,7 +137,7 @@ struct PrefixPathReservoir
         }
 
         confidence += otherRes.confidence;
-        confidence = max(confidence, MAX_CONFIDENCE);
+        confidence = min(confidence, MAX_CONFIDENCE);
 
         weightSum += weight;
         if (sampleNext1D(sg) < (weight * otherRes.confidence) / (weightSum * confidence))
