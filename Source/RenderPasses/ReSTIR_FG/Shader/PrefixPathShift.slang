@@ -58,13 +58,6 @@ bool ShiftPrefixPath(
     float3 viewDir = currentPrimarySd.V;
     ShadingData sd = currentPrimarySd;
 
-    // DI
-    HitInfo hitInfoDI = hitInfo;
-    float4 viewDirDistDI = float4(viewDir, 0.0f);
-    float3 thpDI = float3(1.0f);
-    bool validSurfaceForDI = true;
-    uint bouncesAfterValid = 0;
-
     // Caustic
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
     CausticSurface causticSurface;
@@ -124,7 +117,10 @@ bool ShiftPrefixPath(
         {
             shiftedPath.SetDeltaEvent(true);
         }
-        shiftedPath.samplingPdf *= bsdfSample.pdf;
+        else
+        {
+            shiftedPath.samplingPdf *= bsdfSample.pdf;
+        }
 
         // Exit if the surface is diffuse
         if (isDiffuse)
@@ -163,26 +159,6 @@ bool ShiftPrefixPath(
         viewDir = -bsdfSample.wo;
         shiftedPath.fgRayDist += hitT;
         shiftedPath.fgHitT += hitT;
-
-        // Write DirectHit surfaces hits only for transmission or delta reflection hits
-        // Here we assume ReSTIR GI is not used
-        if (validSurfaceForDI)
-        {
-            if (isTransmission || bsdfSample.isLobe(LobeType::DeltaReflection))
-            {
-                hitInfoDI = hitInfo;
-                viewDirDistDI = float4(viewDir, shiftedPath.fgRayDist);
-                thpDI = shiftedPath.throughput;
-            }
-            else
-            {
-                validSurfaceForDI = false;
-            }
-        }
-        else
-        {
-            bouncesAfterValid++;
-        }
     }
 
     // Factor out the pdf from the throughput
@@ -194,7 +170,10 @@ bool ShiftPrefixPath(
 #endif
 
     // Check if the shifted path is actually shiftable (delta events, etc.)
-    if (shiftedPath.GetLength() != currentPath.GetLength() || shiftedPath.HasDeltaEvent() != currentPath.HasDeltaEvent() || !validTracing)
+    if (shiftedPath.GetLength() != currentPath.GetLength() ||
+        shiftedPath.HasDeltaEvent() != currentPath.HasDeltaEvent() ||
+        !validTracing ||
+        shiftedPath.samplingPdf == 0.0f)
     {
         shiftedPath.throughput = float3(0.0f);
         jacobian = 0.0f;
@@ -202,7 +181,7 @@ bool ShiftPrefixPath(
     }
 
     shiftedPath.fgHitInfo = hitInfo.getData();
-    shiftedPath.fgViewDir = float4(viewDir, 0.0f); // 4th component is unused because we do not reuse direct illumination from other path
+    shiftedPath.fgViewDir = float4(viewDir, 0.0f);
     jacobian = otherPath.samplingPdf / shiftedPath.samplingPdf;
-    return true;
+    return jacobian > 0.0f && !isnan(jacobian) && !isinf(jacobian);
 }

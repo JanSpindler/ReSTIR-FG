@@ -17,7 +17,11 @@ public:
     void Run(
         RenderContext* pRenderContext,
         const RenderData& renderData,
-        ref<Texture> viewDirRayDistDI,
+        ref<Texture> vBuffer,
+        ref<Texture> viewDir,
+        ref<Texture> rayDist,
+        ref<Texture> thp,
+        ref<Texture> temporalCausticSurface,
         const bool alphaTest,
         const float2 roughnessCutoff,
         const float diffuseCutoff,

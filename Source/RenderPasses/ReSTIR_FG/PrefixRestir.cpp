@@ -28,11 +28,6 @@ struct PrefixPath
     // Target function
     float3 throughput;
 
-    // Direct illumination
-    uint4 diHitInfo;
-    float4 diViewDir;
-    float4 diThroughput;
-
     // For generating final gather sample
     uint4 fgHitInfo;
     float4 fgViewDir;
@@ -132,7 +127,11 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
 void PrefixRestir::Run(
     RenderContext* pRenderContext,
     const RenderData& renderData,
-    ref<Texture> viewDirRayDistDI,
+    ref<Texture> vBuffer,
+    ref<Texture> viewDir,
+    ref<Texture> rayDist,
+    ref<Texture> thp,
+    ref<Texture> temporalCausticSurface,
     const bool alphaTest,
     const float2 roughnessCutoff,
     const float diffuseCutoff,
@@ -179,7 +178,12 @@ void PrefixRestir::Run(
         var["CB"]["gFrameCount"] = m_FrameCount;
         var["CB"]["gRequDiffParts"] = requireDiffuseMat;
 
-        var["gOutViewDirRayDistDI"] = viewDirRayDistDI;
+        var["gOutThp"] = thp;
+        var["gOutViewDir"] = viewDir;
+        var["gOutRayDist"] = rayDist;
+        var["gOutVBuffer"] = vBuffer;
+        var["gPackedCausticSurface"] = temporalCausticSurface;
+        //var["gSampleGenState"] = sampleGenState;
 
         var["gVBuffer"] = renderData[kInputVBuffer]->asTexture();
         var["gVBufferPrev"] = m_TemporalVBuffer;

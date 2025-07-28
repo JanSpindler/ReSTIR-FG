@@ -256,7 +256,10 @@ void rayGen()
         {
             prefixPath.SetDeltaEvent(true);
         }
-        prefixPath.samplingPdf *= bsdfSample.pdf;
+        else
+        {
+            prefixPath.samplingPdf *= bsdfSample.pdf;
+        }
 #endif
 
         // If the BSDF sample is invalid or the surface is diffuse, exit
@@ -371,10 +374,6 @@ void rayGen()
     // Finalize prefix restir
 #if PREFIX_RESTIR
     prefixPath.throughput = thp * prefixPath.samplingPdf;
-
-    prefixPath.diHitInfo = gOutVBufferDI[launchIndex];
-    prefixPath.diViewDir = gOutViewDirRayDistDI[launchIndex];
-    prefixPath.diThroughput = gOutThpDI[launchIndex];
 
     prefixPath.fgHitInfo = gOutVBuffer[launchIndex];
     prefixPath.fgViewDir = gOutViewDir[launchIndex];

@@ -358,8 +358,9 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
     if (mRenderMode == RenderMode::ReSTIRFG and m_PrefixRestir.IsActive())
     {
         m_PrefixRestir.Run(
-            pRenderContext, renderData, mpViewDirRayDistDI, mPhotonUseAlphaTest, mTraceRoughnessCutoff, mTraceDiffuseCutoff,
-            mTraceRequireDiffuseMat, mCausticCollectMode == CausticCollectionMode::Temporal
+            pRenderContext, renderData, mpVBuffer, mpViewDir, mpRayDist, mpThp, mpTemporalCausticSurface[mFrameCount % 2],
+            mPhotonUseAlphaTest, mTraceRoughnessCutoff, mTraceDiffuseCutoff, mTraceRequireDiffuseMat,
+            mCausticCollectMode == CausticCollectionMode::Temporal
         );
     }
 

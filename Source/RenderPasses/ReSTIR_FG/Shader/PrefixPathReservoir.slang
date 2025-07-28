@@ -11,11 +11,6 @@ struct PrefixPath
     // Target function
     float3 throughput;
 
-    // Direct illumination
-    PackedHitInfo diHitInfo;
-    float4 diViewDir;
-    float4 diThroughput;
-
     // For generating final gather sample
     PackedHitInfo fgHitInfo;
     float4 fgViewDir;
@@ -33,10 +28,6 @@ struct PrefixPath
     __init()
     {
         throughput = float3(0.0f);
-
-        diHitInfo = {};
-        diViewDir = float4(0.0f);
-        diThroughput = float4(0.0f);
 
         fgHitInfo = {};
         fgViewDir = float4(0.0f);
