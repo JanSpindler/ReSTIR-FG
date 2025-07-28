@@ -49,17 +49,8 @@ bool IsValidPixel(int2 pixel, uint2 frameDim)
            pixel.x < (int)frameDim.x && pixel.y < (int)frameDim.y;
 }
 
-// Temporal resampling using random replay shift
-[numthreads(16, 16, 1)]
-void main(uint3 launchIdx : SV_DispatchThreadID)
+void TemporalResampling(const uint2 pixel)
 {
-    // Out of bounds
-    const uint2 pixel = launchIdx.xy;
-    if (any(pixel >= gFrameDim))
-    {
-        return;
-    }
-
     // Get prev pixel - FIXED motion vector calculation
     int2 prevPixel = (int2)pixel;
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
@@ -78,7 +69,7 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     // Load the current reservoir
     const uint linearPixelIdx = Index2Dto1D(pixel, gFrameDim.x);
     const uint prevLinearPixelIdx = Index2Dto1D((uint2)prevPixel, gFrameDim.x);
-    
+
     // SAFETY CHECK: Validate buffer indices
     const uint maxBufferSize = gFrameDim.x * gFrameDim.y;
     if (linearPixelIdx >= maxBufferSize || prevLinearPixelIdx >= maxBufferSize)
@@ -160,12 +151,12 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
         currentMisWeight =
             (currentConfidence * currentReservoir.path.GetLuminance()) / (
                 (currentConfidence * currentReservoir.path.GetLuminance()) +
-                (prevConfidence * currentIntoPrevPath.GetLuminance() / currentIntoPrevJacobian)
+                            (prevConfidence * currentIntoPrevPath.GetLuminance() / currentIntoPrevJacobian)
             );
         prevMisWeight =
             (prevConfidence * prevReservoir.path.GetLuminance()) / (
                 (prevConfidence * prevReservoir.path.GetLuminance()) +
-                (currentConfidence * prevIntoCurrentPath.GetLuminance() / prevIntoCurrentJacobian)
+                         (currentConfidence * prevIntoCurrentPath.GetLuminance() / prevIntoCurrentJacobian)
             );
     }
     else if (shiftSuccessForward)
@@ -189,13 +180,30 @@ void main(uint3 launchIdx : SV_DispatchThreadID)
     gCurrentReservoirs[linearPixelIdx].Reset();
     gCurrentReservoirs[linearPixelIdx].Merge(currentReservoir, currentReservoir.path, currentMisWeight, 1.0f, sg);
     gCurrentReservoirs[linearPixelIdx].Merge(prevReservoir, prevIntoCurrentPath, prevMisWeight, prevIntoCurrentJacobian, sg);
+}
+
+// Temporal resampling using random replay shift
+[numthreads(16, 16, 1)]
+void main(uint3 launchIdx : SV_DispatchThreadID)
+{
+    // Out of bounds
+    const uint2 pixel = launchIdx.xy;
+    if (any(pixel >= gFrameDim))
+    {
+        return;
+    }
+
+    // Temporal resampling
+    TemporalResampling(pixel);
 
     // After RIS write data to buffers
-    const PrefixPath finalPath = gCurrentReservoirs[linearPixelIdx].path;
-    gOutVBuffer[pixel] = finalPath.fgHitInfo;
-    gOutViewDir[pixel].xyz = finalPath.fgViewDir.xyz;
-    gOutRayDist[pixel] = finalPath.fgRayDist;
-    gOutThp[pixel] = float4(finalPath.throughput * gCurrentReservoirs[linearPixelIdx].GetW(), finalPath.fgHitT);
+    const uint linearPixelIdx = Index2Dto1D(pixel, gFrameDim.x);
+    gOutVBuffer[pixel] = gCurrentReservoirs[linearPixelIdx].path.fgHitInfo;
+    gOutViewDir[pixel].xyz = gCurrentReservoirs[linearPixelIdx].path.fgViewDir.xyz;
+    gOutRayDist[pixel] = gCurrentReservoirs[linearPixelIdx].path.fgRayDist;
+    gOutThp[pixel] = float4(
+        gCurrentReservoirs[linearPixelIdx].path.throughput * gCurrentReservoirs[linearPixelIdx].GetW(),
+        gCurrentReservoirs[linearPixelIdx].path.fgHitT);
 
 #if CAUSTIC_TEMPORAL_FILTER_ENABLED
     gPackedCausticSurface[pixel] = finalPath.causticSurface;
