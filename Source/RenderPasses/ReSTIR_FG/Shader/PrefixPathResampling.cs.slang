@@ -18,6 +18,7 @@ import PrefixPathShift;
 // Constant buffer data
 cbuffer CB
 {
+    float gMaxConfidence;
     uint2 gFrameDim;
     uint gFrameCount;
     bool gEnableTemporalReprojection;
@@ -178,8 +179,8 @@ void TemporalResampling(const uint2 pixel)
     // RIS
     // TODO: Optimize RIS process by reducing unnecessary copies
     gCurrentReservoirs[linearPixelIdx].Reset();
-    gCurrentReservoirs[linearPixelIdx].Merge(currentReservoir, currentReservoir.path, currentMisWeight, 1.0f, sg);
-    gCurrentReservoirs[linearPixelIdx].Merge(prevReservoir, prevIntoCurrentPath, prevMisWeight, prevIntoCurrentJacobian, sg);
+    gCurrentReservoirs[linearPixelIdx].Merge(currentReservoir, currentReservoir.path, currentMisWeight, 1.0f, sg, gMaxConfidence);
+    gCurrentReservoirs[linearPixelIdx].Merge(prevReservoir, prevIntoCurrentPath, prevMisWeight, prevIntoCurrentJacobian, sg, gMaxConfidence);
 }
 
 // Temporal resampling using random replay shift

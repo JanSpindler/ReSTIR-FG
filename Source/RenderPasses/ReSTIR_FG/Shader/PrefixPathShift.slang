@@ -65,7 +65,7 @@ bool ShiftPrefixPath(
 
     // Trace path
     bool validTracing = true;
-    for (uint vertexIdx = 0; vertexIdx < min(otherPath.GetLength(), 16u); ++vertexIdx)
+    for (uint vertexIdx = 0; vertexIdx < otherPath.GetLength(); ++vertexIdx)
     {
         if (vertexIdx != 0)
         {

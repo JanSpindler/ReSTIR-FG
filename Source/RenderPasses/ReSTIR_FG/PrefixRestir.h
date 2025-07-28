@@ -50,8 +50,8 @@ private:
     bool m_Active = false;
     uint m_FrameCount = 0;
     bool m_EnableTemporalReprojection = true;
-    bool m_UseMaxHistory = true;
-    uint m_TemporalHistoryLength = 20;
+    bool m_LimitConfidence = true;
+    uint m_MaxConfidence = 20;
 
     ref<ComputePass> m_PrefixResamplingPass;
 };

@@ -3,9 +3,6 @@ import Utils.Color.ColorHelpers;
 import Scene.HitInfo;
 import Scene.RaytracingInline;
 
-static const float MAX_CONFIDENCE = 20.0f;
-//static const float MAX_CONFIDENCE = float ::maxValue;
-
 struct PrefixPath
 {
     // Target function
@@ -119,7 +116,7 @@ struct PrefixPathReservoir
         return weightSum / pHat;
     }
 
-    [mutating] void Update(const in PrefixPath otherPath, const float samplingPdf, inout SampleGenerator sg)
+    [mutating] void Update(const in PrefixPath otherPath, const float samplingPdf, inout SampleGenerator sg, const float maxConfidence)
     {
         float weight = otherPath.GetLuminance() / samplingPdf;
         if (isnan(weight) || isinf(weight))
@@ -128,7 +125,7 @@ struct PrefixPathReservoir
         }
 
         confidence += 1.0f;
-        confidence = min(confidence, MAX_CONFIDENCE);
+        confidence = min(confidence, maxConfidence);
 
         weightSum += weight;
         if (sampleNext1D(sg) * weightSum < weight)
@@ -142,7 +139,8 @@ struct PrefixPathReservoir
         const PrefixPath shiftedPath,
         const float misWeight,
         const float jacobian,
-        inout SampleGenerator sg)
+        inout SampleGenerator sg,
+        const float maxConfidence)
     {
         float weight = misWeight * shiftedPath.GetLuminance() * otherRes.GetW() * jacobian;
         if (isnan(weight) || isinf(weight))
@@ -151,7 +149,7 @@ struct PrefixPathReservoir
         }
 
         confidence += otherRes.confidence;
-        confidence = min(confidence, MAX_CONFIDENCE);
+        confidence = min(confidence, maxConfidence);
 
         weightSum += weight;
         if (sampleNext1D(sg) * weightSum < weight)

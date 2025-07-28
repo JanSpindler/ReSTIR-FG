@@ -118,7 +118,12 @@ bool PrefixRestir::RenderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Prefix ReSTIR"))
     {
         // Active
-        changed |= group.checkbox("Prefix ReSTIR", m_Active);
+        changed |= group.checkbox("Enable Prefix ReSTIR", m_Active);
+        changed |= group.checkbox("Enable Temporal Reprojection", m_EnableTemporalReprojection);
+
+        // M Cap
+        changed |= group.checkbox("Limit Confidence", m_LimitConfidence);
+        changed |= group.var("Max Confidence", m_MaxConfidence, 0u);
     }
 
     return changed;
@@ -173,6 +178,7 @@ void PrefixRestir::Run(
         auto var = m_PrefixResamplingPass->getRootVar();
         m_Scene->setRaytracingShaderData(pRenderContext, var);
 
+        var["CB"]["gMaxConfidence"] = m_LimitConfidence ? static_cast<float>(m_MaxConfidence) : std::numeric_limits<float>::max();
         var["CB"]["gEnableTemporalReprojection"] = m_EnableTemporalReprojection;
         var["CB"]["gFrameDim"] = m_ScreenSize;
         var["CB"]["gFrameCount"] = m_FrameCount;
