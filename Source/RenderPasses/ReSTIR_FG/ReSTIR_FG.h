@@ -39,6 +39,7 @@
 #include "AdaptiveLightSampler.h"
 #include "PrefixRestir.h"
 #include <Utils/Timing/ProfilerUI.h>
+#include "CausticGaussianGuiding.h"
 
 using namespace Falcor;
 
@@ -316,6 +317,9 @@ private:
 
     // Prefix restir
     PrefixRestir m_PrefixRestir;
+
+    // Caustic Gaussian Guiding
+    CausticGaussianGuiding m_CausticGaussianGuiding;
 
     // Profiling
     ProfilerUI m_ProfilerUI;

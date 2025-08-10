@@ -24,6 +24,9 @@ target_sources(ReSTIR_FG PRIVATE
     PrefixRestir.h
     PrefixRestir.cpp
 
+    CausticGaussianGuiding.h
+    CausticGaussianGuiding.cpp
+
     dkm/dkm.hpp
     dkm/dkm_utils.hpp
     dkm/dkm_parallel.hpp
@@ -52,6 +55,8 @@ target_sources(ReSTIR_FG PRIVATE
     Shader/PrefixPathReservoir.slang
     Shader/PrefixPathShift.slang
     Shader/PrefixPathResampling.cs.slang
+
+    Shader/CausticGuiding.slang
 )
 
 set_target_properties(ReSTIR_FG PROPERTIES

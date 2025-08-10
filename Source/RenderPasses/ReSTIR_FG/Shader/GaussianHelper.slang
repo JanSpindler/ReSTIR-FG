@@ -51,7 +51,7 @@ float ErfPaper(const float x)
     const float t3 = t2 * t;
     const float t4 = t3 * t;
     const float t5 = t4 * t;
-    return 1.0f - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * exp(-x * x);
+    return 1e-7 + 1.0f - (a1 * t + a2 * t2 + a3 * t3 + a4 * t4 + a5 * t5) * exp(-x * x);
 }
 
 float f0(const float3 x, const float3 x0, const float3 mu, const float sigma)

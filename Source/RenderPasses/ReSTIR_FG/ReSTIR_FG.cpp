@@ -158,7 +158,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 }
 
 ReSTIR_FG::ReSTIR_FG(ref<Device> pDevice, const Properties& props)
-    : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice), m_ProfilerUI(pDevice->getProfiler())
+    : RenderPass(pDevice), m_AdaptiveLightSampler(pDevice), m_ProfilerUI(pDevice->getProfiler()), m_CausticGaussianGuiding(pDevice)
 {
     if (!mpDevice->isShaderModelSupported(Device::ShaderModel::SM6_5))
     {
@@ -734,19 +734,13 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
         }
     }
 
-    // Photon Guiding
+    // Photon Guiding + Adaptive Light Sampler + Prefix Restir + Caustic Gaussian Guiding
     if (mRenderMode != RenderMode::ReSTIRGI)
     {
         changed |= m_GaussianPhotonGuiding.RenderUI(widget);
-    }
-
-    // Adaptive light sampling
-    changed |= m_AdaptiveLightSampler.RenderUI(widget);
-
-    // Prefix restir
-    if (mRenderMode != RenderMode::ReSTIRGI)
-    {
+        changed |= m_AdaptiveLightSampler.RenderUI(widget);
         changed |= m_PrefixRestir.RenderUI(widget);
+        changed |= m_CausticGaussianGuiding.RenderUI(widget);
     }
 
     // ReSTIR GI
@@ -1338,6 +1332,9 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
 
     // Prefix restir
     m_PrefixRestir.PrepareBuffers(pRenderContext, mScreenRes);
+
+    // Caustic gaussian guiding
+    m_CausticGaussianGuiding.PrepareBuffers(pRenderContext, mNumMaxPhotons.y);
 }
 
 void ReSTIR_FG::prepareAccelerationStructure()
@@ -1634,6 +1631,12 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         {
             m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
         }
+
+        // Caustic gaussian guiding
+        if (m_CausticGaussianGuiding.IsActive())
+        {
+            m_CausticGaussianGuiding.ClearHashGridCounter(pRenderContext);
+        }
     }
 
     // Get dimensions of ray dispatch.
@@ -1681,6 +1684,9 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     // Adaptive light sampler defines
     mGeneratePhotonPass.pProgram->addDefine("ADAPTIVE_LIGHT_SAMPLER", m_AdaptiveLightSampler.IsActive() ? "1" : "0");
 
+    // Caustic gaussian guiding
+    mGeneratePhotonPass.pProgram->addDefine("CAUSTIC_GAUSSIAN_GUIDING", m_CausticGaussianGuiding.IsActive() ? "1" : "0");
+
     // Program vars
     if (!mGeneratePhotonPass.pVars)
     {
@@ -1722,6 +1728,12 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gGenerationLampIntersectGuard"] =  mPhotonFirstHitGuard;
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
 
+    // Light samples constants
+    if (mpEmissiveLightSampler)
+    {
+        mpEmissiveLightSampler->setShaderData(var["Light"]["gEmissiveSampler"]);
+    }
+
     // 3D gaussian photon guiding constants
     if (m_GaussianPhotonGuiding.IsActive() or
         (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
@@ -1729,10 +1741,16 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         m_GaussianPhotonGuiding.SetGeneratePhotonsVars(var);
     }
 
-    // Light samples constants
-    if (mpEmissiveLightSampler)
+    // Adaptive light sampler buffers
+    if (m_AdaptiveLightSampler.IsActive())
     {
-        mpEmissiveLightSampler->setShaderData(var["Light"]["gEmissiveSampler"]);
+        m_AdaptiveLightSampler.SetGeneratePhotonsVars(var);
+    }
+
+    // Caustic gaussian guiding
+    if (m_CausticGaussianGuiding.IsActive())
+    {
+        m_CausticGaussianGuiding.SetGeneratePhotonsVars(var);
     }
 
     // Set the photon buffers
@@ -1743,12 +1761,6 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     }
     var["gPhotonCounter"] = mpPhotonCounter[mFrameCount % kPhotonCounterCount];
     var["gPhotonCullingMask"] = mpPhotonCullingMask;
-
-    // Adaptive light sampler buffers
-    if (m_AdaptiveLightSampler.IsActive())
-    {
-        m_AdaptiveLightSampler.SetGeneratePhotonsVars(var);
-    }
 
     // Trace the photons
     if (traceScene)

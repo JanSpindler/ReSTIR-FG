@@ -17,6 +17,7 @@ import FinalGatherData;
 import Hash;
 import GaussianHelper;
 import Rendering.Lights.LightBVH;
+import CausticGuiding;
 
 cbuffer PerFrame
 {
@@ -37,6 +38,13 @@ cbuffer CB
     float gGenerationLampIntersectGuardStoreProbability; //Percentage a photon is stored
 };
 
+#if USE_EMISSIVE_LIGHT // Buffer is only valid if emissive light is enabled
+cbuffer Light
+{
+    EmissiveLightSampler gEmissiveSampler;
+}
+#endif
+
 cbuffer GaussianPhotonGuiding
 {
     uint gGaussianCount;
@@ -49,16 +57,15 @@ cbuffer GaussianPhotonGuiding
     float gCS;
 };
 
-#if USE_EMISSIVE_LIGHT  //Buffer is only valid if emissive light is enabled
-cbuffer Light
-{
-    EmissiveLightSampler gEmissiveSampler;
-}
-#endif
-
 cbuffer AdaptiveLightSampler
 {
     uint gLightClusterCount;
+};
+
+cbuffer CausticGaussianGuiding
+{
+    uint gCausticHashGridSize;
+    float gCausticHashScalingFactor;
 };
 
 //
@@ -81,6 +88,10 @@ Buffer<uint> gLightClusterNodeIndices;
 Buffer<float> gLightClusterCdf;
 RWBuffer<uint> gPhotonLeafMap[2];
 Buffer<float> gNodeImportance;
+
+// Caustic gaussian guiding
+StructuredBuffer<CausticGaussianReservoir> gCausticGaussianReservoirs;
+RWStructuredBuffer<CausticSource> gCausticSources;
 
 enum class GenerationFlags // : uint32_t
 {
@@ -769,6 +780,12 @@ void rayGen()
     bool reflectedDiffuse = false;
 
     uint firstHitIndex = 0;
+
+    // Caustic gaussian guiding
+#if CAUSTIC_GAUSSIAN_GUIDING
+    float3 lastDiffPos = float3(0.0f);
+    float3 firstCausticEntry = float3(0.0f);
+#endif
 
     // Recursion where the photons are shot
     for (uint i = 0; i < gMaxRecursion && !rayData.terminated; i++)

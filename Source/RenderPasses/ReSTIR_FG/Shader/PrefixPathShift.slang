@@ -50,7 +50,8 @@ bool ShiftPrefixPath(
     shiftedPath.seed = otherPath.seed;
 
     // Tracing
-    SampleGenerator sg = SampleGenerator(otherPath.seed);
+    SampleGenerator sg;
+    sg.rng.state = otherPath.seed;
     let lod = ExplicitLodTextureSampler(0.f);
 
     // FG

@@ -85,7 +85,7 @@ void TemporalResampling(const uint2 pixel)
     // Check for reasonable path lengths
     const uint currentLength = currentReservoir.path.GetLength();
     const uint prevLength = prevReservoir.path.GetLength();
-    if (currentLength <= 1 || currentLength != prevLength)
+    if (currentLength <= 1 || prevLength <= 1)
     {
         return;
     }
