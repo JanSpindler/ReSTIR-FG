@@ -27,5 +27,10 @@ uint hash(int3 cell)
     return res;
 }
 
+uint hash2(const int3 pos)
+{
+    return hash(pos);
+    //return (pos.x * 1) ^ (pos.y * 2654435761) ^ (pos.z * 805459861);
+}
 
 END_NAMESPACE_FALCOR

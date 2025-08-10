@@ -113,15 +113,6 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
         m_FrameCountAfterOptimReset = 0;
     }
 
-    if (!m_GaussianTex)
-    {
-        m_GaussianTex = Texture::create2D(
-            m_Device, screenSize.x, screenSize.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess
-        );
-        renderContext->clearUAV(m_GaussianTex->getUAV().get(), float4(0.0f));
-    }
-
     if (!m_FirstHitPhotonCountBuf.buffer)
     {
         m_FirstHitPhotonCountBuf = CreateInteropBuffer(m_Device, sizeof(uint));
@@ -273,11 +264,6 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
     }
 
     return changed;
-}
-
-void GaussianPhotonGuiding::ResetSceneTextures()
-{
-    m_GaussianTex.reset();
 }
 
 void GaussianPhotonGuiding::ResetPhotonFirstHitMap()

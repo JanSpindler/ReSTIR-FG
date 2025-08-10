@@ -301,8 +301,14 @@ void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primi
 
 void TrackPhotonForCausticGaussianGuiding(const uint causticPrimIdx, const float lum, inout SampleGenerator sg)
 {
+    // Check if caustic source is valid
+    if (!gCausticSources[causticPrimIdx].valid)
+    {
+        return;
+    }
+
     // Calc hash grid index
-    const uint hashGridIdx = hash(gCausticSources[causticPrimIdx].srcPos * gCausticHashScalingFactor) % gCausticHashGridSize;
+    const uint hashGridIdx = hash2(gCausticSources[causticPrimIdx].srcPos * gCausticHashScalingFactor) % gCausticHashGridSize;
 
     // Stop if this is not the first access to this hash grid cell
     uint hashAccessIdx = 0xFFFFFFFF; // Init to not 0

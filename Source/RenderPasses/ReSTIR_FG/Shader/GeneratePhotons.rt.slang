@@ -67,6 +67,7 @@ cbuffer CausticGaussianGuiding
     uint gCausticHashGridSize;
     float gCausticHashScalingFactor;
     float gCausticGaussianSamplingProb;
+    float gCausticGaussianSigma;
 };
 
 //
@@ -444,7 +445,7 @@ bool SampleAnalyticLightDirGmm(
     {
         SampleAnalyticLightDirUniform(sg, lightData, lightPdf, sampledDir);
         const float gmmPdf = GMMProb(lightData.posW, lightData.posW + sampledDir, lightIdx);
-        misWeight = lightPdf / (lightPdf + gmmPdf);
+        misWeight = ((1.0f - gBeta) * lightPdf) / (((1.0f - gBeta) * lightPdf) + (gBeta * gmmPdf));
     }
     // Sample gmm
     else
@@ -467,7 +468,7 @@ bool SampleAnalyticLightDirGmm(
             return false;
         }
         const float uniformPdf = 1.0f / (M_2PI * (1.f - lightData.cosOpeningAngle));
-        misWeight = lightPdf / (lightPdf + uniformPdf);
+        misWeight = (gBeta * lightPdf) / ((gBeta * lightPdf) + ((1.0f - gBeta) * uniformPdf));
     }
 
     return true;
@@ -572,10 +573,21 @@ void closestHit(
         hints |= (uint) MaterialInstanceHints::AdjustShadingNormal;
     }
 
+    // Get BSDF
+    static const float sigma = gCausticGaussianSigma; // TODO: Make scaling scene size independent
+    let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
+    let bsdfProperties = bsdf.getProperties(sd);
+
+    // Check if the hit Material is diffuse
+    float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
+    float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
+    bool hasDiffuseParts = kRequireDiffuseParts ? (meanDiffuseProb > kTraceDiffuseCutoff) || bsdfProperties.roughness > kTraceRoughnessMax : true; // Check if surface is diffuse or above the roughness threshold
+    rayData.diffuseHit = hasDiffuseParts && bsdfProperties.roughness > kTraceRoughnessMin; // Material is only diffuse if it is over the roughness min
+
     // Sample direction
 #if CAUSTIC_GAUSSIAN_GUIDING
-    const uint hashGridIdx = hash(sd.posW * gCausticHashScalingFactor) % gCausticHashGridSize;
-    const bool validGauss = gCausticGaussianReservoirs[hashGridIdx].confidence > 0.0f;
+    const uint hashGridIdx = hash2(sd.posW * gCausticHashScalingFactor) % gCausticHashGridSize;
+    const bool validGauss = gCausticGaussianReservoirs[hashGridIdx].confidence > 0.0f && rayData.diffuseHit;
     const float gaussProb = gCausticGaussianSamplingProb;
 #else
     const uint hashGridIdx = 0;
@@ -583,21 +595,20 @@ void closestHit(
     const bool validGauss = false;
 #endif
 
-    static const float sigma = 0.1f; // TODO: Make scaling scene size independent
-    let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
-    let bsdfProperties = bsdf.getProperties(sd);
-
     bool valid = false;
     BSDFSample bsdfSample;
+    bool transmission = false;
 
     if (sampleNext1D(rayData.sg) >= gaussProb || !validGauss)
     {
         valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
+        transmission = bsdfSample.isLobe(LobeType::Transmission);
 
         if (validGauss)
         {
             const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
-            const float misWeight = bsdfSample.pdf / (bsdfSample.pdf + F0(sd.posW + bsdfSample.wo, sd.posW, mean, sigma));
+            const float gaussPdf = F0(sd.posW + bsdfSample.wo, sd.posW, mean, sigma);
+            const float misWeight = ((1.0f - gaussProb) * bsdfSample.pdf) / (((1.0f - gaussProb) * bsdfSample.pdf) + (gaussProb * gaussPdf));
             bsdfSample.weight *= misWeight;
         }
     }
@@ -605,20 +616,35 @@ void closestHit(
     {
         const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
         const float3 causticGuidingPos = SampleGaussian(mean, sigma, rayData.sg);
-        const float gaussPdf = F0(causticGuidingPos, sd.posW, mean, sigma);
         bsdfSample.wo = normalize(causticGuidingPos - sd.posW);
-        bsdfSample.weight = bsdf.eval(sd, bsdfSample.wo, rayData.sg) / gaussPdf;
-
-        const float misWeight = gaussPdf / (gaussPdf + bsdf.evalPdf(sd, bsdfSample.wo)); // TODO: What does useImportanceSampling do here?
-        bsdfSample.weight *= misWeight;
 
         valid = dot(bsdfSample.wo, sd.faceN) > 0.0f;
+        if (valid)
+        {
+            const float gaussPdf = F0(causticGuidingPos, sd.posW, mean, sigma);
+            const float bsdfPdf = bsdf.evalPdf(sd, bsdfSample.wo, false);
+
+            if (gaussPdf > 0.0f && bsdfPdf > 0.0f)
+            {
+                bsdfSample.weight = bsdf.eval(sd, bsdfSample.wo, rayData.sg) / gaussPdf;
+                const float misWeight = (gaussProb * gaussPdf) / ((gaussProb * gaussPdf) + ((1.0f - gaussProb) * bsdfPdf));
+                bsdfSample.weight *= misWeight;
+            }
+            else
+            {
+                valid = false;
+            }
+        }
+    }
+
+    if (any(isnan(bsdfSample.weight) || isinf(bsdfSample.weight)))
+    {
+        valid = false;
     }
 
     // Store rayData
     float3 thpStart = rayData.thp;
     
-    bool transmission = bsdfSample.isLobe(LobeType::Transmission); // TODO: Handle properly for gauss
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); // false is for transmissions
     rayData.origin = rayOrigin;
     rayData.thp *= valid ? bsdfSample.weight : float3(0);
@@ -627,11 +653,8 @@ void closestHit(
     rayData.isEmissive = any(bsdfProperties.emission > 0);
     rayData.distance += RayTCurrent();
 
-    // Check if the hit Material is diffuse
-    float3 diffuseProb = bsdfProperties.diffuseReflectionAlbedo / (bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.specularReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo + bsdfProperties.specularTransmissionAlbedo);
-    float meanDiffuseProb = (diffuseProb.x + diffuseProb.y + diffuseProb.z) / 3;
-    bool hasDiffuseParts = kRequireDiffuseParts ? (meanDiffuseProb > kTraceDiffuseCutoff) || bsdfProperties.roughness > kTraceRoughnessMax : true; // Check if surface is diffuse or above the roughness threshold
-    rayData.diffuseHit = hasDiffuseParts && bsdfProperties.roughness > kTraceRoughnessMin && !transmission; // Material is only diffuse if it is over the roughness min
+    // Add transmission to diffuse hit flag
+    rayData.diffuseHit &= !transmission;
     
     // if throughput is 0, return
     if (!valid || all(rayData.thp <= 0))
@@ -734,7 +757,7 @@ bool GeneratePhotonGeometric(
 
         // MIS weight
         const float gmmProb = GMMProb(pls.posW, pls.posW + ray.Direction, lightIdx);
-        pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + gmmProb);
+        pls.flux *= ((1.0f - gBeta) * firstHitSamplingPdf) / (((1.0f - gBeta) * firstHitSamplingPdf) + (gBeta * gmmProb));
     }
     else
     {
@@ -747,7 +770,7 @@ bool GeneratePhotonGeometric(
 
         // MIS weight
         const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
-        pls.flux *= firstHitSamplingPdf / (firstHitSamplingPdf + cosineWeightedPdf);
+        pls.flux *= (gBeta * firstHitSamplingPdf) / ((gBeta * firstHitSamplingPdf) + ((1.0f - gBeta) * cosineWeightedPdf));
     }
 
     pls.flux /= firstHitSamplingPdf;
@@ -858,15 +881,6 @@ void rayGen()
         photon.dir = ray.Direction;
         reflectedDiffuse = rayData.diffuseHit;
 
-        // Track last diffuse position before caustic chain
-#if CAUSTIC_GAUSSIAN_GUIDING
-        if (reflectedDiffuse)
-        {
-            lastDiffPos = photonPos;
-            hasLastDiff = true;
-        }
-#endif
-
         // Store first hit photon even when the first hit is not stored in the photon map
         // Because resulting photons along the path might be collected
 #if TRACK_FIRST_HIT_PHOTONS
@@ -954,10 +968,11 @@ void rayGen()
 
                     // If caustic photon and a diffuse surface was hit before, store the caustic source
 #if CAUSTIC_GAUSSIAN_GUIDING
-                    if (photonType == 1 && hasLastDiff)
+                    if (photonType == 1 && hasLastDiff && rayData.distance > 0.1f)
                     {
                         gCausticSources[photonIndex].srcPos = lastDiffPos;
-                        gCausticSources[photonIndex].targetPos = photonPos;
+                        gCausticSources[photonIndex].targetPos = firstCausticEntry;
+                        gCausticSources[photonIndex].valid = true;
                     }
 #endif
                 }
@@ -969,8 +984,10 @@ void rayGen()
         {
             break;
         }
-        
-        // Russian Roulette
+
+    // Russian Roulette
+#define THP_RUSSIAN_ROULETTE
+#ifdef THP_RUSSIAN_ROULETTE
         const float rrVal = luminance(rayData.thp);
         const float prob = max(0.f, 1.f - rrVal);
         float rnd = sampleNext1D(rayData.sg);
@@ -982,6 +999,7 @@ void rayGen()
         {
             rayData.thp /= (1.f - prob);
         }
+#endif
 
         // Caustics handling
         if (gFlags & (uint) GenerationFlags::EnableCaustics)
@@ -1000,5 +1018,18 @@ void rayGen()
         // Update ray for next iteration
         ray.Origin = rayData.origin;
         ray.Direction = rayData.direction;
+
+        // Track last diffuse position before caustic chain
+#if CAUSTIC_GAUSSIAN_GUIDING
+        if (reflectedDiffuse)
+        {
+            lastDiffPos = photonPos;
+            hasLastDiff = true;
+        }
+        else if (hasLastDiff)
+        {
+            firstCausticEntry = photonPos;
+        }
+#endif
     }
 }

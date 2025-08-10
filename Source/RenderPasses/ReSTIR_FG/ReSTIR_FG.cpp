@@ -77,6 +77,7 @@ const std::string kOutputDiffuseReflectance = "diffuseReflectance";
 const std::string kOutputSpecularReflectance = "specularReflectance";
 const std::string kOutputResidualRadiance = "residualRadiance"; // The rest (transmission, delta)
 const std::string kOutputGaussianDirectionPdf = "gaussianDirectionPdf";
+const std::string kOutputCausticGaussianDir = "causticGaussianDir";
 
 const Falcor::ChannelList kOutputChannels{
     {kOutputColor, "gOutColor", "Output Color (linear)", true /*optional*/, ResourceFormat::RGBA32Float},
@@ -93,6 +94,8 @@ const Falcor::ChannelList kOutputChannels{
      ResourceFormat::RGBA32Float},
     {kOutputGaussianDirectionPdf, "gOutGaussianDirectionPdf", "Output pdf for the gaussian direction", true /*optional*/,
      ResourceFormat::RGBA32Float},
+    {kOutputCausticGaussianDir, "gOutCausticGaussianDir", "Output caustic gaussian direction", true /*optional*/, ResourceFormat::RGBA32Float
+    }
 };
 
 // Properties for Render Graph
@@ -1062,8 +1065,6 @@ void ReSTIR_FG::prepareBuffers(RenderContext* pRenderContext, const RenderData& 
         mpThpDI.reset();
         mpSampleGenState.reset();
         mResetTex = false;
-
-        m_GaussianPhotonGuiding.ResetSceneTextures();
     }
 
     if (!mpSampleGenState && mStoreSampleGenState)
@@ -1630,6 +1631,12 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
             (m_GaussianPhotonGuiding.GetFrameCountAfterOptimReset() == 0 and m_GaussianPhotonGuiding.IsRobustInitialization()))
         {
             m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
+        }
+
+        // Caustic Gaussian Guiding
+        if (m_CausticGaussianGuiding.IsActive())
+        {
+            m_CausticGaussianGuiding.ClearCausticSources(pRenderContext);
         }
     }
 
@@ -2358,6 +2365,9 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
 
     // 3D gaussian photon guiding
     m_GaussianPhotonGuiding.SetFinalShadingVars(var);
+
+    // Caustic gaussian guiding
+    m_CausticGaussianGuiding.SetFinalShadingVars(var);
 
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)

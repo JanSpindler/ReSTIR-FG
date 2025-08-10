@@ -14,6 +14,9 @@ struct CausticSource
 {
     float3 srcPos; // Position of the caustic castic diffuse surface
     float3 targetPos; // Position of the first vertex after the source in the caustic chain
+    bool valid;
+
+    constexpr CausticSource() : srcPos(0.0f), targetPos(0.0f), valid(false) {}
 };
 
 void CausticGaussianGuiding::PrepareBuffers(RenderContext* pRenderContext, const uint causticBufSize)
@@ -60,6 +63,8 @@ bool CausticGaussianGuiding::RenderUI(Gui::Widgets& widget)
         changed |= group.var("Hash Scaling Factor", m_HashScalingFactor, 1.0f, 1e6f);
 
         changed |= group.var("Gauss Sampling Prob", m_GaussSamplingProb, 0.0f, 1.0f);
+
+        changed |= group.var("Gauss Sigma", m_GaussSigma, 0.01f);
     }
 
     return changed;
@@ -68,6 +73,11 @@ bool CausticGaussianGuiding::RenderUI(Gui::Widgets& widget)
 void CausticGaussianGuiding::Run(RenderContext* pRenderContext)
 {
     // TODO: Spatial resampling in hash grid
+}
+
+void CausticGaussianGuiding::ClearCausticSources(RenderContext* pRenderContext) const
+{
+    pRenderContext->clearUAV(m_CausticSourceMap->getUAV().get(), uint4(0));
 }
 
 void CausticGaussianGuiding::ClearHashGridCounter(RenderContext* pRenderContext) const
@@ -80,12 +90,13 @@ void CausticGaussianGuiding::SetGeneratePhotonsVars(const ShaderVar& vars)
     vars["CausticGaussianGuiding"]["gCausticHashGridSize"] = m_HashGridSize;
     vars["CausticGaussianGuiding"]["gCausticHashScalingFactor"] = m_HashScalingFactor;
     vars["CausticGaussianGuiding"]["gCausticGaussianSamplingProb"] = m_GaussSamplingProb;
+    vars["CausticGaussianGuiding"]["gCausticGaussianSigma"] = m_GaussSigma;
 
     vars["gCausticGaussianReservoirs"] = m_ReservoirHashGrid[m_CurrentBufIdx];
     vars["gCausticSources"] = m_CausticSourceMap;
 
-    ++m_CurrentBufIdx;
-    m_CurrentBufIdx %= 2;
+    //++m_CurrentBufIdx;
+    //m_CurrentBufIdx %= 2;
 }
 
 void CausticGaussianGuiding::SetCollectPhotonsVars(const ShaderVar& vars)
@@ -95,4 +106,12 @@ void CausticGaussianGuiding::SetCollectPhotonsVars(const ShaderVar& vars)
 
     vars["gCausticGaussianReservoirs"] = m_ReservoirHashGrid[m_CurrentBufIdx];
     vars["gCausticSources"] = m_CausticSourceMap;
+}
+
+void CausticGaussianGuiding::SetFinalShadingVars(const ShaderVar& vars)
+{
+    vars["CausticGaussianGuiding"]["gCausticHashGridSize"] = m_HashGridSize;
+    vars["CausticGaussianGuiding"]["gCausticHashScalingFactor"] = m_HashScalingFactor;
+
+    vars["gCausticGaussianReservoirs"] = m_ReservoirHashGrid[m_CurrentBufIdx];
 }

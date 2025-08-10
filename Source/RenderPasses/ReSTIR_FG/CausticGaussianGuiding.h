@@ -16,17 +16,20 @@ public:
 
     constexpr bool IsActive() const { return m_Active; }
 
+    void ClearCausticSources(RenderContext* pRenderContext) const;
     void ClearHashGridCounter(RenderContext* pRenderContext) const;
     void SetGeneratePhotonsVars(const ShaderVar& vars);
     void SetCollectPhotonsVars(const ShaderVar& vars);
+    void SetFinalShadingVars(const ShaderVar& vars);
 
 private:
     ref<Device> m_Device;
 
     bool m_Active = false;
     uint m_HashGridSize = 1e5;
-    float m_HashScalingFactor = 100.0f;
+    float m_HashScalingFactor = 10.0f;
     float m_GaussSamplingProb = 0.5f;
+    float m_GaussSigma = 0.1f;
 
     uint m_CurrentBufIdx = 0;
 

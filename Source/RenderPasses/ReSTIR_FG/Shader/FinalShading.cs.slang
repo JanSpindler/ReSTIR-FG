@@ -14,6 +14,8 @@ import Rendering.RTXDI.RTXDI;
 import Reservoir;
 import FinalGatherData;
 import GaussianHelper;
+import CausticGuiding;
+import Hash;
 
 // For Syntax highlighting
 #ifndef USE_RTXDI
@@ -55,6 +57,7 @@ Texture2D<float4> gOutDiffuseReflectance;
 Texture2D<float4> gOutSpecularReflectance;
 RWTexture2D<float4> gOutResidualRadiance;
 RWTexture2D<float4> gOutGaussianDirectionPdf;
+RWTexture2D<float4> gOutCausticGaussianDir;
 
 // For view copy
 RWTexture2D<float4> gViewDIPrev;
@@ -89,6 +92,13 @@ cbuffer GaussianPhotonGuiding
     float gCS;
 };
 RWStructuredBuffer<Gaussian3D> gGaussians;
+
+cbuffer CausticGaussianGuiding
+{
+    uint gCausticHashGridSize;
+    float gCausticHashScalingFactor;
+};
+StructuredBuffer<CausticGaussianReservoir> gCausticGaussianReservoirs;
 
 static const float kRayEpsilon = 0.98f;
 static const bool kUseEnvBackground = USE_ENV_BACKROUND;
@@ -425,7 +435,10 @@ void main(uint2 pixel : SV_DispatchThreadID)
     {
         if (hitInfo.isValid())
         {
-            float minDist = 1000000.0f;
+            const TriangleHit triangleHit = hitInfo.getTriangleHit();
+            const VertexData vertexData = gScene.getVertexData(triangleHit);
+
+            float minDist = float ::maxValue;
             const uint totalLightCount = gAnalyticLightCount + gGeometricLightCount;
             for (uint lightIdx = 0; lightIdx < totalLightCount; ++lightIdx)
             {
@@ -434,8 +447,6 @@ void main(uint2 pixel : SV_DispatchThreadID)
                     const uint globalGaussianIdx = lightIdx * gGaussianCount + gaussianIdx;
                     const Gaussian3D gaussian = gGaussians[globalGaussianIdx];
                     
-                    const TriangleHit triangleHit = hitInfo.getTriangleHit();
-                    const VertexData vertexData = gScene.getVertexData(triangleHit);
                     const float3 firstHitPos = vertexData.posW * gPositionScaling;
 
                     const float result = length(firstHitPos - gaussian.mean) / gaussian.GetSigma(gCS);
@@ -447,6 +458,31 @@ void main(uint2 pixel : SV_DispatchThreadID)
         else
         {
             gOutGaussianDirectionPdf[pixel] = float4(0.0f);
+        }
+    }
+
+    if (is_valid(gOutCausticGaussianDir))
+    {
+        if (hitInfo.isValid())
+        {
+            const TriangleHit triangleHit = hitInfo.getTriangleHit();
+            const VertexData vertexData = gScene.getVertexData(triangleHit);
+
+            const uint hashGridIdx = hash2(vertexData.posW * gCausticHashScalingFactor) % gCausticHashGridSize;
+            if (gCausticGaussianReservoirs[hashGridIdx].confidence > 0.0f)
+            {
+                const float3 pos = gCausticGaussianReservoirs[hashGridIdx].pos;
+                const float3 dir = normalize(pos - vertexData.posW);
+                gOutCausticGaussianDir[pixel] = float4(dir, 1.0f);
+            }
+            else
+            {
+                gOutCausticGaussianDir[pixel] = float4(0.0f);
+            }
+        }
+        else
+        {
+            gOutCausticGaussianDir[pixel] = float4(0.0f);
         }
     }
 }

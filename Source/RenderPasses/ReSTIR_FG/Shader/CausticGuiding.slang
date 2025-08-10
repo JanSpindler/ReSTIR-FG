@@ -4,6 +4,7 @@ struct CausticSource
 {
     float3 srcPos;    // Position of the caustic castic diffuse surface
     float3 targetPos; // Position of the first vertex after the source in the caustic chain
+    bool valid;
 };
 
 struct CausticGaussianReservoir
@@ -36,7 +37,7 @@ struct CausticGaussianReservoir
         }
 
         confidence += 1.0f;
-        confidence = min(confidence, 50.0f);
+        confidence = min(confidence, 20.0f);
 
         weightSum += newThp;
         if (sampleNext1D(sg) * weightSum < newThp)
@@ -55,7 +56,7 @@ struct CausticGaussianReservoir
         }
 
         confidence += otherRes.confidence;
-        confidence = min(confidence, 50.0f);
+        confidence = min(confidence, 20.0f);
         
         weightSum += weight;
         if (sampleNext1D(sg) * weightSum < weight)

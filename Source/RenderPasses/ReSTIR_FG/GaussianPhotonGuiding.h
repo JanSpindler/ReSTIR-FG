@@ -31,7 +31,6 @@ public:
     void SetScene(RenderContext* pRenderContext, const ref<Scene>& pScene);
     void PrepareBuffers(const uint2 screenSize, RenderContext* renderContext, const uint2 maxPhotonCount);
     bool RenderUI(Gui::Widgets& widget);
-    void ResetSceneTextures();
     void ResetPhotonFirstHitMap();
 
     void GenerateCausticClusters(RenderContext* renderContext);
@@ -125,7 +124,6 @@ private:
     InteropBuffer m_GaussianBuf;
     ref<Buffer> m_GaussianBufReadCPU;
     ref<Buffer> m_GaussianBufWriteCPU;
-    ref<Texture> m_GaussianTex;
     InteropBuffer m_FirstHitPhotonCountBuf;
     ref<Buffer> m_FirstHitPhotonCountBufCPU;
     InteropBuffer m_FirstHitPhotonInfoBuf;
