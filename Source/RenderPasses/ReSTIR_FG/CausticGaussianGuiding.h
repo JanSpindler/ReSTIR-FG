@@ -18,6 +18,7 @@ public:
 
     void ClearHashGridCounter(RenderContext* pRenderContext) const;
     void SetGeneratePhotonsVars(const ShaderVar& vars);
+    void SetCollectPhotonsVars(const ShaderVar& vars);
 
 private:
     ref<Device> m_Device;

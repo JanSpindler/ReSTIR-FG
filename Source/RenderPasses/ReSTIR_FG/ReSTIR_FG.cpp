@@ -1631,12 +1631,6 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
         {
             m_GaussianPhotonGuiding.ClearBuffersForGeneratePhotons(pRenderContext);
         }
-
-        // Caustic gaussian guiding
-        if (m_CausticGaussianGuiding.IsActive())
-        {
-            m_CausticGaussianGuiding.ClearHashGridCounter(pRenderContext);
-        }
     }
 
     // Get dimensions of ray dispatch.
@@ -1867,6 +1861,12 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
         m_AdaptiveLightSampler.ClearLeafRadianceBuf(pRenderContext);
     }
 
+    // Caustic gaussian guiding
+    if (m_CausticGaussianGuiding.IsActive())
+    {
+        m_CausticGaussianGuiding.ClearHashGridCounter(pRenderContext);
+    }
+
     // Defines
     mCollectPhotonPass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
     mCollectPhotonPass.pProgram->addDefine("CAUSTIC_COLLECTION_MODE", std::to_string((uint)mCausticCollectMode));
@@ -1894,6 +1894,9 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
 
     // Adaptive light sampler defines
     mCollectPhotonPass.pProgram->addDefine("ADAPTIVE_LIGHT_SAMPLER", m_AdaptiveLightSampler.IsActive() ? "1" : "0");
+
+    // Caustic gaussian guiding
+    mCollectPhotonPass.pProgram->addDefine("CAUSTIC_GAUSSIAN_GUIDING", m_CausticGaussianGuiding.IsActive() ? "1" : "0");
 
     // Program vars
     if (!mCollectPhotonPass.pVars)
@@ -1958,6 +1961,12 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     if (m_AdaptiveLightSampler.IsActive())
     {
         m_AdaptiveLightSampler.SetCollectPhotonsVars(var);
+    }
+
+    // Caustic gaussian guiding
+    if (m_CausticGaussianGuiding.IsActive())
+    {
+        m_CausticGaussianGuiding.SetCollectPhotonsVars(var);
     }
 
     // Bind reservoir and light buffer depending on the boost buffer

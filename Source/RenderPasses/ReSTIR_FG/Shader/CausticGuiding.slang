@@ -2,8 +2,8 @@ import Utils.Sampling.SampleGenerator;
 
 struct CausticSource
 {
-    float srcPos;    // Position of the caustic castic diffuse surface
-    float targetPos; // Position of the first vertex after the source in the caustic chain
+    float3 srcPos;    // Position of the caustic castic diffuse surface
+    float3 targetPos; // Position of the first vertex after the source in the caustic chain
 };
 
 struct CausticGaussianReservoir

@@ -783,6 +783,7 @@ void rayGen()
 
     // Caustic gaussian guiding
 #if CAUSTIC_GAUSSIAN_GUIDING
+    bool hasLastDiff = false;
     float3 lastDiffPos = float3(0.0f);
     float3 firstCausticEntry = float3(0.0f);
 #endif
@@ -812,9 +813,18 @@ void rayGen()
         photon.dir = ray.Direction;
         reflectedDiffuse = rayData.diffuseHit;
 
+        // Track last diffuse position before caustic chain
+#if CAUSTIC_GAUSSIAN_GUIDING
+        if (reflectedDiffuse)
+        {
+            lastDiffPos = photonPos;
+            hasLastDiff = true;
+        }
+#endif
+
         // Store first hit photon even when the first hit is not stored in the photon map
         // Because resulting photons along the path might be collected
-#ifdef TRACK_FIRST_HIT_PHOTONS
+#if TRACK_FIRST_HIT_PHOTONS
         if (i == 0)
         {
             // Get first hit photon index
@@ -834,7 +844,7 @@ void rayGen()
                 gFirstHitPhotonInfo[firstHitIndex] = firstHitPhotonInfo;
             }
         }
-#endif // USE_3D_GAUSSIAN_PHOTON_GUIDING
+#endif
 
         // Gen Roulette value for rejecting
         float rndRoulette = sampleNext1D(rayData.sg);
@@ -895,6 +905,15 @@ void rayGen()
                     // Store mapping to leaf node of light tree for adaptive light sampler
 #if ADAPTIVE_LIGHT_SAMPLER
                     gPhotonLeafMap[photonType][photonIndex] = leafNodeIdx;
+#endif
+
+                    // If caustic photon and a diffuse surface was hit before, store the caustic source
+#if CAUSTIC_GAUSSIAN_GUIDING
+                    if (photonType == 1 && hasLastDiff)
+                    {
+                        gCausticSources[photonIndex].srcPos = lastDiffPos;
+                        gCausticSources[photonIndex].targetPos = photonPos;
+                    }
 #endif
                 }
             }

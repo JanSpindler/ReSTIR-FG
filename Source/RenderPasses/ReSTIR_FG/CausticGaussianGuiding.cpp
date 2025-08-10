@@ -10,8 +10,8 @@ struct CausticGaussianReservoir
 
 struct CausticSource
 {
-    float srcPos; // Position of the caustic castic diffuse surface
-    float targetPos; // Position of the first vertex after the source in the caustic chain
+    float3 srcPos; // Position of the caustic castic diffuse surface
+    float3 targetPos; // Position of the first vertex after the source in the caustic chain
 };
 
 void CausticGaussianGuiding::PrepareBuffers(RenderContext* pRenderContext, const uint causticBufSize)
@@ -77,4 +77,13 @@ void CausticGaussianGuiding::SetGeneratePhotonsVars(const ShaderVar& vars)
 
     ++m_CurrentBufIdx;
     m_CurrentBufIdx %= 2;
+}
+
+void CausticGaussianGuiding::SetCollectPhotonsVars(const ShaderVar& vars)
+{
+    vars["CausticGaussianGuiding"]["gCausticHashGridSize"] = m_HashGridSize;
+    vars["CausticGaussianGuiding"]["gCausticHashScalingFactor"] = m_HashScalingFactor;
+
+    vars["gCausticGaussianReservoirs"] = m_ReservoirHashGrid[m_CurrentBufIdx];
+    vars["gCausticSources"] = m_CausticSourceMap;
 }

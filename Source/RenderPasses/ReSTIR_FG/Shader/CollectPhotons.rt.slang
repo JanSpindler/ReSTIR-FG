@@ -15,6 +15,8 @@ import Utils.Color.ColorHelpers;
 import Reservoir;
 import SurfaceDataFG;
 import FinalGatherData;
+import CausticGuiding;
+import Hash;
 
 // For syntax highlighting purposes
 #ifndef MODE_FINAL_GATHER
@@ -66,6 +68,12 @@ cbuffer AdaptiveLightSampler
     uint gAlsCausticPhotonWeight;
 }
 
+cbuffer CausticGaussianGuiding
+{
+    uint gCausticHashGridSize;
+    float gCausticHashScalingFactor;
+}
+
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gView;
@@ -102,6 +110,11 @@ RWByteAddressBuffer gClusterRadianceSq;
 RWByteAddressBuffer gLeafRadiance;
 Buffer<uint> gPhotonLeafMap[2];
 Buffer<uint> gNodeClusterMap;
+
+// Caustic gaussian guiding
+StructuredBuffer<CausticSource> gCausticSources;
+RWStructuredBuffer<CausticGaussianReservoir> gCausticGaussianReservoirs;
+RWBuffer<uint> gCausticHashGridCounter;
 
 // Outputs
 RWStructuredBuffer<SampleGenerator> gSampleGenState;
@@ -269,7 +282,7 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     }
 }
 
-void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx, const float3 photonContribution)
+void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx, float lum)
 {
     const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primitiveIdx];
     if (leafNodeIdx != 0xFFFFFFFF)
@@ -277,13 +290,30 @@ void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primi
         const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
         if (clusterIdx != 0xFFFFFFFF)
         {
-            const float lum = luminance(photonContribution) * (instanceIdx == 0 ? (float)gAlsGlobalPhotonWeight : (float)gAlsCausticPhotonWeight);
+            lum *= instanceIdx == 0 ? (float)gAlsGlobalPhotonWeight : (float)gAlsCausticPhotonWeight;
             NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
 
             InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
             NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
         }
     }
+}
+
+void TrackPhotonForCausticGaussianGuiding(const uint causticPrimIdx, const float lum, inout SampleGenerator sg)
+{
+    // Calc hash grid index
+    const uint hashGridIdx = hash(gCausticSources[causticPrimIdx].srcPos * gCausticHashScalingFactor) % gCausticHashGridSize;
+
+    // Stop if this is not the first access to this hash grid cell
+    uint hashAccessIdx = 0xFFFFFFFF; // Init to not 0
+    InterlockedAdd(gCausticHashGridCounter[hashGridIdx], 1u, hashAccessIdx);
+    if (hashAccessIdx != 0)
+    {
+        return;
+    }
+
+    // Update reservoir
+    gCausticGaussianReservoirs[hashGridIdx].Update(gCausticSources[causticPrimIdx].targetPos, lum, sg);
 }
 
 // Photon Collection via anyHit
@@ -420,7 +450,14 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 #endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
-    TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, photonContribution);
+    TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, luminance(photonContribution));
+#endif
+
+#if CAUSTIC_GAUSSIAN_GUIDING
+    if (instanceIdx == 1)
+    {
+        TrackPhotonForCausticGaussianGuiding(primIndex, luminance(photonContribution), rayData.sg);
+    }
 #endif
 
     IgnoreHit();
@@ -496,8 +533,15 @@ float3 stochPhotonContribution(
 #endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
-            TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex, photonContribution);
+            TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex, luminance(photonContribution));
 #endif
+
+#if CAUSTIC_GAUSSIAN_GUIDING
+            if (instanceIndex == 1)
+            {
+                TrackPhotonForCausticGaussianGuiding(photonIndex, luminance(photonContribution), rayData.sg);
+            }
+#endif // CAUSTIC_GAUSSIAN_GUIDING
         }
     }
 
