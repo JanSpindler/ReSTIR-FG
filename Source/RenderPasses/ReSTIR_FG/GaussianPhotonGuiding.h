@@ -113,8 +113,8 @@ private:
     uint m_FrameCountAfterOptimReset = 0;
 
     // Repulsion
-    float m_RepulsiveForce = 0.01f;
-    float m_RepulsiveDistance = 1.0f;
+    float m_RepulsiveForce = 0.02f;
+    float m_RepulsiveDistance = 0.1f;
 
     // Random replace
     bool m_RandomReplace = true;

@@ -36,7 +36,7 @@ struct CausticGaussianReservoir
         }
 
         confidence += 1.0f;
-        // TODO: Cap confidence?
+        confidence = min(confidence, 50.0f);
 
         weightSum += newThp;
         if (sampleNext1D(sg) * weightSum < newThp)
@@ -55,6 +55,7 @@ struct CausticGaussianReservoir
         }
 
         confidence += otherRes.confidence;
+        confidence = min(confidence, 50.0f);
         
         weightSum += weight;
         if (sampleNext1D(sg) * weightSum < weight)

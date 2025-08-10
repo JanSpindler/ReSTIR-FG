@@ -6,6 +6,8 @@ struct CausticGaussianReservoir
     float thp;
     float weightSum;
     float confidence;
+
+    constexpr CausticGaussianReservoir() : pos(0.0f), thp(0.0f), weightSum(0.0f), confidence(0.0f) {}
 };
 
 struct CausticSource
@@ -18,9 +20,13 @@ void CausticGaussianGuiding::PrepareBuffers(RenderContext* pRenderContext, const
 {
     for (uint idx = 0; idx < 2; ++idx)
     {
+        const std::vector<CausticGaussianReservoir> emptyReservoirs(m_HashGridSize, CausticGaussianReservoir());
         if (!m_ReservoirHashGrid[idx])
         {
-            m_ReservoirHashGrid[idx] = Buffer::createStructured(m_Device, sizeof(CausticGaussianReservoir), m_HashGridSize);
+            m_ReservoirHashGrid[idx] = Buffer::createStructured(
+                m_Device, sizeof(CausticGaussianReservoir), m_HashGridSize,
+                ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource, Buffer::CpuAccess::None, emptyReservoirs.data()
+            );
         }
     }
 
@@ -52,6 +58,8 @@ bool CausticGaussianGuiding::RenderUI(Gui::Widgets& widget)
         }
 
         changed |= group.var("Hash Scaling Factor", m_HashScalingFactor, 1.0f, 1e6f);
+
+        changed |= group.var("Gauss Sampling Prob", m_GaussSamplingProb, 0.0f, 1.0f);
     }
 
     return changed;
@@ -71,6 +79,7 @@ void CausticGaussianGuiding::SetGeneratePhotonsVars(const ShaderVar& vars)
 {
     vars["CausticGaussianGuiding"]["gCausticHashGridSize"] = m_HashGridSize;
     vars["CausticGaussianGuiding"]["gCausticHashScalingFactor"] = m_HashScalingFactor;
+    vars["CausticGaussianGuiding"]["gCausticGaussianSamplingProb"] = m_GaussSamplingProb;
 
     vars["gCausticGaussianReservoirs"] = m_ReservoirHashGrid[m_CurrentBufIdx];
     vars["gCausticSources"] = m_CausticSourceMap;

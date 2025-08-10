@@ -25,7 +25,9 @@ private:
 
     bool m_Active = false;
     uint m_HashGridSize = 1e5;
-    float m_HashScalingFactor = 1000.0f;
+    float m_HashScalingFactor = 100.0f;
+    float m_GaussSamplingProb = 0.5f;
+
     uint m_CurrentBufIdx = 0;
 
     ref<Buffer> m_ReservoirHashGrid[2];

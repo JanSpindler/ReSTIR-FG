@@ -66,6 +66,7 @@ cbuffer CausticGaussianGuiding
 {
     uint gCausticHashGridSize;
     float gCausticHashScalingFactor;
+    float gCausticGaussianSamplingProb;
 };
 
 //
@@ -182,11 +183,8 @@ float3 fromLocalToWorld(const in float3 normal, float3 w)
 
 // -------------------------- 3D gaussian photon guiding --------------------------
 
-float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
+float3 SampleGaussian(const float3 mu, const float sigma, inout SampleGenerator sg)
 {
-    const float3 mu = gaussian.mean;
-    const float sigma = gaussian.GetSigma(gCS);
-
     const float r1 = sampleNext1D(sg);
     const float r2 = sampleNext1D(sg);
     const float r3 = sampleNext1D(sg);
@@ -197,6 +195,13 @@ float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
 
     const float3 x = radius * float3(sin(phi) * cos(theta), sin(phi) * sin(theta), cos(phi));
     return x + mu;
+}
+
+float3 SampleGaussian(const in Gaussian3D gaussian, inout SampleGenerator sg)
+{
+    const float3 mu = gaussian.mean;
+    const float sigma = gaussian.GetSigma(gCS);
+    return SampleGaussian(mu, sigma, sg);
 }
 
 // Assumes that pos0 and gmmPos are in world space
@@ -550,7 +555,9 @@ void closestHit(
     inout RayData rayData : SV_RayPayload,
     BuiltInTriangleIntersectionAttributes attribs : SV_IntersectionAttributes)
 {
+    // Get incoming dir
     const float3 incomingRayDir = -WorldRayDirection();
+
     // Evaluate Falcor's material parameters at the hit point.
     GeometryInstanceID instanceID = getGeometryInstanceID();
     VertexData v = getVertexData(instanceID, PrimitiveIndex(), attribs);
@@ -564,19 +571,57 @@ void closestHit(
     {
         hints |= (uint) MaterialInstanceHints::AdjustShadingNormal;
     }
-    
-    BSDFSample bsdfSample;
+
+    // Sample direction
+#if CAUSTIC_GAUSSIAN_GUIDING
+    const uint hashGridIdx = hash(sd.posW * gCausticHashScalingFactor) % gCausticHashGridSize;
+    const bool validGauss = gCausticGaussianReservoirs[hashGridIdx].confidence > 0.0f;
+    const float gaussProb = gCausticGaussianSamplingProb;
+#else
+    const uint hashGridIdx = 0;
+    const float gaussProb = 0.0f;
+    const bool validGauss = false;
+#endif
+
+    static const float sigma = 0.1f; // TODO: Make scaling scene size independent
     let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
     let bsdfProperties = bsdf.getProperties(sd);
-    
-    bool valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
 
+    bool valid = false;
+    BSDFSample bsdfSample;
+
+    if (sampleNext1D(rayData.sg) >= gaussProb || !validGauss)
+    {
+        valid = bsdf.sample(sd, rayData.sg, bsdfSample, true /*ImportanceSampling*/);
+
+        if (validGauss)
+        {
+            const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
+            const float misWeight = bsdfSample.pdf / (bsdfSample.pdf + F0(sd.posW + bsdfSample.wo, sd.posW, mean, sigma));
+            bsdfSample.weight *= misWeight;
+        }
+    }
+    else
+    {
+        const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
+        const float3 causticGuidingPos = SampleGaussian(mean, sigma, rayData.sg);
+        const float gaussPdf = F0(causticGuidingPos, sd.posW, mean, sigma);
+        bsdfSample.wo = normalize(causticGuidingPos - sd.posW);
+        bsdfSample.weight = bsdf.eval(sd, bsdfSample.wo, rayData.sg) / gaussPdf;
+
+        const float misWeight = gaussPdf / (gaussPdf + bsdf.evalPdf(sd, bsdfSample.wo)); // TODO: What does useImportanceSampling do here?
+        bsdfSample.weight *= misWeight;
+
+        valid = dot(bsdfSample.wo, sd.faceN) > 0.0f;
+    }
+
+    // Store rayData
     float3 thpStart = rayData.thp;
     
-    bool transmission = bsdfSample.isLobe(LobeType::Transmission);
+    bool transmission = bsdfSample.isLobe(LobeType::Transmission); // TODO: Handle properly for gauss
     float3 rayOrigin = sd.computeNewRayOrigin(!transmission); // false is for transmissions
     rayData.origin = rayOrigin;
-    rayData.thp *= valid ? bsdfSample.weight: float3(0);
+    rayData.thp *= valid ? bsdfSample.weight : float3(0);
     rayData.packedNormal = encodeNormal2x8(sd.faceN);   // Packed normal formated as 2x8 for surface rejection 
     rayData.direction = bsdfSample.wo;
     rayData.isEmissive = any(bsdfProperties.emission > 0);
