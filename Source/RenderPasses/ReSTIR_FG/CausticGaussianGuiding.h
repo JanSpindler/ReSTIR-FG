@@ -29,7 +29,7 @@ private:
     uint m_HashGridSize = 1e5;
     float m_HashScalingFactor = 10.0f;
     float m_GaussSamplingProb = 0.5f;
-    float m_GaussSigma = 0.4f;
+    float m_GaussSigma = 1.0f / 3.0f;
 
     uint m_CurrentBufIdx = 0;
 

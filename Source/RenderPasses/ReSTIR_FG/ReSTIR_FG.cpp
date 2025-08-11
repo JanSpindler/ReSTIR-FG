@@ -610,6 +610,9 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 }
 
                 changed |= groupGen.checkbox("Throughput Russian Roulette", mThpRussianRoulette);
+                changed |= groupGen.var(
+                    "Throughput Russian Roulette Power", mThpRussianRoulettePower, 0.01f, std::numeric_limits<float>::max(), 0.001f
+                );
 
                 changed |= groupGen.var("Light Store Probability", mPhotonRejection, 0.f, 1.f, 0.0001f);
                 group.tooltip("Probability a global and caustic photon is stored on diffuse hit. Flux is scaled up appropriately");
@@ -1731,6 +1734,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     var[nameBuf]["gCausticsBounces"] = mMaxCausticBounces;
     var[nameBuf]["gGenerationLampIntersectGuard"] =  mPhotonFirstHitGuard;
     var[nameBuf]["gGenerationLampIntersectGuardStoreProbability"] = mPhotonFirstHitGuardStoreProb;
+    var[nameBuf]["gThpRussianRoulettePower"] = mThpRussianRoulettePower;
 
     // Light samples constants
     if (mpEmissiveLightSampler)

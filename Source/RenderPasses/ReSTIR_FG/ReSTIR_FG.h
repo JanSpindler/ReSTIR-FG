@@ -272,6 +272,7 @@ private:
     uint mCausticTemporalFilterHistoryLimit = 60;
     bool mEmissionToCausticFilter = true;
     bool mThpRussianRoulette = true;
+    float mThpRussianRoulettePower = 1.0f;
 
     ResamplingMode mCausticResamplingMode = ResamplingMode::SpartioTemporal;
     uint mCausticResamplingConfidenceCap = 20;

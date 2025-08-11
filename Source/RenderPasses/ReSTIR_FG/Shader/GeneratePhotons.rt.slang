@@ -35,7 +35,8 @@ cbuffer CB
     uint gHashSize;     //Size is always 2^x
     int gCausticsBounces;    //Number of diffuse bounces allowed for caustic photons
     float gGenerationLampIntersectGuard;    //Guard for the first hit of photons
-    float gGenerationLampIntersectGuardStoreProbability; //Percentage a photon is stored
+    float gGenerationLampIntersectGuardStoreProbability; // Percentage a photon is stored
+    float gThpRussianRoulettePower;
 };
 
 #if USE_EMISSIVE_LIGHT // Buffer is only valid if emissive light is enabled
@@ -984,7 +985,7 @@ void rayGen()
     // Russian Roulette
 #if THP_RUSSIAN_ROULETTE
         const float rrVal = luminance(rayData.thp);
-        const float prob = max(0.f, 1.f - rrVal);
+        const float prob = pow(max(0.f, 1.f - rrVal), gThpRussianRoulettePower);
         float rnd = sampleNext1D(rayData.sg);
         if (rnd < prob)
         {
