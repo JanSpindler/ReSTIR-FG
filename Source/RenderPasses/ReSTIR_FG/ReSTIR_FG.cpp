@@ -573,7 +573,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
             group.tooltip("First -> Global, Second -> Caustic");
             mChangePhotonLightBufferSize = group.button("Apply", true);
 
-            if (auto groupGen = group.group("Generation Settings", true))
+            if (auto groupGen = group.group("Generation Settings"))
             {
                 if (mMixedLights)
                 {
@@ -627,7 +627,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 groupGen.separator();
             }
 
-            if (auto group2 = group.group("Collection Settings", true))
+            if (auto group2 = group.group("Collection Settings"))
             {
                 bool radiusChanged =
                     group2.var("Collection Radius", mPhotonCollectionRadiusStart, 0.00001f, 1000.f, 0.00001f, false, "%.6f");
@@ -672,7 +672,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 group2.separator();
             }
 
-            if (auto causticGroup = group.group("Caustic Settings", true))
+            if (auto causticGroup = group.group("Caustic Settings"))
             {
                 changed |= causticGroup.dropdown("Caustic Collection Mode", kCausticCollectionModeList, (uint32_t&)mCausticCollectMode);
                 causticGroup.tooltip(
@@ -710,7 +710,7 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                 group.separator();
             }
 
-            if (auto groupCulling = group.group("PhotonCulling", true))
+            if (auto groupCulling = group.group("PhotonCulling"))
             {
                 changed |= groupCulling.checkbox("Use Photon Culling", mUsePhotonCulling);
                 groupCulling.tooltip("Enabled culling of photon based on a hash grid. Photons are only stored on cells that are collected");

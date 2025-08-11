@@ -189,78 +189,88 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
     if (auto group = widget.group("PhotonGuiding"))
     {
         changed |= group.checkbox("Use 3D Gaussian Photon Guiding", m_Active);
-        group.tooltip("Use 3D Gaussian Photon Guiding for the final gather pass");
 
-        if (group.var("Gaussians per Light", m_GaussianCount))
+        // General
+        if (auto generalGroup = group.group("General"))
         {
-            m_GaussianBuf.buffer.reset();
-            m_GradientBuf.buffer.reset();
-            m_OptimizationBuf.reset();
-            m_LightFirstHitCountsBuf.reset();
-            m_SoftmaxBuf.buffer.reset();
-
-            m_GaussianCount = math::max<uint>(m_GaussianCount, 1);
-            changed = true;
-        }
-
-        if (group.button("ReInit Gaussians"))
-        {
-            m_GaussianBuf.buffer.reset();
-            m_OptimizationBuf.reset();
-            m_SoftmaxBuf.buffer.reset();
-            changed = true;
-        }
-
-        changed |= group.var("Minimum GMM PDF", m_MinPdf, 0.0f, 1.0f);
-
-        changed |= group.var("Beta (MIS)", m_Beta, 0.0f, 1.0f);
-
-        changed |= group.var("Global Photon Weight", m_GlobalPhotonWeight, 0u, 1000u);
-        changed |= group.var("Caustic Photon Weight", m_CausticPhotonWeight, 0u, 1000u);
-
-        const bool rebuildFirstPhoton = group.var("Max First Hit Photons", m_MaxFirstHitPhotonCount);
-        if (m_MaxFirstHitPhotonCount > 0)
-        {
-            changed |= rebuildFirstPhoton;
-            if (rebuildFirstPhoton)
+            if (generalGroup.var("Gaussians per Light", m_GaussianCount))
             {
-                m_FirstHitPhotonInfoBuf.buffer.reset();
-                m_FirstHitCollectionCountsBuf.buffer.reset();
+                m_GaussianBuf.buffer.reset();
+                m_GradientBuf.buffer.reset();
+                m_OptimizationBuf.reset();
+                m_LightFirstHitCountsBuf.reset();
+                m_SoftmaxBuf.buffer.reset();
+
+                m_GaussianCount = math::max<uint>(m_GaussianCount, 1);
+                changed = true;
+            }
+
+            if (generalGroup.button("ReInit Gaussians"))
+            {
+                m_GaussianBuf.buffer.reset();
+                m_OptimizationBuf.reset();
+                m_SoftmaxBuf.buffer.reset();
+                changed = true;
+            }
+
+            changed |= generalGroup.var("Minimum GMM PDF", m_MinPdf, 0.0f, 1.0f);
+
+            changed |= generalGroup.var("Beta (MIS)", m_Beta, 0.0f, 1.0f);
+
+            changed |= generalGroup.var("Global Photon Weight", m_GlobalPhotonWeight, 0u, 1000u);
+            changed |= generalGroup.var("Caustic Photon Weight", m_CausticPhotonWeight, 0u, 1000u);
+
+            const bool rebuildFirstPhoton = generalGroup.var("Max First Hit Photons", m_MaxFirstHitPhotonCount);
+            if (m_MaxFirstHitPhotonCount > 0)
+            {
+                changed |= rebuildFirstPhoton;
+                if (rebuildFirstPhoton)
+                {
+                    m_FirstHitPhotonInfoBuf.buffer.reset();
+                    m_FirstHitCollectionCountsBuf.buffer.reset();
+                }
+            }
+
+            generalGroup.text(
+                "First Hit Photons: " + std::to_string(m_ActualFirstHitPhotonCount) + " / " + std::to_string(m_MaxFirstHitPhotonCount) +
+                " (" + std::to_string(static_cast<float>(m_ActualFirstHitPhotonCount) / static_cast<float>(m_MaxFirstHitPhotonCount)) + ")"
+            );
+        }
+        
+        // Optimizer
+        if (auto optimGroup = group.group("Optimizer"))
+        {
+            changed |= optimGroup.checkbox("Optimize Gaussians", m_Optimize);
+            const bool changedOptimizer = optimGroup.dropdown("Optimizer", m_OptimizerList, reinterpret_cast<uint&>(m_Optimizer));
+            if (changedOptimizer)
+            {
+                m_OptimizationBuf.reset();
+            }
+            changed |= changedOptimizer;
+
+            changed |= optimGroup.var("Learning Rate", m_LearningRate, 0.0f, 1.0f);
+
+            if (m_Optimizer == Optimizer::Adam)
+            {
+                changed |= optimGroup.var("Adam Beta1", m_Beta1, 0.0f, 1.0f);
+                changed |= optimGroup.var("Adam Beta2", m_Beta2, 0.0f, 1.0f);
             }
         }
 
-        group.text(
-            "First Hit Photons: " + std::to_string(m_ActualFirstHitPhotonCount) + " / " +
-            std::to_string(m_MaxFirstHitPhotonCount) + " (" +
-            std::to_string(static_cast<float>(m_ActualFirstHitPhotonCount) / static_cast<float>(m_MaxFirstHitPhotonCount)) +
-            ")"
-        );
-        
-        // Optimizer
-        changed |= group.checkbox("Optimize Gaussians", m_Optimize);
-        const bool changedOptimizer = group.dropdown("Optimizer", m_OptimizerList, reinterpret_cast<uint&>(m_Optimizer));
-        if (changedOptimizer)
-        {
-            m_OptimizationBuf.reset();
-        }
-        changed |= changedOptimizer;
-
-        changed |= group.var("Learning Rate", m_LearningRate, 0.0f, 1.0f);
-
-        if (m_Optimizer == Optimizer::Adam)
-        {
-            changed |= group.var("Adam Beta1", m_Beta1, 0.0f, 1.0f);
-            changed |= group.var("Adam Beta2", m_Beta2, 0.0f, 1.0f);
-        }
-
         // Repulsion
-        group.var("Repulsive Force", m_RepulsiveForce, 0.0f);
-        group.var("Repulsive Distance", m_RepulsiveDistance, 0.01f);
+        if (auto repulsionGroup = group.group("Repulsion"))
+        {
+            repulsionGroup.var("Repulsive Force", m_RepulsiveForce, 0.0f);
+            repulsionGroup.var("Repulsive Distance", m_RepulsiveDistance, 0.01f);
+        }
 
         // Random replace
-        changed |= group.checkbox("Enable Random Replace", m_RandomReplace);
-        changed |= group.var("Random Replace Count", m_RandomReplaceCount, 0u, m_GaussianCount);
-        changed |= group.var("Random Replace Frequency", m_RandomReplaceFrequency, 1u, 1024u);
+        if (auto randomReplaceGroup = group.group("Random Replace"))
+        {
+            changed |= randomReplaceGroup.checkbox("Enable Random Replace", m_RandomReplace);
+            changed |= randomReplaceGroup.var("Random Replace Count", m_RandomReplaceCount, 0u, m_GaussianCount);
+            changed |= randomReplaceGroup.var("Random Replace Frequency", m_RandomReplaceFrequency, 1u, 1024u);
+        }
     }
 
     return changed;
