@@ -30,7 +30,7 @@ cbuffer CB
 {
     //
     uint gMaxRecursion; //Max photon recursion depths
-    float gRejection; //Probability that a photon is stored as a light
+    float2 gRejection; //Probability that a photon is stored as a light
     uint gFlags;       //Flags for the pass. See GenerationFlags enum
     uint gHashSize;     //Size is always 2^x
     int gCausticsBounces;    //Number of diffuse bounces allowed for caustic photons
@@ -574,7 +574,6 @@ void closestHit(
     }
 
     // Get BSDF
-    static const float sigma = gCausticGaussianSigma; // TODO: Make scaling scene size independent
     let bsdf = gScene.materials.getMaterialInstance(sd, lod, hints);
     let bsdfProperties = bsdf.getProperties(sd);
 
@@ -607,6 +606,7 @@ void closestHit(
         if (validGauss)
         {
             const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
+            const float sigma = gCausticGaussianSigma * distance(mean, sd.posW);
             const float gaussPdf = F0(sd.posW + bsdfSample.wo, sd.posW, mean, sigma);
             const float misWeight = ((1.0f - gaussProb) * bsdfSample.pdf) / (((1.0f - gaussProb) * bsdfSample.pdf) + (gaussProb * gaussPdf));
             bsdfSample.weight *= misWeight;
@@ -615,6 +615,7 @@ void closestHit(
     else
     {
         const float3 mean = gCausticGaussianReservoirs[hashGridIdx].pos;
+        const float sigma = gCausticGaussianSigma * distance(mean, sd.posW);
         const float3 causticGuidingPos = SampleGaussian(mean, sigma, rayData.sg);
         bsdfSample.wo = normalize(causticGuidingPos - sd.posW);
 
@@ -784,9 +785,8 @@ void rayGen()
     uint2 launchIndex = DispatchRaysIndex().xy;
     uint2 launchDim = DispatchRaysDimensions().xy;
 
-    const float invRejection = 1.f / gRejection;
-    const float invInvRejection = 1.f / (1.f - gRejection);
-
+    static const float invRejection[2] = { 1.0f / gRejection.x, 1.0f / gRejection.y };
+    
     // Sample Generator for the light sample
     SampleGenerator lightSg = SampleGenerator(launchIndex, gFrameCount + 11 * 32);
 
@@ -906,8 +906,8 @@ void rayGen()
 #endif
 
         // Gen Roulette value for rejecting
-        float rndRoulette = sampleNext1D(rayData.sg);
-        bool roulette = rndRoulette <= gRejection;
+        const uint photonType = storeAsCaustic ? 1 : 0; // Global = 0 or caustic = 1
+        const bool roulette = sampleNext1D(rayData.sg) <= gRejection[photonType];
         bool minDistanceRoulette = true;
 
         // Check if photon should be rejected if it is too close to the light source
@@ -918,13 +918,11 @@ void rayGen()
         }
 
         // Store photons
-        if (reflectedDiffuse && (roulette || storeAsCaustic) && minDistanceRoulette)
+        // Used to be this: reflectedDiffuse && (roulette || storeAsCaustic) && minDistanceRoulette
+        if (reflectedDiffuse && roulette && minDistanceRoulette)
         {
-            // Global = 0 or caustic = 1
-            uint photonType = storeAsCaustic ? 1 : 0;
-            bool storePhoton = true;
-
             // Photon Culling
+            bool storePhoton = true;
             if (kUsePhotonCulling && (kUseCausticCulling || photonType == 0))
             {
                 storePhoton = cullingTest(photonPos);
@@ -934,10 +932,7 @@ void rayGen()
             if (storePhoton)
             {
                 uint photonIndex = 0;
-                if (photonType == 0)
-                {
-                    photon.flux *= invRejection;
-                }
+                photon.flux *= invRejection[photonType];
 
                 InterlockedAdd(gPhotonCounter[photonType], 1u, photonIndex);
 
@@ -968,7 +963,8 @@ void rayGen()
 
                     // If caustic photon and a diffuse surface was hit before, store the caustic source
 #if CAUSTIC_GAUSSIAN_GUIDING
-                    if (photonType == 1 && hasLastDiff && rayData.distance > 0.1f)
+                    // Distance condition maybe not needed because of distance dependent sigma
+                    if (photonType == 1 && hasLastDiff)// && rayData.distance > 0.1f)
                     {
                         gCausticSources[photonIndex].srcPos = lastDiffPos;
                         gCausticSources[photonIndex].targetPos = firstCausticEntry;
@@ -986,8 +982,7 @@ void rayGen()
         }
 
     // Russian Roulette
-#define THP_RUSSIAN_ROULETTE
-#ifdef THP_RUSSIAN_ROULETTE
+#if THP_RUSSIAN_ROULETTE
         const float rrVal = luminance(rayData.thp);
         const float prob = max(0.f, 1.f - rrVal);
         float rnd = sampleNext1D(rayData.sg);

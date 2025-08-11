@@ -250,7 +250,7 @@ private:
     // Photon
     uint mPhotonMaxBounces = 10;                                    //Number of Photon bounces
     uint mMaxCausticBounces = 10;                                   //Number of diffuse bounces for a caustic
-    float mPhotonRejection = 0.3f;                                  //Probability a global photon is stored
+    float2 mPhotonRejection = float2(0.3f, 1.0f);                                  //Probability a global photon is stored
     uint mNumDispatchedPhotons = 2000000;                           //Number of Photons dispatched
     uint mPhotonYExtent = 512;                                      //Dispatch Y extend
     uint2 mNumMaxPhotons = uint2(400000, 300000);                   // Size of the photon buffer
@@ -271,6 +271,7 @@ private:
     CausticCollectionMode mCausticCollectMode = CausticCollectionMode::Reservoir;
     uint mCausticTemporalFilterHistoryLimit = 60;
     bool mEmissionToCausticFilter = true;
+    bool mThpRussianRoulette = true;
 
     ResamplingMode mCausticResamplingMode = ResamplingMode::SpartioTemporal;
     uint mCausticResamplingConfidenceCap = 20;

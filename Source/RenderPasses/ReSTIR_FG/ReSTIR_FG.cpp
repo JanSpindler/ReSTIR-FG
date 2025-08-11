@@ -609,8 +609,10 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                     }
                 }
 
+                changed |= groupGen.checkbox("Throughput Russian Roulette", mThpRussianRoulette);
+
                 changed |= groupGen.var("Light Store Probability", mPhotonRejection, 0.f, 1.f, 0.0001f);
-                group.tooltip("Probability a photon light is stored on diffuse hit. Flux is scaled up appropriately");
+                group.tooltip("Probability a global and caustic photon is stored on diffuse hit. Flux is scaled up appropriately");
 
                 changed |= groupGen.var("Max Bounces", mPhotonMaxBounces, 0u, 32u);
                 changed |= groupGen.var("Max Caustic Bounces", mMaxCausticBounces, 0u, 32u);
@@ -1672,6 +1674,7 @@ void ReSTIR_FG::generatePhotonsPass(RenderContext* pRenderContext, const RenderD
     mGeneratePhotonPass.pProgram->addDefine("MAT_DIFFUSEPART_CUTOFF", std::to_string(mTraceDiffuseCutoff));
     mGeneratePhotonPass.pProgram->addDefine("USE_REDUCED_PD_FORMAT", mUseReducePhotonData ? "1" : "0");
     mGeneratePhotonPass.pProgram->addDefines(getMaterialDefines());
+    mGeneratePhotonPass.pProgram->addDefine("THP_RUSSIAN_ROULETTE", mThpRussianRoulette ? "1" : "0");
 
     // Gaussian photon guiding defines
     mGeneratePhotonPass.pProgram->addDefine("USE_3D_GAUSSIAN_PHOTON_GUIDING", m_GaussianPhotonGuiding.IsActive() ? "1" : "0");
