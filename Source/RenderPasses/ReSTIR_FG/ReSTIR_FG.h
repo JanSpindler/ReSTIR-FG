@@ -305,7 +305,7 @@ private:
     float mPhotonDynamicChangePercentage = 0.04f; // The percentage the buffer is increased/decreased per frame
 
     DynamicGenerationMode m_DynamicGenerationMode = DynamicGenerationMode::Roulette;
-    float m_DynamicGenerationRouletteP = 0.01f;
+    float m_DynamicGenerationRouletteP = 0.05f;
     float m_DynamicGenerationRouletteMaxError = 0.01f;
 
     bool mUseSPPM = false;

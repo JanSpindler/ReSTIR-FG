@@ -1877,24 +1877,16 @@ void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
     else if (m_DynamicGenerationMode == DynamicGenerationMode::Roulette)
     {
         // Global roulette adjustment
-        float target = static_cast<float>(mNumMaxPhotons[0]);
+        float target = static_cast<float>(mNumMaxPhotons[0]) * (1.0f - m_DynamicGenerationRouletteMaxError);
         float current = static_cast<float>(mCurrentPhotonCount[0]);
         float error = (target - current) / target;
-        if (error > 0.0f and abs(error) < m_DynamicGenerationRouletteMaxError)
-        {
-            error = 0.0f;
-        }
         mPhotonRejection.x += error * m_DynamicGenerationRouletteP;
         mPhotonRejection.x = std::clamp(mPhotonRejection.x, 0.f, 1.f);
 
         // Caustic roulette adjustment
-        target = static_cast<float>(mNumMaxPhotons[1]);
+        target = static_cast<float>(mNumMaxPhotons[1]) * (1.0f - m_DynamicGenerationRouletteMaxError);
         current = static_cast<float>(mCurrentPhotonCount[1]);
         error = (target - current) / target;
-        if (error > 0.0f and abs(error) < m_DynamicGenerationRouletteMaxError)
-        {
-            error = 0.0f;
-        }
         mPhotonRejection.y += error * m_DynamicGenerationRouletteP;
         mPhotonRejection.y = std::clamp(mPhotonRejection.y, 0.f, 1.f);
     }

@@ -437,44 +437,47 @@ bool SampleAnalyticLightDirGmm(
     inout SampleGenerator sg,
     const in LightData lightData,
     const uint lightIdx,
-    out float lightPdf,
+    out float samplingPdf,
     out float gmmPdf,
-    out float misWeight,
+    out float weight,
     out float3 sampledDir)
 {
     // Sample uniform
     if (sampleNext1D(sg) > gBeta)
     {
-        SampleAnalyticLightDirUniform(sg, lightData, lightPdf, sampledDir);
+        float uniformPdf = 0.0f;
+        SampleAnalyticLightDirUniform(sg, lightData, uniformPdf, sampledDir);
         gmmPdf = GMMProb(lightData.posW, lightData.posW + sampledDir, lightIdx);
-        misWeight = ((1.0f - gBeta) * lightPdf) / (((1.0f - gBeta) * lightPdf) + (gBeta * gmmPdf));
-        misWeight /= (1.0f - gBeta); // Need to divide flux by strategy selection probability. We do it here for simplicity
+        samplingPdf = ((1.0f - gBeta) * uniformPdf) + (gBeta * gmmPdf);
+        weight = ((1.0f - gBeta) * uniformPdf) / samplingPdf;
+        weight /= uniformPdf;
     }
     // Sample gmm
     else
     {
         // Default
-        misWeight = 0.0f;
+        weight = 0.0f;
 
         // Sample GMM
-        const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, lightPdf);
+        const float3 gmmPos = SampleGMM(lightData.posW, lightIdx, sg, gmmPdf);
         sampledDir = normalize(gmmPos - lightData.posW);
-        if (lightPdf <= gGmmMinPdf)
+        if (gmmPdf <= gGmmMinPdf)
         {
-            gmmPdf = 0.0f;
+            samplingPdf = 0.0f;
             return false;
         }
-        gmmPdf = lightPdf;
 
         // TODO: Account for penumbra. Is penumbra even active?
         const float angle = acos(dot(sampledDir, lightData.dirW));
         if (angle > lightData.openingAngle)
         {
+            samplingPdf = 0.0f;
             return false;
         }
         const float uniformPdf = 1.0f / (M_2PI * (1.f - lightData.cosOpeningAngle));
-        misWeight = (gBeta * lightPdf) / ((gBeta * lightPdf) + ((1.0f - gBeta) * uniformPdf));
-        misWeight /= gBeta; // Need to divide flux by strategy selection probability. We do it here for simplicity
+        samplingPdf = (gBeta * gmmPdf) + ((1.0f - gBeta) * uniformPdf);
+        weight = (gBeta * gmmPdf) / samplingPdf;
+        weight /= gmmPdf;
     }
 
     return true;
@@ -558,7 +561,6 @@ void closestHit(
             const float gaussPdf = F0(pos0 + bsdfSample.wo, pos0, mean, sigma);
             const float misWeight = ((1.0f - gaussProb) * bsdfSample.pdf) / (((1.0f - gaussProb) * bsdfSample.pdf) + (gaussProb * gaussPdf));
             bsdfSample.weight *= misWeight;
-            bsdfSample.weight /= (1.0f - gaussProb); // Need to divide flux by strategy selection probability)
         }
     }
     else
@@ -580,7 +582,6 @@ void closestHit(
                 bsdfSample.weight = bsdf.eval(sd, bsdfSample.wo, rayData.sg) / gaussPdf;
                 const float misWeight = (gaussProb * gaussPdf) / ((gaussProb * gaussPdf) + ((1.0f - gaussProb) * bsdfPdf));
                 bsdfSample.weight *= misWeight;
-                bsdfSample.weight /= gaussProb; // Need to divide flux by strategy selection probability
             }
             else
             {
@@ -667,7 +668,7 @@ bool GeneratePhotonAnalytic(
     inout SampleGenerator sg,
     inout PhotonLightSample pls,
     out uint lightIdx,
-    inout float firstHitSamplingPdf,
+    inout float samplingPdf,
     inout float gmmPdf,
     inout RayDesc ray)
 {
@@ -693,32 +694,29 @@ bool GeneratePhotonAnalytic(
     }
 
     // Sample direction
-    float lightPdf = 0.0f;
-
+    float weight = 0.0f;
 #if USE_3D_GAUSSIAN_PHOTON_GUIDING
-    float misWeight = 0.0f;
-    if (!SampleAnalyticLightDirGmm(sg, lightData, lightIdx, lightPdf, gmmPdf, misWeight, ray.Direction))
+    if (!SampleAnalyticLightDirGmm(sg, lightData, lightIdx, samplingPdf, gmmPdf, weight, ray.Direction))
     {
         return false;
     }
-    firstHitSamplingPdf = lightPdf; // Does not include the prob of choosing this light
-    pls.flux *= misWeight;          // MIS weight
 #else
-    SampleAnalyticLightDirUniform(sg, lightData, lightPdf, ray.Direction);
+    SampleAnalyticLightDirUniform(sg, lightData, samplingPdf, ray.Direction);
+    weight = 1.0f / samplingPdf;
 #endif
 
-    if (lightPdf <= 0.f)
+    if (samplingPdf <= 0.f)
     {
         return false;
     }
 
     // Take the select pdf into account
-    lightPdf /= lightCount;
+    weight /= (float)lightCount;
 
     // Fill the photon light struct
     pls.posW = lightData.posW;
     pls.normal = lightData.dirW;
-    pls.flux = lightData.intensity / lightPdf;
+    pls.flux = lightData.intensity * weight;
 
     return true;
 }
@@ -729,7 +727,7 @@ bool GeneratePhotonGeometric(
     inout PhotonLightSample pls,
     out uint lightIdx,
     out uint leafNodeIdx,
-    inout float firstHitSamplingPdf,
+    inout float samplingPdf,
     inout float gmmPdf,
     inout RayDesc ray)
 {
@@ -752,33 +750,35 @@ bool GeneratePhotonGeometric(
     if (sampleNext1D(lightSg) >= sampleGmmProb)
     {
         // Sample cosine weighted
-        if (!SamplePhotonDirCosineWeighted(ray.Direction, firstHitSamplingPdf, lightSg, pls.normal))
+        float cosinePdf = 0.0f;
+        if (!SamplePhotonDirCosineWeighted(ray.Direction, cosinePdf, lightSg, pls.normal))
         {
             return false;
         }
 
         // MIS weight
         gmmPdf = GMMProb(pls.posW, pls.posW + ray.Direction, lightIdx);
-        pls.flux *= ((1.0f - sampleGmmProb) * firstHitSamplingPdf) / (((1.0f - sampleGmmProb) * firstHitSamplingPdf) + (sampleGmmProb * gmmPdf));
-        pls.flux /= (1.0f - sampleGmmProb); // Need to divide flux by strategy selection probability
+        samplingPdf = ((1.0f - sampleGmmProb) * cosinePdf) + (sampleGmmProb * gmmPdf);
+        pls.flux *= ((1.0f - sampleGmmProb) * cosinePdf) / samplingPdf;
+        pls.flux /= cosinePdf; // Need to divide flux by strategy selection probability
     }
     else
     {
         // Sample gmm
-        if (!SamplePhotonDirGmm(ray.Direction, firstHitSamplingPdf, lightSg, lightIdx, pls.posW))
+        float gmmPdf = 0.0f;
+        if (!SamplePhotonDirGmm(ray.Direction, gmmPdf, lightSg, lightIdx, pls.posW))
         {
             return false;
         }
         pls.flux *= max(0.0f, dot(pls.normal, ray.Direction));
-        gmmPdf = firstHitSamplingPdf;
 
         // MIS weight
         const float cosineWeightedPdf = dot(pls.normal, ray.Direction);
-        pls.flux *= (sampleGmmProb * firstHitSamplingPdf) / ((sampleGmmProb * firstHitSamplingPdf) + ((1.0f - sampleGmmProb) * cosineWeightedPdf));
-        pls.flux /= sampleGmmProb; // Need to divide flux by strategy selection probability
+        samplingPdf = (sampleGmmProb * gmmPdf) + ((1.0f - sampleGmmProb) * cosineWeightedPdf);
+        pls.flux *= (sampleGmmProb * gmmPdf) / samplingPdf;
+        pls.flux /= gmmPdf; // Need to divide flux by strategy selection probability
     }
 
-    pls.flux /= firstHitSamplingPdf;
     return true;
 }
 #endif // USE_EMISSIVE_LIGHT
