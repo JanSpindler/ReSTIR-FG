@@ -480,66 +480,6 @@ bool SampleAnalyticLightDirGmm(
     return true;
 }
 
-bool createLightSampleAnalytic(
-    inout SampleGenerator sg,
-    out PhotonLightSample pls,
-    out float3 sampledDir,
-    out uint lightIdx,
-    inout float firstHitSamplingPdf,
-    inout float gmmPdf)
-{
-    // Init
-    pls = {};
-    sampledDir = float3(0);
-    const uint lightCount = gScene.getLightCount();
-    if (lightCount == 0)
-    {
-        lightIdx = 0;
-        return false;
-    }
-
-    // Uniformly sample one of the analytic lights
-    float rndLightIdx = float(lightCount) * sampleNext1D(sg);
-    lightIdx = min(uint(floor(rndLightIdx)), lightCount-1);
-    LightData lightData = gScene.getLight(lightIdx);
-
-    // Only Point(+ Spot) lights are supported (due to RTXDI)
-    if (lightData.type != uint(LightType::Point))
-    {
-        return false;
-    }
-
-    // Sample direction
-    float lightPdf = 0.0f;
-
-#if USE_3D_GAUSSIAN_PHOTON_GUIDING
-    float misWeight = 0.0f;
-    if (!SampleAnalyticLightDirGmm(sg, lightData, lightIdx, lightPdf, gmmPdf, misWeight, sampledDir))
-    {
-        return false;
-    }
-    firstHitSamplingPdf = lightPdf; // Does not include the prob of choosing this light
-    pls.flux *= misWeight;          // MIS weight
-#else
-    SampleAnalyticLightDirUniform(sg, lightData, lightPdf, sampledDir);
-#endif
-
-    if (lightPdf <= 0.f)
-    {
-        return false;
-    }
-
-    // Take the select pdf into account
-    lightPdf /= lightCount;
-    
-    // Fill the photon light struct
-    pls.posW = lightData.posW;
-    pls.normal = lightData.dirW;
-    pls.flux = lightData.intensity / lightPdf;
-
-    return true;
-}
-
 // True if a photon should be stored, false otherwise
 bool cullingTest(float3 origin)
 {
@@ -724,15 +664,63 @@ bool SamplePhotonDirGmm(
 }
 
 bool GeneratePhotonAnalytic(
-    inout SampleGenerator lightSg,
+    inout SampleGenerator sg,
     inout PhotonLightSample pls,
     out uint lightIdx,
     inout float firstHitSamplingPdf,
     inout float gmmPdf,
     inout RayDesc ray)
 {
-    // TODO: Useless function
-    return createLightSampleAnalytic(lightSg, pls, ray.Direction, lightIdx, firstHitSamplingPdf, gmmPdf);
+    // Init
+    pls = {};
+    ray.Direction = float3(0);
+    const uint lightCount = gScene.getLightCount();
+    if (lightCount == 0)
+    {
+        lightIdx = 0;
+        return false;
+    }
+
+    // Uniformly sample one of the analytic lights
+    float rndLightIdx = float(lightCount) * sampleNext1D(sg);
+    lightIdx = min(uint(floor(rndLightIdx)), lightCount - 1);
+    LightData lightData = gScene.getLight(lightIdx);
+
+    // Only Point(+ Spot) lights are supported (due to RTXDI)
+    if (lightData.type != uint(LightType::Point))
+    {
+        return false;
+    }
+
+    // Sample direction
+    float lightPdf = 0.0f;
+
+#if USE_3D_GAUSSIAN_PHOTON_GUIDING
+    float misWeight = 0.0f;
+    if (!SampleAnalyticLightDirGmm(sg, lightData, lightIdx, lightPdf, gmmPdf, misWeight, ray.Direction))
+    {
+        return false;
+    }
+    firstHitSamplingPdf = lightPdf; // Does not include the prob of choosing this light
+    pls.flux *= misWeight;          // MIS weight
+#else
+    SampleAnalyticLightDirUniform(sg, lightData, lightPdf, ray.Direction);
+#endif
+
+    if (lightPdf <= 0.f)
+    {
+        return false;
+    }
+
+    // Take the select pdf into account
+    lightPdf /= lightCount;
+
+    // Fill the photon light struct
+    pls.posW = lightData.posW;
+    pls.normal = lightData.dirW;
+    pls.flux = lightData.intensity / lightPdf;
+
+    return true;
 }
 
 #if USE_EMISSIVE_LIGHT // Function is only valid if the emissive sampler is set
