@@ -359,12 +359,10 @@ void rayGen()
     gSampleGenState[index2Dto1D(launchIndex, launchDim.x)] = sg;
 #endif //STORE_SAMPLE_GEN_STATE
 
-#if !PREFIX_RESTIR
     gOutVBuffer[launchIndex] = hitInfo.getData();
     gOutViewDir[launchIndex] = float4(viewDir, validSurfaceForDI ? 0 : bouncesAfterValid + 1);  // Store a flag if this surface has direct light
     gOutRayDist[launchIndex] = rayDist;
     gOutThp[launchIndex] = float4(thp, hitT);
-#endif
     if (is_valid(gOutDiffuseReflectance))
     {
         gOutDiffuseReflectance[launchIndex] = float4(diffuseReflectance);
