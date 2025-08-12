@@ -98,6 +98,13 @@ public:
         Reservoir = 3u
     };
 
+    enum class DynamicGenerationMode : uint
+    {
+        Manual = 0u,
+        Dispatch = 1u,
+        Roulette = 2u
+    };
+
 private:
     /** Parse incoming properties
     */
@@ -251,6 +258,7 @@ private:
     uint mPhotonMaxBounces = 10;                                    //Number of Photon bounces
     uint mMaxCausticBounces = 10;                                   //Number of diffuse bounces for a caustic
     float2 mPhotonRejection = float2(0.3f, 1.0f);                                  //Probability a global photon is stored
+    uint mNumDispatchedPhotonsUser = 2000000;
     uint mNumDispatchedPhotons = 2000000;                           //Number of Photons dispatched
     uint mPhotonYExtent = 512;                                      //Dispatch Y extend
     uint2 mNumMaxPhotons = uint2(400000, 300000);                   // Size of the photon buffer
@@ -289,11 +297,16 @@ private:
     bool mCullingUseFixedRadius = true;
     float mCullingCellRadius = 0.1f;                                //Radius used for the culling cells
 
+    // Dynamic generation
     const uint kDynamicPhotonDispatchInitValue = 500224; // Start with 500 thousand photons
-    bool mUseDynamicPhotonDispatchCount = false;  // Dynamically change the number of photons to fit the max photon number
+    //bool mUseDynamicPhotonDispatchCount = false;  // Dynamically change the number of photons to fit the max photon number
     uint mPhotonDynamicDispatchMax = 2000000;     // Max value for dynamically dispatched photons
     float mPhotonDynamicGuardPercentage = 0.08f;  // Determines how much space of the buffer is used to guard against buffer overflows
     float mPhotonDynamicChangePercentage = 0.04f; // The percentage the buffer is increased/decreased per frame
+
+    DynamicGenerationMode m_DynamicGenerationMode = DynamicGenerationMode::Roulette;
+    float m_DynamicGenerationRouletteP = 0.01f;
+    float m_DynamicGenerationRouletteMaxError = 0.01f;
 
     bool mUseSPPM = false;
     float2 mSPPMAlpha = float2(2.f / 3.f);
@@ -325,9 +338,6 @@ private:
 
     // Profiling
     ProfilerUI m_ProfilerUI;
-
-    // Additional settings
-    bool m_TracenFGUntilDiffuse = false;
 
     //
     // Buffer and Textures

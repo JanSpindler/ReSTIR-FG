@@ -153,6 +153,12 @@ const Gui::DropdownList kCausticCollectionModeList{
     {(uint)ReSTIR_FG::CausticCollectionMode::Temporal, "Temporal"},
     {(uint)ReSTIR_FG::CausticCollectionMode::Reservoir, "Reservoir"}
 };
+
+const Gui::DropdownList kDynamicGenerationModeList{
+    {(uint)ReSTIR_FG::DynamicGenerationMode::Manual, "Manual"},
+    {(uint)ReSTIR_FG::DynamicGenerationMode::Dispatch, "Dispatch"},
+    {(uint)ReSTIR_FG::DynamicGenerationMode::Roulette, "Roulette"}
+};
 } // namespace
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -234,8 +240,8 @@ void ReSTIR_FG::parseProperties(const Properties& props)
             (uint&)mCausticCollectMode = value;
         else if (key == kPropsCausticResamplingMode)
             (uint&)mCausticResamplingMode = value;
-        else if (key == kPropsEnableDynamicDispatch)
-            mUseDynamicPhotonDispatchCount = value;
+        //else if (key == kPropsEnableDynamicDispatch)
+        //    mUseDynamicPhotonDispatchCount = value;
         else if (key == kPropsNumDispatchedPhotons)
             mNumDispatchedPhotons = value;
         else
@@ -264,7 +270,7 @@ Properties ReSTIR_FG::getProperties() const
     props[kPropsCullingBits] = mCullingHashBufferSizeBits;
     props[kPropsCausticCollectionMode] = (uint)mCausticCollectMode;
     props[kPropsCausticResamplingMode] = (uint)mCausticResamplingMode;
-    props[kPropsEnableDynamicDispatch] = mUseDynamicPhotonDispatchCount;
+    //props[kPropsEnableDynamicDispatch] = mUseDynamicPhotonDispatchCount;
     props[kPropsNumDispatchedPhotons] = mNumDispatchedPhotons;
 
     return props;
@@ -540,25 +546,14 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("PhotonMapper"))
         {
-            changed |= group.checkbox("Trace FG Until Diffuse", m_TracenFGUntilDiffuse);
-
-            if (mUseDynamicPhotonDispatchCount)
+            if (m_DynamicGenerationMode == DynamicGenerationMode::Dispatch)
             {
                 group.text("Dispatched Photons: " + std::to_string(mNumDispatchedPhotons));
             }
-            else
+            else if (group.var("Dispatched Photons", mNumDispatchedPhotonsUser, mPhotonYExtent, 9984000u, static_cast<float>(mPhotonYExtent)))
             {
-                uint dispatchedPhotons = mNumDispatchedPhotons;
-                bool disPhotonChanged = group.var(
-                    "Dispatched Photons",
-                    dispatchedPhotons,
-                    mPhotonYExtent,
-                    9984000u,
-                    (float)mPhotonYExtent);
-                if (disPhotonChanged)
-                {
-                    mNumDispatchedPhotons = (uint)(dispatchedPhotons / mPhotonYExtent) * mPhotonYExtent;
-                }
+                mNumDispatchedPhotons = static_cast<uint>(mNumDispatchedPhotonsUser / mPhotonYExtent) * mPhotonYExtent;
+                mNumDispatchedPhotonsUser = mNumDispatchedPhotons;
             }
             
             group.text(
@@ -583,10 +578,16 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                         "E.g. 0.3 -> 30% analytic, 70% emissive");
                 }
 
-                changed |= groupGen.checkbox("Enable dynamic photon dispatch", mUseDynamicPhotonDispatchCount);
-                groupGen.tooltip(
-                    "Changed the number of dispatched photons dynamically. Tries to fill the photon buffer");
-                if (mUseDynamicPhotonDispatchCount)
+                if (group.dropdown("Dynamic Generation Mode", kDynamicGenerationModeList, (uint&)m_DynamicGenerationMode))
+                {
+                    if (m_DynamicGenerationMode != DynamicGenerationMode::Dispatch)
+                    {
+                        mNumDispatchedPhotons = (mNumDispatchedPhotonsUser / mPhotonYExtent) * mPhotonYExtent;
+                    }
+                    changed = true;
+                }
+
+                if (m_DynamicGenerationMode == DynamicGenerationMode::Dispatch)
                 {
                     if (auto groupDynChange = groupGen.group("DynamicDispatchOptions"))
                     {
@@ -608,13 +609,30 @@ void ReSTIR_FG::renderUI(Gui::Widgets& widget)
                         );
                     }
                 }
+                else if (m_DynamicGenerationMode == DynamicGenerationMode::Roulette)
+                {
+                    if (auto rouletteGroup = groupGen.group("Dynamic Roulette Options"))
+                    {
+                        changed |= rouletteGroup.var("Roulette P", m_DynamicGenerationRouletteP, 0.0f, 1.0f);
+                        changed |= rouletteGroup.var("Roulette Max Error", m_DynamicGenerationRouletteMaxError, 0.0f, 1.0f);
+                    }
+                }
 
                 changed |= groupGen.checkbox("Throughput Russian Roulette", mThpRussianRoulette);
                 changed |= groupGen.var(
                     "Throughput Russian Roulette Power", mThpRussianRoulettePower, 0.01f, std::numeric_limits<float>::max(), 0.001f
                 );
 
-                changed |= groupGen.var("Light Store Probability", mPhotonRejection, 0.f, 1.f, 0.0001f);
+                if (m_DynamicGenerationMode == DynamicGenerationMode::Roulette)
+                {
+                    groupGen.text(
+                        "Light Store Probability: " + std::to_string(mPhotonRejection.x) + " | " + std::to_string(mPhotonRejection.y)
+                    );
+                }
+                else
+                {
+                    changed |= groupGen.var("Light Store Probability", mPhotonRejection, 0.f, 1.f, 0.0001f);
+                }
                 group.tooltip("Probability a global and caustic photon is stored on diffuse hit. Flux is scaled up appropriately");
 
                 changed |= groupGen.var("Max Bounces", mPhotonMaxBounces, 0u, 32u);
@@ -1566,7 +1584,6 @@ void ReSTIR_FG::getFinalGatherHitPass(RenderContext* pRenderContext, const Rende
     mFinalGatherSamplePass.pProgram->addDefine("USE_REDUCED_RESERVOIR_FORMAT", mUseReducedReservoirFormat ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefine("USE_CAUSTIC_CULLING", (mCausticCollectMode != CausticCollectionMode::None) && mUseCausticCulling ? "1" : "0");
     mFinalGatherSamplePass.pProgram->addDefines(getMaterialDefines());
-    mFinalGatherSamplePass.pProgram->addDefine("TRACE_FG_UNTIL_DIFFUSE", m_TracenFGUntilDiffuse ? "1" : "0");
 
     if (!mFinalGatherSamplePass.pVars)
     {
@@ -1828,7 +1845,7 @@ void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
     mpPhotonCounterCPU[mFrameCount % kPhotonCounterCount]->unmap();
 
     // Change Photon dispatch count dynamically.
-    if (mUseDynamicPhotonDispatchCount)
+    if (m_DynamicGenerationMode == DynamicGenerationMode::Dispatch)
     {
         // Only use global photons for the dynamic dispatch count
         uint globalPhotonCount = mCurrentPhotonCount[0];
@@ -1856,6 +1873,30 @@ void ReSTIR_FG::handlePhotonCounter(RenderContext* pRenderContext)
             uint newDispatched = (uint)((mNumDispatchedPhotons - changeSize) / mPhotonYExtent) * mPhotonYExtent;
             mNumDispatchedPhotons = std::max(newDispatched, mPhotonYExtent);
         }
+    }
+    else if (m_DynamicGenerationMode == DynamicGenerationMode::Roulette)
+    {
+        // Global roulette adjustment
+        float target = static_cast<float>(mNumMaxPhotons[0]);
+        float current = static_cast<float>(mCurrentPhotonCount[0]);
+        float error = (target - current) / target;
+        if (error > 0.0f and abs(error) < m_DynamicGenerationRouletteMaxError)
+        {
+            error = 0.0f;
+        }
+        mPhotonRejection.x += error * m_DynamicGenerationRouletteP;
+        mPhotonRejection.x = std::clamp(mPhotonRejection.x, 0.f, 1.f);
+
+        // Caustic roulette adjustment
+        target = static_cast<float>(mNumMaxPhotons[1]);
+        current = static_cast<float>(mCurrentPhotonCount[1]);
+        error = (target - current) / target;
+        if (error > 0.0f and abs(error) < m_DynamicGenerationRouletteMaxError)
+        {
+            error = 0.0f;
+        }
+        mPhotonRejection.y += error * m_DynamicGenerationRouletteP;
+        mPhotonRejection.y = std::clamp(mPhotonRejection.y, 0.f, 1.f);
     }
 }
 
