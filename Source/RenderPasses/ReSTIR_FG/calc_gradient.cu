@@ -255,7 +255,7 @@ __global__ void CalculateGaussianGradientKernel(
         return;
     }
 
-    const float pdfFactor = targetPdf / photon.samplingPdf;
+    const float pdfFactor = targetPdf / (photon.samplingPdf);// * photon.gmmPdf);
     if (!CheckNumeric(pdfFactor))
     {
         return;

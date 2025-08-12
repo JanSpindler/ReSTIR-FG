@@ -33,6 +33,7 @@ struct FirstHitPhotonInfo
 {
     float3 pos;
     float samplingPdf;
+    float gmmPdf;
     uint lightIdx;
 };
 
