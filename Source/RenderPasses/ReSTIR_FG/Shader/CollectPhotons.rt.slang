@@ -99,17 +99,8 @@ Buffer<uint> gPhotonFirstHitMap[2];
 RWBuffer<uint> gFirstHitCollectionCounts;
 
 // Adaptive light sampler
-struct ClusterStats
-{
-    uint count;
-    float s1;
-    float s2;
-};
-RWBuffer<uint> gClusterSampleCount;
-RWByteAddressBuffer gClusterRadianceSq;
-RWByteAddressBuffer gLeafRadiance;
+RWBuffer<uint> gLeafSampleCount;
 Buffer<uint> gPhotonLeafMap[2];
-Buffer<uint> gNodeClusterMap;
 
 // Caustic gaussian guiding
 StructuredBuffer<CausticSource> gCausticSources;
@@ -282,20 +273,12 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
     }
 }
 
-void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx, float lum)
+void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx)
 {
     const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primitiveIdx];
     if (leafNodeIdx != 0xFFFFFFFF)
     {
-        const uint clusterIdx = gNodeClusterMap[leafNodeIdx];
-        if (clusterIdx != 0xFFFFFFFF)
-        {
-            lum *= instanceIdx == 0 ? (float)gAlsGlobalPhotonWeight : (float)gAlsCausticPhotonWeight;
-            NvInterlockedAddFp32(gLeafRadiance, leafNodeIdx * sizeof(float), lum);
-
-            InterlockedAdd(gClusterSampleCount[clusterIdx], 1);
-            NvInterlockedAddFp32(gClusterRadianceSq, clusterIdx * sizeof(float), lum * lum);
-        }
+        InterlockedAdd(gLeafSampleCount[leafNodeIdx], instanceIdx == 0 ? gAlsGlobalPhotonWeight : gAlsCausticPhotonWeight);
     }
 }
 
@@ -456,7 +439,7 @@ void anyHit(inout RayData rayData : SV_RayPayload, SphereAttribs attribs : SV_In
 #endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
-    TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex, luminance(photonContribution));
+    TrackPhotonForAdaptiveLightSampler(instanceIdx, primIndex);
 #endif
 
 #if CAUSTIC_GAUSSIAN_GUIDING
@@ -539,7 +522,7 @@ float3 stochPhotonContribution(
 #endif
 
 #if ADAPTIVE_LIGHT_SAMPLER
-            TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex, luminance(photonContribution));
+            TrackPhotonForAdaptiveLightSampler(instanceIndex, photonIndex);
 #endif
 
 #if CAUSTIC_GAUSSIAN_GUIDING

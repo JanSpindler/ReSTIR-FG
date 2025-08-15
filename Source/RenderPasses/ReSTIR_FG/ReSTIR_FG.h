@@ -292,7 +292,7 @@ private:
     uint mStochasticCollectNumPhotons = 3;
 
     bool mUsePhotonCulling = true;
-    bool mUseCausticCulling = false;                                 //Enable Culling for caustics
+    bool mUseCausticCulling = true;                                 //Enable Culling for caustics
     uint mCullingHashBufferSizeBits = 20;                           //Number of Culling Hash bits
     bool mCullingUseFixedRadius = true;
     float mCullingCellRadius = 0.1f;                                //Radius used for the culling cells
@@ -305,8 +305,8 @@ private:
     float mPhotonDynamicChangePercentage = 0.04f; // The percentage the buffer is increased/decreased per frame
 
     DynamicGenerationMode m_DynamicGenerationMode = DynamicGenerationMode::Roulette;
-    float m_DynamicGenerationRouletteP = 0.05f;
-    float m_DynamicGenerationRouletteMaxError = 0.01f;
+    float m_DynamicGenerationRouletteP = 0.02f;
+    float m_DynamicGenerationRouletteMaxError = 0.02f;
 
     bool mUseSPPM = false;
     float2 mSPPMAlpha = float2(2.f / 3.f);

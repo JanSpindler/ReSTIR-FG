@@ -22,8 +22,7 @@ public:
 
     void SetGeneratePhotonsVars(const ShaderVar& var) const;
     void SetCollectPhotonsVars(const ShaderVar& var) const;
-    void ClearClusterStatBuf(RenderContext* pRenderContext) const;
-    void ClearLeafRadianceBuf(RenderContext* pRenderContext) const;
+    void ClearLeafSampleCountBuf(RenderContext* pRenderContext) const;
 
 private:
     class LightTree : public LightBVH
@@ -31,7 +30,7 @@ private:
     public:
         LightTree(ref<Device> pDevice, const ref<const LightCollection>& pLightCollection) : LightBVH(pDevice, pLightCollection) {}
 
-        void UpdateNodeImportance(const std::span<float>& leafRadiance, std::span<float>& nodeImportance, const uint nodeIdx);
+        void UpdateNodeImportance(const std::span<uint>& leafSampleCount, std::span<float>& nodeImportance, const uint nodeIdx);
 
         bool IsLeaf(const uint nodeIdx) const;
         uint GetRightChildIdx(const uint nodeIdx) const;
@@ -43,20 +42,16 @@ private:
     LightTree m_LightBvh;
 
     // Falcor buffers
-    ref<Buffer> m_ClusterNodeIdxBuf;
+    ref<Buffer> m_ClusterNodeIdxBuf; // Maps cluster to node index in light tree
     ref<Buffer> m_ClusterNodeIdxBufCPU;
-    ref<Buffer> m_ClusterCdfBuf;
+    ref<Buffer> m_ClusterCdfBuf; // Cluster CDF for sampling
     ref<Buffer> m_ClusterCdfBufCPU;
-    ref<Buffer> m_ClusterSampleCountBuf;
-    ref<Buffer> m_ClusterSampleCountBufCPU;
-    ref<Buffer> m_ClusterRadianceSqBuf;
-    ref<Buffer> m_ClusterRadianceSqBufCPU;
-    ref<Buffer> m_LeafRadianceBuf;
-    ref<Buffer> m_LeafRadianceBufCPU;
-    ref<Buffer> m_NodeClusterMapBuf;
+    ref<Buffer> m_LeafSampleCountBuf; // Number of collected photons per leaf node
+    ref<Buffer> m_LeafSampleCountBufCPU;
+    ref<Buffer> m_NodeClusterMapBuf; // Maps node to cluster
     ref<Buffer> m_NodeClusterMapBufCPU;
     ref<Buffer> m_PhotonLeafMapBuf[2]; // One for global photons one for caustic photons
-    ref<Buffer> m_NodeImportanceBuf;
+    ref<Buffer> m_NodeImportanceBuf; // For storing sample count per node (including child nodes)
     ref<Buffer> m_NodeImportanceBufCPU;
 
     // Stats
@@ -67,6 +62,7 @@ private:
     uint m_ClusterCount = 1;
     uint m_GlobalPhotonWeight = 0;
     uint m_CausticPhotonWeight = 1;
+    uint m_SplittingThreshold = 1000;
 
     // Learning rate
     uint m_TimeStep = 1;
@@ -76,7 +72,6 @@ private:
     // CPU Buffer
     std::vector<uint> m_ClusterNodeIndices;
     std::vector<float> m_ClusterImportance;
-    std::vector<float> m_ClusterVariance;
 
     size_t GetTotalNodeCount() const { return m_LightBvh.getStats().leafNodeCount + m_LightBvh.getStats().internalNodeCount; }
     float GetAlpha() const { return 1.0f / (m_Beta * math::pow(static_cast<float>(m_TimeStep), m_Omega)); }

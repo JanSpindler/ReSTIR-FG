@@ -228,10 +228,10 @@ void ReSTIR_FG::parseProperties(const Properties& props)
             mUseStochasticCollect = value;
         else if (key == kPropsStochCollectK)
             mStochasticCollectNumPhotons = value;
-        else if (key == kPropsEnablePhotonCullingG)
-            mUsePhotonCulling = value;
-        else if (key == kPropsEnablePhotonCullingC)
-            mUseCausticCulling = value;
+        //else if (key == kPropsEnablePhotonCullingG)
+        //    mUsePhotonCulling = value;
+        //else if (key == kPropsEnablePhotonCullingC)
+        //    mUseCausticCulling = value;
         else if (key == kPropsCullingRad)
             mCullingCellRadius = value;
         else if (key == kPropsCullingBits)
@@ -1904,8 +1904,7 @@ void ReSTIR_FG::collectPhotons(RenderContext* pRenderContext, const RenderData& 
     }
     if (m_AdaptiveLightSampler.IsActive())
     {
-        m_AdaptiveLightSampler.ClearClusterStatBuf(pRenderContext);
-        m_AdaptiveLightSampler.ClearLeafRadianceBuf(pRenderContext);
+        m_AdaptiveLightSampler.ClearLeafSampleCountBuf(pRenderContext);
     }
 
     // Caustic gaussian guiding

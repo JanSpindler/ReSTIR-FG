@@ -298,7 +298,7 @@ uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator s
     {
         const InternalNode node = gLightBVH.getInternalNode(nodeIdx);
 
-        static const float EPSILON = 1e-3f; // Ensures unbiasedness through full support
+        static const float EPSILON = 1e+1f; // Ensures unbiasedness through full support
         const float leftImportance = gNodeImportance[nodeIdx + 1] + EPSILON;
         const float rightImportance = gNodeImportance[node.rightChildIdx] + EPSILON;
         const float totalImportance = leftImportance + rightImportance;

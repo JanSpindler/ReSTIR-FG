@@ -42,17 +42,13 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
 
         m_ClusterNodeIndices.resize(m_MaxCutSize);
         m_ClusterImportance.resize(m_MaxCutSize);
-        m_ClusterVariance.resize(m_MaxCutSize);
 
         std::fill(m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.end(), 0);
         std::fill(m_ClusterImportance.begin(), m_ClusterImportance.end(), 1.0f);
-        std::fill(m_ClusterVariance.begin(), m_ClusterVariance.end(), 0.0f);
 
         m_ClusterNodeIdxBuf.reset();
         m_ClusterCdfBuf.reset();
-        m_ClusterSampleCountBuf.reset();
-        m_ClusterRadianceSqBuf.reset();
-        m_LeafRadianceBuf.reset();
+        m_LeafSampleCountBuf.reset();
         m_NodeClusterMapBuf.reset();
         m_PhotonLeafMapBuf[0].reset();
         m_PhotonLeafMapBuf[1].reset();
@@ -86,28 +82,13 @@ void AdaptiveLightSampler::PrepareBuffers(RenderContext* pRenderContext, const u
         m_ClusterCdfBufCPU = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Write);
     }
 
-    if (!m_ClusterSampleCountBuf)
-    {
-        m_ClusterSampleCountBuf =
-            Buffer::create(m_Device, sizeof(uint) * m_MaxCutSize, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
-        m_ClusterSampleCountBufCPU =
-            Buffer::create(m_Device, sizeof(uint) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    }
-
-    if (!m_ClusterRadianceSqBuf)
-    {
-        m_ClusterRadianceSqBuf = Buffer::create(m_Device, sizeof(float) * m_MaxCutSize);
-        m_ClusterRadianceSqBufCPU =
-            Buffer::create(m_Device, sizeof(float) * m_MaxCutSize, ResourceBindFlags::None, Buffer::CpuAccess::Read);
-    }
-
     const size_t nodeCount = std::max<size_t>(1, GetTotalNodeCount());
-    if (!m_LeafRadianceBuf)
+    if (!m_LeafSampleCountBuf)
     {
         // Allocate memory for all nodes even when only using leaf nodes because of simpler indexing
-        m_LeafRadianceBuf =
+        m_LeafSampleCountBuf =
             Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
-        m_LeafRadianceBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
+        m_LeafSampleCountBufCPU = Buffer::create(m_Device, sizeof(float) * nodeCount, ResourceBindFlags::None, Buffer::CpuAccess::Read);
     }
 
     if (!m_NodeClusterMapBuf)
@@ -158,6 +139,7 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
         // Global and caustic weights
         changed |= group.var("Global photon weight", m_GlobalPhotonWeight, 0u, 1000u);
         changed |= group.var("Caustic photon weight", m_CausticPhotonWeight, 0u, 1000u);
+        changed |= group.var("Splitting threshold", m_SplittingThreshold);
 
         // Adaptive light sampler stats
         group.text("Time step: " + std::to_string(m_TimeStep));
@@ -189,32 +171,19 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
     //
     const size_t nodeCount = GetTotalNodeCount();
 
-    // Read radiance from leaf nodes to CPU
-    pRenderContext->uavBarrier(m_LeafRadianceBuf.get());
-    pRenderContext->copyBufferRegion(m_LeafRadianceBufCPU.get(), 0, m_LeafRadianceBuf.get(), 0, m_LeafRadianceBuf->getSize());
-    const std::span<float> leafRadiance(reinterpret_cast<float*>(m_LeafRadianceBufCPU->map(Buffer::MapType::Read)), nodeCount);
+    // Read leaf sample counts from GPu
+    pRenderContext->uavBarrier(m_LeafSampleCountBuf.get());
+    pRenderContext->copyBufferRegion(
+        m_LeafSampleCountBufCPU.get(), 0, m_LeafSampleCountBuf.get(), 0, m_LeafSampleCountBuf->getSize());
+    const std::span<uint> leafSampleCounts(reinterpret_cast<uint*>(m_LeafSampleCountBufCPU->map(Buffer::MapType::Read)), nodeCount);
 
     // Update node importance
     std::span<float> nodeImportance(reinterpret_cast<float*>(m_NodeImportanceBufCPU->map(Buffer::MapType::WriteDiscard)), nodeCount);
     std::for_each(
         std::execution::par_unseq, m_ClusterNodeIndices.begin(), m_ClusterNodeIndices.begin() + m_ClusterCount,
-        [&](const uint clusterNodeIdx) { m_LightBvh.UpdateNodeImportance(leafRadiance, nodeImportance, clusterNodeIdx); }
+        [&](const uint clusterNodeIdx) { m_LightBvh.UpdateNodeImportance(leafSampleCounts, nodeImportance, clusterNodeIdx); }
     );
     pRenderContext->copyBufferRegion(m_NodeImportanceBuf.get(), 0, m_NodeClusterMapBufCPU.get(), 0, m_NodeImportanceBufCPU->getSize());
-
-    // Read cluster stats from gpu
-    pRenderContext->uavBarrier(m_ClusterSampleCountBuf.get());
-    pRenderContext->copyBufferRegion(
-        m_ClusterSampleCountBufCPU.get(), 0, m_ClusterSampleCountBuf.get(), 0, m_ClusterSampleCountBuf->getSize()
-    );
-    const std::span<uint> clusterSampleCounts(reinterpret_cast<uint*>(m_ClusterSampleCountBufCPU->map(Buffer::MapType::Read)), m_ClusterCount);
-    pRenderContext->uavBarrier(m_ClusterRadianceSqBuf.get());
-    pRenderContext->copyBufferRegion(
-        m_ClusterRadianceSqBufCPU.get(), 0, m_ClusterRadianceSqBuf.get(), 0, m_ClusterRadianceSqBuf->getSize()
-    );
-    const std::span<float> clusterRadianceSq(
-        reinterpret_cast<float*>(m_ClusterRadianceSqBufCPU->map(Buffer::MapType::Read)), m_ClusterCount
-    );
 
     // Update cluster importance
     const float alpha = GetAlpha();
@@ -224,48 +193,37 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
         m_ClusterImportance[clusterIdx] = ((1.0f - alpha) * oldImportance) + (alpha * nodeImportance[m_ClusterNodeIndices[clusterIdx]]);
     }
 
-    // Clustering
-    float varianceSum = 1e-6f;
-    uint newClusterCount = m_ClusterCount;
+    // Select cluster with most samples for splitting
+    uint maxSampleCount = 0;
+    uint splitClusterIdx = std::numeric_limits<uint>::max();
     for (uint clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
     {
-        const float countF = static_cast<float>(math::max(1u, clusterSampleCounts[clusterIdx]));
-        const float mean = nodeImportance[m_ClusterNodeIndices[clusterIdx]] / countF;
-        const float expectedSquare = clusterRadianceSq[clusterIdx] / countF;
-        const float variance = expectedSquare - (mean * mean);
-        varianceSum += variance;
-        m_ClusterVariance[clusterIdx] = variance;
-    }
-    for (uint clusterIdx = 0; clusterIdx < m_ClusterCount; ++clusterIdx)
-    {
-        const uint clusterNodeIdx = m_ClusterNodeIndices[clusterIdx];
-        const float countF = static_cast<float>(math::max(1u, clusterSampleCounts[clusterIdx]));
-        const float variance = m_ClusterVariance[clusterIdx];
-        const float splitProb =
-            (1.0f / (static_cast<float>(m_ClusterCount) * math::exp(-variance))) * (variance / varianceSum) * (1.0f - (1.0f / countF));
-        if (newClusterCount < m_MaxCutSize and !m_LightBvh.IsLeaf(clusterNodeIdx) and RandomGenerator::Float() < splitProb)
+        const uint sampleCount = m_ClusterImportance[clusterIdx];
+        if (sampleCount > math::max(maxSampleCount, m_SplittingThreshold))
         {
-            // Calculate cluster stats
-            const float oldClusterImportance = m_ClusterImportance[clusterIdx];
-            const uint leftIdx = clusterNodeIdx + 1;
-            const uint rightIdx = m_LightBvh.GetRightChildIdx(clusterNodeIdx);
-            const float leftRadiance = nodeImportance[leftIdx];
-            const float rightRadiance = nodeImportance[rightIdx];
-            const float totalRadiance = leftRadiance + rightRadiance;
-            const float leftA = math::pow(1.0f - alpha, countF * leftRadiance / totalRadiance);
-            const float rightA = math::pow(1.0f - alpha, countF * rightRadiance / totalRadiance);
-
-            // Left cluster at parent cluster index
-            m_ClusterNodeIndices[clusterIdx] = leftIdx;
-            m_ClusterImportance[clusterIdx] = (leftA * leftRadiance) + ((1.0f - leftA) * oldClusterImportance);
-
-            // Append right cluster at the end
-            m_ClusterNodeIndices[newClusterCount] = rightIdx;
-            m_ClusterImportance[newClusterCount] = (rightA * rightRadiance) + ((1.0f - rightA) * oldClusterImportance);
-
-            // Increase cluster count
-            ++newClusterCount;
+            maxSampleCount = sampleCount;
+            splitClusterIdx = clusterIdx;
         }
+    }
+
+    // Split cluster
+    uint newClusterCount = m_ClusterCount;
+    if (m_ClusterCount < m_MaxCutSize and
+        splitClusterIdx != std::numeric_limits<uint>::max() and
+        !m_LightBvh.IsLeaf(m_ClusterNodeIndices[splitClusterIdx]))
+    {
+        const float oldClusterImportance = m_ClusterImportance[splitClusterIdx];
+        const uint clusterNodeIdx = m_ClusterNodeIndices[splitClusterIdx];
+        const uint leftIdx = clusterNodeIdx + 1;
+        const uint rightIdx = m_LightBvh.GetRightChildIdx(clusterNodeIdx);
+
+        m_ClusterNodeIndices[splitClusterIdx] = leftIdx;
+        m_ClusterImportance[splitClusterIdx] = oldClusterImportance / 2.0f;
+
+        m_ClusterNodeIndices[newClusterCount] = rightIdx;
+        m_ClusterImportance[newClusterCount] = oldClusterImportance / 2.0f;
+
+        ++newClusterCount;
     }
 
     // Update cdf
@@ -285,10 +243,8 @@ void AdaptiveLightSampler::Run(RenderContext* pRenderContext)
 
     // Unmap buffers
     m_ClusterCdfBufCPU->unmap();
-    m_ClusterRadianceSqBufCPU->unmap();
-    m_ClusterSampleCountBufCPU->unmap();
     m_NodeImportanceBufCPU->unmap();
-    m_LeafRadianceBufCPU->unmap();
+    m_LeafSampleCountBufCPU->unmap();
 
     // If clustering changed, update leaf cluster map
     if (newClusterCount != m_ClusterCount)
@@ -315,10 +271,7 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
 
 void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
 {
-    var["gClusterSampleCount"] = m_ClusterSampleCountBuf;
-    var["gClusterRadianceSq"] = m_ClusterRadianceSqBuf;
-    var["gLeafRadiance"] = m_LeafRadianceBuf;
-    var["gNodeClusterMap"] = m_NodeClusterMapBuf;
+    var["gLeafSampleCount"] = m_LeafSampleCountBuf;
     var["gPhotonLeafMap"][0ull] = m_PhotonLeafMapBuf[0];
     var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
 
@@ -326,23 +279,13 @@ void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const
     var["AdaptiveLightSampler"]["gAlsCausticPhotonWeight"] = m_CausticPhotonWeight;
 }
 
-void AdaptiveLightSampler::ClearClusterStatBuf(RenderContext* pRenderContext) const
+void AdaptiveLightSampler::ClearLeafSampleCountBuf(RenderContext* pRenderContext) const
 {
     if (!m_HasLights)
     {
         return;
     }
-    pRenderContext->clearUAV(m_ClusterSampleCountBuf->getUAV().get(), uint4(0));
-    pRenderContext->clearUAV(m_ClusterRadianceSqBuf->getUAV().get(), float4(0.0f));
-}
-
-void AdaptiveLightSampler::ClearLeafRadianceBuf(RenderContext* pRenderContext) const
-{
-    if (!m_HasLights)
-    {
-        return;
-    }
-    pRenderContext->clearUAV(m_LeafRadianceBuf->getUAV().get(), float4(0.0f));
+    pRenderContext->clearUAV(m_LeafSampleCountBuf->getUAV().get(), uint4(0));
 }
 
 void AdaptiveLightSampler::UpdateClusterNodeIndices(RenderContext* pRenderContext)
@@ -387,14 +330,14 @@ void AdaptiveLightSampler::UpdateNodeClusterMap(RenderContext* pRenderContext)
 }
 
 void AdaptiveLightSampler::LightTree::UpdateNodeImportance(
-    const std::span<float>& leafRadiance, std::span<float>& nodeImportance, const uint nodeIdx)
+    const std::span<uint>& leafSampleCount, std::span<float>& nodeImportance, const uint nodeIdx)
 {
     if (mNodes.empty())
     {
         return;
     }
 
-    FALCOR_ASSERT(leafRadiance.size() == mNodes.size());
+    FALCOR_ASSERT(leafSampleCount.size() == mNodes.size());
     FALCOR_ASSERT(nodeImportance.size() == mNodes.size());
 
     // Recursive lambda for post-order traversal.
@@ -410,9 +353,9 @@ void AdaptiveLightSampler::LightTree::UpdateNodeImportance(
         {
             // For leaf nodes, importance is its radiance.
             // leafRadiance and nodeImportance are indexed by nodeIndex.
-            FALCOR_ASSERT(nodeIndex < leafRadiance.size());
+            FALCOR_ASSERT(nodeIndex < leafSampleCount.size());
             FALCOR_ASSERT(nodeIndex < nodeImportance.size());
-            nodeImportance[nodeIndex] = leafRadiance[nodeIndex];
+            nodeImportance[nodeIndex] = static_cast<float>(leafSampleCount[nodeIndex]);
             return nodeImportance[nodeIndex];
         }
         else
