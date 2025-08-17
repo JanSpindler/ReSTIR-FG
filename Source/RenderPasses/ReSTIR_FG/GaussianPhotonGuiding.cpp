@@ -817,6 +817,8 @@ void GaussianPhotonGuiding::SetGeneratePhotonsVars(const ShaderVar& var) const
     var[nameBuf]["gMaxFirstHitPhotonCount"] = m_MaxFirstHitPhotonCount;
     var[nameBuf]["gPositionScaling"] = GetPositionScaling();
     var[nameBuf]["gCS"] = m_Cs;
+    var[nameBuf]["gGlobalPhotonWeight"] = m_GlobalPhotonWeight;
+    var[nameBuf]["gCausticPhotonWeight"] = m_CausticPhotonWeight;
 
     // Buffers
     var["gGaussians"] = m_GaussianBuf.buffer;

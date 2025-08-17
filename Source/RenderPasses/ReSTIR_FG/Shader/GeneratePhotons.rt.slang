@@ -56,6 +56,8 @@ cbuffer GaussianPhotonGuiding
     uint gMaxFirstHitPhotonCount;
     float gPositionScaling;
     float gCS;
+    uint gGlobalPhotonWeight;
+    uint gCausticPhotonWeight;
 };
 
 cbuffer AdaptiveLightSampler
@@ -852,7 +854,12 @@ void rayGen()
     bool storeAsCaustic = false;
     bool reflectedDiffuse = false;
 
+    // Tracking first hit photon
+#if TRACK_FIRST_HIT_PHOTONS
     uint firstHitIndex = 0;
+    bool firstHitStored = false;
+    float3 firstHitPos = float3(0.0f);
+#endif
 
     // Caustic gaussian guiding
 #if CAUSTIC_GAUSSIAN_GUIDING
@@ -891,23 +898,7 @@ void rayGen()
 #if TRACK_FIRST_HIT_PHOTONS
         if (i == 0)
         {
-            // Get first hit photon index
-            InterlockedAdd(gFirstHitPhotonCounter[0], 1u, firstHitIndex);
-
-            // Check if buffer is full
-            if (firstHitIndex < gMaxFirstHitPhotonCount)
-            {
-                // Track light fist hit count
-                InterlockedAdd(gLightFirstHitCounts[lightIdx], 1u);
-
-                // Store first hit photon position
-                FirstHitPhotonInfo firstHitPhotonInfo;
-                firstHitPhotonInfo.pos = photonPos;
-                firstHitPhotonInfo.samplingPdf = firstHitSamplingPdf;
-                firstHitPhotonInfo.gmmPdf = gmmPdf;
-                firstHitPhotonInfo.lightIdx = lightIdx;
-                gFirstHitPhotonInfo[firstHitIndex] = firstHitPhotonInfo;
-            }
+            firstHitPos = photonPos;
         }
 #endif
 
@@ -959,7 +950,34 @@ void rayGen()
 
                     // Store mapping from photon index to first hit index
 #if TRACK_FIRST_HIT_PHOTONS
-                    gPhotonFirstHitMap[photonType][photonIndex] = firstHitIndex;
+                    if (photonType == 0 && gGlobalPhotonWeight > 0 || photonType == 1 && gCausticPhotonWeight > 0)
+                    {
+                        if (!firstHitStored)
+                        {
+                            // Get first hit photon index
+                            InterlockedAdd(gFirstHitPhotonCounter[0], 1u, firstHitIndex);
+
+                            // Check if buffer is full
+                            if (firstHitIndex < gMaxFirstHitPhotonCount)
+                            {
+                                // Track light fist hit count
+                                InterlockedAdd(gLightFirstHitCounts[lightIdx], 1u);
+
+                                // Store first hit photon position
+                                FirstHitPhotonInfo firstHitPhotonInfo;
+                                firstHitPhotonInfo.pos = firstHitPos;
+                                firstHitPhotonInfo.samplingPdf = firstHitSamplingPdf;
+                                firstHitPhotonInfo.gmmPdf = gmmPdf;
+                                firstHitPhotonInfo.lightIdx = lightIdx;
+                                gFirstHitPhotonInfo[firstHitIndex] = firstHitPhotonInfo;
+                            }
+
+                            // Mark first hit as stored. Also when not really stored to prevent unnecessary checks above
+                            firstHitStored = true;
+                        }
+
+                        gPhotonFirstHitMap[photonType][photonIndex] = firstHitIndex;
+                    }
 #endif
 
                     // Store mapping to leaf node of light tree for adaptive light sampler
