@@ -63,6 +63,7 @@ private:
     uint m_GlobalPhotonWeight = 0;
     uint m_CausticPhotonWeight = 1;
     uint m_SplittingThreshold = 1000;
+    float m_Epsilon = 10.0f;
 
     // Learning rate
     uint m_TimeStep = 1;

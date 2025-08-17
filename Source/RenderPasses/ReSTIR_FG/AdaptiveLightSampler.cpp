@@ -140,6 +140,7 @@ bool AdaptiveLightSampler::RenderUI(Gui::Widgets& widget)
         changed |= group.var("Global photon weight", m_GlobalPhotonWeight, 0u, 1000u);
         changed |= group.var("Caustic photon weight", m_CausticPhotonWeight, 0u, 1000u);
         changed |= group.var("Splitting threshold", m_SplittingThreshold);
+        changed |= group.var("Epsilon", m_Epsilon, 0.0f);
 
         // Adaptive light sampler stats
         group.text("Time step: " + std::to_string(m_TimeStep));
@@ -267,6 +268,7 @@ void AdaptiveLightSampler::SetGeneratePhotonsVars(const ShaderVar& var) const
     var["gPhotonLeafMap"][1ull] = m_PhotonLeafMapBuf[1];
     var["gNodeImportance"] = m_NodeImportanceBuf;
     var["AdaptiveLightSampler"]["gLightClusterCount"] = m_ClusterCount;
+    var["AdaptiveLightSampler"]["gEpsilon"] = m_Epsilon;
 }
 
 void AdaptiveLightSampler::SetCollectPhotonsVars(const ShaderVar& var) const

@@ -63,6 +63,7 @@ cbuffer GaussianPhotonGuiding
 cbuffer AdaptiveLightSampler
 {
     uint gLightClusterCount;
+    float gEpsilon;
 };
 
 cbuffer CausticGaussianGuiding
@@ -300,9 +301,8 @@ uint SampleLeafNodeIdxFromCluster(const uint clusterIdx, inout SampleGenerator s
     {
         const InternalNode node = gLightBVH.getInternalNode(nodeIdx);
 
-        static const float EPSILON = 1e+1f; // Ensures unbiasedness through full support
-        const float leftImportance = gNodeImportance[nodeIdx + 1] + EPSILON;
-        const float rightImportance = gNodeImportance[node.rightChildIdx] + EPSILON;
+        const float leftImportance = gNodeImportance[nodeIdx + 1] + gEpsilon;
+        const float rightImportance = gNodeImportance[node.rightChildIdx] + gEpsilon;
         const float totalImportance = leftImportance + rightImportance;
 
         if (sampleNext1D(sg) < leftImportance / totalImportance)
