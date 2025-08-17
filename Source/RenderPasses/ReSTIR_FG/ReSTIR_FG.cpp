@@ -114,7 +114,6 @@ const std::string kPropsCullingRad = "CullingRadius";
 const std::string kPropsCullingBits = "CullingBits";
 const std::string kPropsCausticCollectionMode = "CausticCollectionMode";
 const std::string kPropsCausticResamplingMode = "CausticResamplingMode";
-const std::string kPropsEnableDynamicDispatch = "EnableDynamicDispatch";
 const std::string kPropsNumDispatchedPhotons = "NumDispatchedPhotons";
 
 // UI Dropdowns
@@ -228,10 +227,10 @@ void ReSTIR_FG::parseProperties(const Properties& props)
             mUseStochasticCollect = value;
         else if (key == kPropsStochCollectK)
             mStochasticCollectNumPhotons = value;
-        //else if (key == kPropsEnablePhotonCullingG)
-        //    mUsePhotonCulling = value;
-        //else if (key == kPropsEnablePhotonCullingC)
-        //    mUseCausticCulling = value;
+        else if (key == kPropsEnablePhotonCullingG)
+            mUsePhotonCulling = value;
+        else if (key == kPropsEnablePhotonCullingC)
+            mUseCausticCulling = value;
         else if (key == kPropsCullingRad)
             mCullingCellRadius = value;
         else if (key == kPropsCullingBits)
@@ -270,7 +269,6 @@ Properties ReSTIR_FG::getProperties() const
     props[kPropsCullingBits] = mCullingHashBufferSizeBits;
     props[kPropsCausticCollectionMode] = (uint)mCausticCollectMode;
     props[kPropsCausticResamplingMode] = (uint)mCausticResamplingMode;
-    //props[kPropsEnableDynamicDispatch] = mUseDynamicPhotonDispatchCount;
     props[kPropsNumDispatchedPhotons] = mNumDispatchedPhotons;
 
     return props;
