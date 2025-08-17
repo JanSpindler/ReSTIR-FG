@@ -2408,6 +2408,9 @@ void ReSTIR_FG::finalShadingPass(RenderContext* pRenderContext, const RenderData
     // Caustic gaussian guiding
     m_CausticGaussianGuiding.SetFinalShadingVars(var);
 
+    // For better debug visualization
+    var["gInVBuffer"] = renderData[kInputVBuffer]->asTexture();
+
     // Bind all Output Channels
     for (uint i = 0; i < kOutputChannels.size(); i++)
     {

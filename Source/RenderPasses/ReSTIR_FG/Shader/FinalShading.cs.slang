@@ -47,6 +47,8 @@ Texture2D<PackedHitInfo> gVBufferDI;
 Texture2D<float4> gViewDI;
 Texture2D<float4> gThpDI;
 
+Texture2D<PackedHitInfo> gInVBuffer;
+
 StructuredBuffer<SampleGenerator> gSampleGenState;
 
 RWTexture2D<float4> gOutColor;
@@ -431,11 +433,13 @@ void main(uint2 pixel : SV_DispatchThreadID)
         gOutResidualRadiance[pixel] = float4(0.f); //TODO
     }
 
+    const HitInfo inHitInfo = HitInfo(gInVBuffer[pixel]);
+
     if (is_valid(gOutGaussianDirectionPdf))
     {
-        if (hitInfo.isValid())
+        if (inHitInfo.isValid())
         {
-            const TriangleHit triangleHit = hitInfo.getTriangleHit();
+            const TriangleHit triangleHit = inHitInfo.getTriangleHit();
             const VertexData vertexData = gScene.getVertexData(triangleHit);
 
             float minDist = float ::maxValue;
@@ -463,9 +467,9 @@ void main(uint2 pixel : SV_DispatchThreadID)
 
     if (is_valid(gOutCausticGaussianDir))
     {
-        if (hitInfo.isValid())
+        if (inHitInfo.isValid())
         {
-            const TriangleHit triangleHit = hitInfo.getTriangleHit();
+            const TriangleHit triangleHit = inHitInfo.getTriangleHit();
             const VertexData vertexData = gScene.getVertexData(triangleHit);
 
             const uint hashGridIdx = hash2(vertexData.posW * gCausticHashScalingFactor) % gCausticHashGridSize;
