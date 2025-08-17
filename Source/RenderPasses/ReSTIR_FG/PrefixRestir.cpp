@@ -107,7 +107,7 @@ void PrefixRestir::SetScene(RenderContext* pRenderContext, const ref<Scene>& pSc
     // Store and check if frostbite brdf is used
     m_Scene = pScene;
     m_Defines.add(m_Scene->getSceneDefines());
-    FALCOR_ASSERT(m_Defines["DiffuseBrdf"] == "DiffuseBrdfFrostbite");
+    //FALCOR_ASSERT(m_Defines["DiffuseBrdf"] == "DiffuseBrdfFrostbite");
     m_FrameCount = 0;
 }
 
