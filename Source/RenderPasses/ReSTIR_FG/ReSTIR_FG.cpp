@@ -999,7 +999,13 @@ bool ReSTIR_FG::prepareLighting(RenderContext* pRenderContext)
     // Update Emissive light sampler
     if (mpEmissiveLightSampler)
     {
-        lightingChanged |= mpEmissiveLightSampler->update(pRenderContext);
+        //static bool updated = false;
+        //if (!updated)
+        //{
+            mpScene->getLightCollection(pRenderContext)->prepareSyncCPUData(pRenderContext);
+            lightingChanged |= mpEmissiveLightSampler->update(pRenderContext);
+        //    updated = true;
+        //}
     }
 
     // ReSTIR GI Emissive light sampler
