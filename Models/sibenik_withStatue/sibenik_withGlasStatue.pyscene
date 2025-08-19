@@ -1,8 +1,15 @@
 # Load scene
 sceneBuilder.importScene("sibenik_withGlasStatue.gltf")
 
-#sceneBuilder.removeLight("Spot01")
-#sceneBuilder.removeLight("Spot02")
+# Remove all spotlights or set their intensity to 0
+try:
+    sceneBuilder.removeLight("Spot01")
+    sceneBuilder.removeLight("Spot02")
+except AttributeError:
+    # removeLight doesn't exist in newer versions, try to set light intensity to 0
+    for light in sceneBuilder.lights:
+        if light.name in ["Spot01", "Spot02"]:
+            light.intensity = float3(0.0, 0.0, 0.0)
 
 #Green Glas Statue
 glas = sceneBuilder.getMaterial("glas")
@@ -25,3 +32,19 @@ sceneBuilder.addCamera(camera)
 # Manually adjust emissives to zero so only the analytic lights are used
 for m in sceneBuilder.materials:
     m.emissiveFactor *= 0
+
+# Set up camera - positioned in the opposite corner from the emissive cube
+camera = Camera("MainCamera")
+camera.position = float3(5.0, -7.0, 0.0)    # Back-right corner, elevated
+camera.target = float3(5.8, -7.23, 0.0)      # Look at the bunny at center
+camera.up = float3(0.0, 1.0, 0.0)          # Standard up vector
+camera.focalLength = 40.0                  # 35mm lens
+sceneBuilder.addCamera(camera)
+sceneBuilder.selectedCamera = camera
+
+# Add point light
+pointLight = PointLight("MainPointLight")
+pointLight.position = float3(15.75, -10, 0.25)  # Position above the scene
+pointLight.intensity = float3(30, 30, 30)  # White light with intensity
+pointLight.openingAngle = 3.14159  # Full sphere (2*pi for point light)
+sceneBuilder.addLight(pointLight)

@@ -10,6 +10,7 @@ void AdaptiveLightSampler::SetScene(RenderContext* pRenderContext, const ref<Sce
 {
     // Reset buffers
     m_Reset = true;
+    m_LightBvhBuilder = LightBVHBuilder(LightBVHBuilder::Options());
 
     // Build tree
     const auto lightCollection = pScene->getLightCollection(pRenderContext);
