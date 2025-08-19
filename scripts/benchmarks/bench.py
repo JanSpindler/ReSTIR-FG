@@ -165,4 +165,3 @@ if __name__ == "__main__":
         print(f"Mean SMAPE: {df['SMAPE'].mean():.6f}")
         print(f"Min SMAPE: {df['SMAPE'].min():.6f}")
         print(f"Max SMAPE: {df['SMAPE'].max():.6f}")
-        print(f"Std SMAPE: {df['SMAPE'].std():.6f}")
