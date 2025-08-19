@@ -247,6 +247,11 @@ void anyHitReservoir(inout RayDataReservoir rayDataRes : SV_RayPayload, SphereAt
 
 void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
 {
+    if ((instanceIdx == 0 && gGpgGlobalPhotonWeight == 0) || (instanceIdx == 1 && gGpgCausticPhotonWeight == 0))
+    {
+        return;
+    }
+
     const uint firstHitIdx = gPhotonFirstHitMap[instanceIdx][primitiveIdx];
     if (firstHitIdx < gMaxFirstHitPhotonCount)
     {
@@ -256,6 +261,11 @@ void TrackPhotonCollection(const uint instanceIdx, const uint primitiveIdx)
 
 void TrackPhotonForAdaptiveLightSampler(const uint instanceIdx, const uint primitiveIdx)
 {
+    if ((instanceIdx == 0 && gAlsGlobalPhotonWeight == 0) || (instanceIdx == 1 && gAlsCausticPhotonWeight == 0))
+    {
+        return;
+    }
+
     const uint leafNodeIdx = gPhotonLeafMap[instanceIdx][primitiveIdx];
     if (leafNodeIdx != 0xFFFFFFFF)
     {
