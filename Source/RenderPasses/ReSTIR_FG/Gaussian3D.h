@@ -4,7 +4,7 @@
 
 struct Gaussian3D
 {
-    static constexpr float MIN_SIGMA = 0.1f;
+    static constexpr float MIN_SIGMA = 0.0f;
 
     static float DistanceFromPSigma(const float pSigma, const float cS) { return MIN_SIGMA + (cS / (1.0f + exp(-pSigma))); }
 
@@ -31,16 +31,12 @@ struct Gaussian3D
     constexpr Gaussian3D(const float3& mean, const float pSigma, const float weight) : mean(mean), pSigma(pSigma), weight(weight) {}
 
 #ifdef __CUDACC__
-    __forceinline__ __device__ float GetSigma(const float cS) const
-    {
-        return MIN_SIGMA + (cS / (1.0f + exp(-pSigma)));
-    }
+    __forceinline__ __device__ float GetSigma(const float cS) const { return MIN_SIGMA + (cS / (1.0f + __expf(-pSigma))); }
 
     __forceinline__ __device__ float GetSigmaDeriv(const float cS) const
     {
-        const float expNegP = exp(-pSigma);    // e^(-pSigma)
-        const float denom = 1.0f + expNegP;    // 1 + e^(-pSigma)
-        return cS * expNegP / (denom * denom); // cS * e^(-pSigma) / (1 + e^(-pSigma))²
+        const float sigma = GetSigma(cS);
+        return cS * sigma * (1.0f - sigma);
     }
 #endif
 };

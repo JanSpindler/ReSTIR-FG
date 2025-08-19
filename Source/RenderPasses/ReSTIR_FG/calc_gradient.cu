@@ -10,6 +10,7 @@ using uint = uint32_t; // For syntax highlighting
 
 static constexpr float PI = 3.14159265358979323846f;
 static constexpr float SQRT_2PI_CUBED = 15.74960994572241974429064599; // sqrtf((2.0f * PI) * (2.0f * PI) * (2.0f * PI)); // √((2π)³)
+static constexpr float PI2_CUBED = 248.0502134424;
 static constexpr float INV_SQRT_2PI_CUBED = 1.0f / SQRT_2PI_CUBED;
 
 static __forceinline__ __device__ bool CheckNumeric(const float x)
@@ -73,10 +74,8 @@ static __forceinline__ __device__ GaussianTerms ComputeGaussianTerms(const Gauss
     GaussianTerms terms;
 
     // Compute sigma and its derivative efficiently
-    const float expNegP = __expf(-gaussian.pSigma); // Fast exponential
-    const float denom = 1.0f + expNegP;
-    terms.sigma = Gaussian3D::MIN_SIGMA + (cS / denom);
-    terms.sigmaDeriv = cS * expNegP / (denom * denom);
+    terms.sigma = gaussian.GetSigma(cS);
+    terms.sigmaDeriv = cS * terms.sigma * (1.0f - terms.sigma);
 
     // Precompute powers
     const float sigma2 = terms.sigma * terms.sigma;
@@ -85,7 +84,7 @@ static __forceinline__ __device__ GaussianTerms ComputeGaussianTerms(const Gauss
 
     // Compute normalization term using fast math (fixed for compatibility)
     const float sigma6 = sigma2 * sigma2 * sigma2;
-    terms.normTerm = fast_rsqrtf((2.0f * PI) * sigma6); // Compatible fast reciprocal sqrt
+    terms.normTerm = fast_rsqrtf(PI2_CUBED * sigma6); // Compatible fast reciprocal sqrt
 
     // Compute unnormalized Gaussian
     const float distanceSquared = lengthSquared(position - gaussian.mean);
@@ -111,7 +110,7 @@ ComputeGradientComponents(const GaussianTerms& terms, const float3& positionDiff
 
     // Sigma gradient - combine terms efficiently
     const float distanceSquared = lengthSquared(positionDiff);
-    const float derivUnormGaussian = 0.5f * distanceSquared * terms.unormGaussian * terms.invSigma3; // Add missing 0.5f factor
+    const float derivUnormGaussian = distanceSquared * terms.unormGaussian * terms.invSigma3;
     const float sigma4 = terms.sigma * terms.sigma * terms.sigma * terms.sigma;
     const float normTermDeriv = -3.0f * INV_SQRT_2PI_CUBED / sigma4; // Use correct normalization constant
     components.pSigmaDeriv =
