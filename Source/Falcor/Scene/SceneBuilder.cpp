@@ -970,8 +970,8 @@ namespace Falcor
 
     void SceneBuilder::addAnimation(const ref<Animation>& pAnimation)
     {
-        checkArgument(pAnimation != nullptr, "'pAnimation' is missing");
-        mSceneData.animations.push_back(pAnimation);
+        //checkArgument(pAnimation != nullptr, "'pAnimation' is missing");
+        //mSceneData.animations.push_back(pAnimation);
     }
 
     ref<Animation> SceneBuilder::createAnimation(ref<Animatable> pAnimatable, const std::string& name, double duration)

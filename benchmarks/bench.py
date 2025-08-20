@@ -75,8 +75,10 @@ def calc_mape(reference, test, epsilon=1e-8):
 def calc_smape(reference, test, epsilon=1e-8):
     numerator = np.abs(reference - test)
     denominator = (np.abs(reference) + np.abs(test)) / 2.0
-    denominator = np.where(denominator < epsilon, epsilon, denominator)
-    smape = numerator / denominator
+    denominator = np.maximum(denominator, epsilon)
+    with np.errstate(divide='ignore', invalid='ignore'):
+        smape = numerator / denominator
+    smape = smape[np.isfinite(smape)]
     return np.mean(smape)
 
 
