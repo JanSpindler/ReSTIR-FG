@@ -27,14 +27,14 @@ Reference Renderer: ReSTIR PT -> Path Tracer
 
 Pos: 13.6914, 3.4882, 3.4586
 Target: 13.9203, 2.6111, 3.0364
-Reference Sample Count: 323036
+Reference Sample Count: 1582152
 Reference Renderer: ReSTIR PT -> Path Tracer
 
 ## Sibenik Statue
 
 Pos: 5, -7, 0
 Target: 5.8, -7.23, 0
-Reference Sample Count: 100014
+Reference Sample Count: 167431
 Reference Renderer: ReSTIR FG -> Final Gather Consistent Photon Mapper
 
 ## Caustic Glass Emissive

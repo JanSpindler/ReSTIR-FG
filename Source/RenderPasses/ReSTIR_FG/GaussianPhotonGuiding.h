@@ -52,7 +52,10 @@ public:
     void SetFinalShadingVars(const ShaderVar& var) const;
 
     constexpr bool IsActive() const { return m_Active; }
-    constexpr bool IsOptimizing() const { return m_Optimize; }
+    constexpr bool IsOptimizing() const
+    {
+        return m_Optimize and (m_OptimizationStop == 0 or m_FrameCountAfterOptimReset <= m_OptimizationStop);
+    }
     constexpr uint GetFrameCountAfterOptimReset() const { return m_FrameCountAfterOptimReset; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
 
@@ -110,6 +113,7 @@ private:
     float m_Beta1 = 0.9f;
     float m_Beta2 = 0.999f;
     uint m_FrameCountAfterOptimReset = 0;
+    uint m_OptimizationStop = 0;
 
     // Repulsion
     float m_RepulsiveForce = 0.02f;
