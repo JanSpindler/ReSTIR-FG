@@ -54,7 +54,7 @@ public:
     constexpr bool IsActive() const { return m_Active; }
     constexpr bool IsOptimizing() const
     {
-        return m_Optimize and (m_OptimizationStop == 0 or m_FrameCountAfterOptimReset <= m_OptimizationStop);
+        return m_Active and m_Optimize and (m_OptimizationStop == 0 or m_OptimizationStep <= m_OptimizationStop);
     }
     constexpr uint GetFrameCountAfterOptimReset() const { return m_FrameCountAfterOptimReset; }
     constexpr bool IsRobustInitialization() const { return m_Initialization == Initialization::Robust; }
@@ -113,6 +113,7 @@ private:
     float m_Beta1 = 0.9f;
     float m_Beta2 = 0.999f;
     uint m_FrameCountAfterOptimReset = 0;
+    uint m_OptimizationStep = 0;
     uint m_OptimizationStop = 0;
 
     // Repulsion

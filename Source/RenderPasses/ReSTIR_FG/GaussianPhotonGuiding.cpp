@@ -111,6 +111,7 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
         // Reset optimization
         m_OptimizationBuf.reset();
         m_FrameCountAfterOptimReset = 0;
+        m_OptimizationStep = 0;
     }
 
     if (!m_FirstHitPhotonCountBuf.buffer)
@@ -173,6 +174,7 @@ void GaussianPhotonGuiding::PrepareBuffers(const uint2 screenSize, RenderContext
 
         // Reset optimization
         m_FrameCountAfterOptimReset = 0;
+        m_OptimizationStep = 0;
     }
 
     if (!m_SoftmaxBuf.buffer)
@@ -242,6 +244,7 @@ bool GaussianPhotonGuiding::RenderUI(Gui::Widgets& widget)
         {
             changed |= optimGroup.checkbox("Optimize Gaussians", m_Optimize);
             changed |= optimGroup.var("Optimization Stop", m_OptimizationStop);
+            optimGroup.text("Is Optimizing: " + std::to_string(IsOptimizing()) + " | Step: " + std::to_string(m_OptimizationStep));
 
             const bool changedOptimizer = optimGroup.dropdown("Optimizer", m_OptimizerList, reinterpret_cast<uint&>(m_Optimizer));
             if (changedOptimizer)
@@ -799,6 +802,10 @@ void GaussianPhotonGuiding::EndFrame(RenderContext* renderContext)
 {
     // Increment counter after this is called because this happens when GaussianPhotonGuiding is used
     ++m_FrameCountAfterOptimReset;
+    if (IsOptimizing())
+    {
+        ++m_OptimizationStep;
+    }
 }
 
 void GaussianPhotonGuiding::ClearBuffersForGeneratePhotons(RenderContext* renderContext)

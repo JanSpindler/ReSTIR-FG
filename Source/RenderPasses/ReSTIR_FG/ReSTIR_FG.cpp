@@ -428,7 +428,7 @@ void ReSTIR_FG::execute(RenderContext* pRenderContext, const RenderData& renderD
             m_GaussianPhotonGuiding.RobustInitialization(pRenderContext);
         }
         // Calculate gaussian gradient and optimize
-        else if (m_GaussianPhotonGuiding.IsActive() and m_GaussianPhotonGuiding.IsOptimizing())
+        else if (m_GaussianPhotonGuiding.IsOptimizing())
         {
             m_GaussianPhotonGuiding.CalculateGaussianGradientCuda(pRenderContext);
             m_GaussianPhotonGuiding.GaussianRepulsionPass(pRenderContext);
