@@ -49,7 +49,7 @@ ax.set_xlabel('Scenes', fontsize=18)
 ax.set_ylabel('Frametime [ms]', fontsize=18)
 ax.set_title('Performance Comparison: ReSTIR FG (stacked) vs ReSTIR PT', fontsize=20)
 ax.set_xticks(x)
-ax.set_xticklabels(scenes, rotation=45)
+ax.set_xticklabels(scenes, rotation=45, fontsize=16)
 ax.legend(fontsize=14)
 
 plt.tight_layout()
